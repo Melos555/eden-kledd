@@ -33,11 +33,31 @@ jobs:
 
       - name: Configure
         shell: pwsh
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DYUZU_TESTS=OFF -DENABLE_UPDATE_CHECKER=OFF
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DYUZU_TESTS=OFF -DENABLE_UPDATE_CHECKER=OFF 2>&1 | Tee-Object -FilePath configure.log
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            $msg = ((Get-Content configure.log | Select-Object -Last 50) -join "`n").Replace('%','%25').Replace("`r",'').Replace("`n",'%0A')
+            Write-Output "::error title=Configure failed::$msg"
+            exit $code
+          }
+          $warn = ((Get-Content configure.log | Select-String -Pattern 'CMake Warning|CMake Error|Could NOT' | Select-Object -First 20 | ForEach-Object { $_.Line }) -join "`n").Replace('%','%25').Replace("`r",'').Replace("`n",'%0A')
+          if ($warn) { Write-Output "::warning title=Configure notes::$warn" }
 
       - name: Build
         shell: pwsh
-        run: cmake --build build
+        run: |
+          cmake --build build 2>&1 | Tee-Object -FilePath build.log
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            $lines = Get-Content build.log
+            $errs = $lines | Select-String -Pattern 'error|FAILED' | Select-Object -First 25 | ForEach-Object { $_.Line }
+            $tail = $lines | Select-Object -Last 40
+            $msg = (@('ERRORS:') + $errs + @('TAIL:') + $tail) -join "`n"
+            $msg = $msg.Replace('%','%25').Replace("`r",'').Replace("`n",'%0A')
+            Write-Output "::error title=Build failed::$msg"
+            exit $code
+          }
 
       - name: Collect files
         shell: pwsh
