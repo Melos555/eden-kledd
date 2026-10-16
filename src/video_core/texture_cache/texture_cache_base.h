@@ -250,6 +250,11 @@ public:
     };
     KleddDmaDiag kledd_last_dma{};
 
+private:
+    void KleddDownloadDepthStencil(Image& image);
+
+public:
+
     [[nodiscard]] std::pair<Image*, BufferImageCopy> DmaBufferImageCopy(
         const Tegra::DMA::ImageCopy& copy_info, const Tegra::DMA::BufferOperand& buffer_operand,
         const Tegra::DMA::ImageOperand& image_operand, ImageId image_id, bool modifies_image);

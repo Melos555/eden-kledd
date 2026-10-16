@@ -209,6 +209,12 @@ public:
     void DownloadMemory(StagingBufferMap& map,
                         std::span<const VideoCommon::BufferImageCopy> copies);
 
+    /// eden-kledd: split depth/stencil downloads are only implemented for Vulkan
+    [[nodiscard]] bool KleddCanSplitDepthStencil() const {
+        return false;
+    }
+    size_t kledd_stencil_split = 0;
+
     GLuint StorageHandle() noexcept;
 
     GLuint Handle() const noexcept {

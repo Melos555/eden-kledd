@@ -9,6 +9,7 @@
 #include <limits>
 #include <optional>
 #include <bit>
+#include <cstring>
 #include "common/container/unordered_map.h"
 #include <boost/container/small_vector.hpp>
 
@@ -628,12 +629,62 @@ void TextureCache<P>::DownloadMemory(DAddr cpu_addr, size_t size) {
     });
     for (const ImageId image_id : images) {
         Image& image = slot_images[image_id];
+        if (Settings::values.kledd_dma_readback_fix.GetValue() &&
+            image.KleddCanSplitDepthStencil()) {
+            KleddDownloadDepthStencil(image);
+            continue;
+        }
         auto map = runtime.DownloadStagingBuffer(image.unswizzled_size_bytes);
         const auto copies = FullDownloadCopies(image.info);
         image.DownloadMemory(map, copies);
         runtime.Finish();
         SwizzleImage(*gpu_memory, image.gpu_addr, image.info, copies, map.mapped_span,
                      swizzle_data_buffer);
+    }
+}
+
+template <class P>
+void TextureCache<P>::KleddDownloadDepthStencil(Image& image) {
+    // Download depth (4 bytes/texel, D24 in the low bits) and stencil (1 byte/texel) to separate
+    // regions of the staging buffer, then rebuild the guest's packed 32-bit layout on the CPU.
+    const size_t depth_bytes = image.unswizzled_size_bytes;
+    const size_t split = Common::AlignUp(depth_bytes, 256);
+    auto map = runtime.DownloadStagingBuffer(split + depth_bytes / 4 + 256);
+    const auto copies = FullDownloadCopies(image.info);
+    image.kledd_stencil_split = split;
+    image.DownloadMemory(map, copies);
+    image.kledd_stencil_split = 0;
+    runtime.Finish();
+
+    u8* const base = map.mapped_span.data();
+    const bool stencil_low = image.info.format == PixelFormat::S8_UINT_D24_UNORM;
+    for (const auto& copy : copies) {
+        const u32 width = copy.image_extent.width;
+        const u32 height = copy.image_extent.height;
+        const u32 depth = copy.image_extent.depth;
+        const u32 row = copy.buffer_row_length != 0 ? copy.buffer_row_length : width;
+        const u32 rows = copy.buffer_image_height != 0 ? copy.buffer_image_height : height;
+        const u32 layers = static_cast<u32>(copy.image_subresource.num_layers);
+        for (u32 layer = 0; layer < layers * depth; ++layer) {
+            for (u32 y = 0; y < height; ++y) {
+                for (u32 x = 0; x < width; ++x) {
+                    const size_t texel = (static_cast<size_t>(layer) * rows + y) * row + x;
+                    u8* const word_ptr = base + copy.buffer_offset + texel * 4;
+                    u32 word;
+                    std::memcpy(&word, word_ptr, sizeof(word));
+                    const u32 d24 = word & 0x00FFFFFFu;
+                    const u32 s8 = base[split + copy.buffer_offset / 4 + texel];
+                    word = stencil_low ? ((d24 << 8) | s8) : (d24 | (s8 << 24));
+                    std::memcpy(word_ptr, &word, sizeof(word));
+                }
+            }
+        }
+    }
+    SwizzleImage(*gpu_memory, image.gpu_addr, image.info, copies,
+                 map.mapped_span.subspan(0, depth_bytes), swizzle_data_buffer);
+    if (Settings::values.kledd_dma_readback_log.GetValue()) {
+        LOG_INFO(HW_GPU, "KLEDD ds-download {}x{} fmt={} bytes={}", image.info.size.width,
+                 image.info.size.height, static_cast<u32>(image.info.format), depth_bytes);
     }
 }
 
@@ -1003,6 +1054,12 @@ ImageId TextureCache<P>::DmaImageId(const Tegra::DMA::ImageOperand& operand, boo
     kledd_last_dma.format = static_cast<u32>(image.info.format);
     kledd_last_dma.tick = image.modification_tick;
     const bool kledd_fix = !is_upload && Settings::values.kledd_dma_readback_fix.GetValue();
+    if (kledd_fix && image.KleddCanSplitDepthStencil()) {
+        // Accelerated path would copy overlapping depth/stencil regions; use the CPU path,
+        // which flushes through KleddDownloadDepthStencil.
+        kledd_last_dma.reason = 7;
+        return NULL_IMAGE_ID;
+    }
     if (kledd_fix && True(image.flags & ImageFlagBits::CpuModified)) {
         // Guest memory is newer than the host image: let the CPU path copy it.
         kledd_last_dma.reason = 6;
