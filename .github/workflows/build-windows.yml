@@ -20,9 +20,12 @@ jobs:
         with:
           arch: x64
 
-      - name: Install Ninja
+      - name: Install Ninja and check clang-cl
         shell: pwsh
-        run: choco install ninja -y --no-progress
+        run: |
+          choco install ninja -y --no-progress
+          if (-not (Get-Command clang-cl -ErrorAction SilentlyContinue)) { choco install llvm -y --no-progress }
+          clang-cl --version
 
       - name: Cache downloaded dependencies
         uses: actions/cache@v4
@@ -34,7 +37,7 @@ jobs:
       - name: Configure
         shell: pwsh
         run: |
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DYUZU_TESTS=OFF -DENABLE_UPDATE_CHECKER=OFF 2>&1 | Tee-Object -FilePath configure.log
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl -DYUZU_TESTS=OFF -DENABLE_UPDATE_CHECKER=OFF 2>&1 | Tee-Object -FilePath configure.log
           $code = $LASTEXITCODE
           if ($code -ne 0) {
             $msg = ((Get-Content configure.log | Select-Object -Last 50) -join "`n").Replace('%','%25').Replace("`r",'').Replace("`n",'%0A')
