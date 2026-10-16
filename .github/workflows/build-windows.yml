@@ -1,0 +1,55 @@
+name: Build Eden (Windows)
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 340
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Vulkan SDK
+        shell: pwsh
+        run: ./tools/windows/install-vulkan-sdk.ps1
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install Ninja
+        shell: pwsh
+        run: choco install ninja -y --no-progress
+
+      - name: Cache downloaded dependencies
+        uses: actions/cache@v4
+        with:
+          path: .cache/cpm
+          key: cpm-${{ hashFiles('cpmfile.json', '**/cpmfile.json') }}
+          restore-keys: cpm-
+
+      - name: Configure
+        shell: pwsh
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DYUZU_TESTS=OFF -DENABLE_UPDATE_CHECKER=OFF
+
+      - name: Build
+        shell: pwsh
+        run: cmake --build build
+
+      - name: Collect files
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path out | Out-Null
+          Copy-Item -Recurse build/bin/* out/
+          Get-ChildItem out -Recurse -Include *.pdb,*.ilk,*.lib,*.exp | Remove-Item -Force
+          Get-ChildItem out
+
+      - name: Upload Eden
+        uses: actions/upload-artifact@v4
+        with:
+          name: eden-kledd-windows
+          path: out/
+          retention-days: 30
