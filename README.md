@@ -1,3 +1,47 @@
+<!-- eden-kledd fork header -->
+<p align="center">
+  <img src="./.github/kledd/kledd.png" alt="Kledd" width="180">
+</p>
+
+<h1 align="center">eden-kledd</h1>
+
+<p align="center"><b>An unofficial fork of <a href="https://git.eden-emu.dev/eden-emu/eden">Eden</a>.</b><br>
+Not affiliated with or endorsed by the Eden team. Please don't report bugs from this build to them.</p>
+
+> [!IMPORTANT]
+> The only official Eden source is [git.eden-emu.dev/eden-emu/eden](https://git.eden-emu.dev/eden-emu/eden).
+> This repository is a personal test fork. Everything below the line is Eden's own README, kept for credit and reference.
+
+## What this fork changes
+
+**Fixes the Metroid Prime 4: Beyond scan visor jumping between targets / locking onto things behind walls.**
+
+The game reads back a small depth-stencil patch around the crosshair (the stencil holds object IDs) to decide what you're aiming at.
+In Eden's Vulkan backend, downloading a `D24S8` image created the depth and stencil copy regions at the **same buffer offset**, so the two
+writes overlapped and the object IDs came back garbled. This fork downloads depth and stencil into separate regions, merges them back into
+the guest format on the CPU, and does it asynchronously and only for the requested region, so there's no FPS cost.
+
+The fix is behind two options under **Properties → Ext. Graphics**:
+- `[Kledd] DMA readback fix`: turns the fix on
+- `[Kledd] DMA readback log`: debug logging (leave off for normal play)
+
+Tested on Windows with an RTX 2060, in both Accurate and Fast GPU mode.
+
+## Verify the build yourself
+
+- All changes are in this repository's commit history, on top of upstream Eden snapshot `d8c6c59b6`.
+- Windows builds are made by **GitHub Actions** from this public source (see the [Actions tab](../../actions) and
+  `.github/workflows/build-windows.yml`). Nothing is built or uploaded by hand.
+- The commit hash in Eden's title bar matches the commit the build came from.
+
+## Credits
+
+- **Eden team** and yuzu contributors: the emulator itself.
+- **Melos**: testing, investigation, and pointing at the depth buffer.
+- **Claude (Anthropic AI), a.k.a. Kledd**: reverse engineering, root-cause analysis and the patch. This fork was made with AI assistance.
+
+---
+
 <!--
 # SPDX-FileCopyrightText: Copyright 2025 Eden Emulator Project
 # SPDX-License-Identifier: GPL-3.0-or-later
