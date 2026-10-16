@@ -237,6 +237,19 @@ public:
 
     [[nodiscard]] ImageId DmaImageId(const Tegra::DMA::ImageOperand& operand, bool is_upload);
 
+    /// eden-kledd: diagnostics from the last DmaImageId call
+    struct KleddDmaDiag {
+        int reason = 0;
+        u32 image_index = 0;
+        u32 flags = 0;
+        u32 width = 0;
+        u32 height = 0;
+        u32 format = 0;
+        u64 tick = 0;
+        u32 candidates = 0;
+    };
+    KleddDmaDiag kledd_last_dma{};
+
     [[nodiscard]] std::pair<Image*, BufferImageCopy> DmaBufferImageCopy(
         const Tegra::DMA::ImageCopy& copy_info, const Tegra::DMA::BufferOperand& buffer_operand,
         const Tegra::DMA::ImageOperand& image_operand, ImageId image_id, bool modifies_image);

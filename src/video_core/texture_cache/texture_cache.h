@@ -989,26 +989,44 @@ void TextureCache<P>::PopAsyncFlushes() {
 template <class P>
 ImageId TextureCache<P>::DmaImageId(const Tegra::DMA::ImageOperand& operand, bool is_upload) {
     const ImageInfo dst_info(operand);
+    kledd_last_dma = {};
     const ImageId dst_id = FindDMAImage(dst_info, operand.address);
     if (!dst_id) {
+        kledd_last_dma.reason = 1;
         return NULL_IMAGE_ID;
     }
     auto& image = slot_images[dst_id];
-    if (False(image.flags & ImageFlagBits::GpuModified)) {
+    kledd_last_dma.image_index = dst_id.index;
+    kledd_last_dma.flags = static_cast<u32>(image.flags);
+    kledd_last_dma.width = image.info.size.width;
+    kledd_last_dma.height = image.info.size.height;
+    kledd_last_dma.format = static_cast<u32>(image.info.format);
+    kledd_last_dma.tick = image.modification_tick;
+    const bool kledd_fix = !is_upload && Settings::values.kledd_dma_readback_fix.GetValue();
+    if (kledd_fix && True(image.flags & ImageFlagBits::CpuModified)) {
+        // Guest memory is newer than the host image: let the CPU path copy it.
+        kledd_last_dma.reason = 6;
+        return NULL_IMAGE_ID;
+    }
+    if (!kledd_fix && False(image.flags & ImageFlagBits::GpuModified)) {
         // No need to waste time on an image that's synced with guest
+        kledd_last_dma.reason = 2;
         return NULL_IMAGE_ID;
     }
     if (image.info.type == ImageType::e3D) {
         // Don't accelerate 3D images.
+        kledd_last_dma.reason = 3;
         return NULL_IMAGE_ID;
     }
-    if (!is_upload && !image.info.dma_downloaded) {
+    if (!kledd_fix && !is_upload && !image.info.dma_downloaded) {
         // Force a full sync.
         image.info.dma_downloaded = true;
+        kledd_last_dma.reason = 4;
         return NULL_IMAGE_ID;
     }
     const auto base = image.TryFindBase(operand.address);
     if (!base) {
+        kledd_last_dma.reason = 5;
         return NULL_IMAGE_ID;
     }
     return dst_id;
@@ -1252,6 +1270,7 @@ ImageId TextureCache<P>::FindImage(const ImageInfo& info, GPUVAddr gpu_addr,
         return false;
     };
     ForEachImageInRegion(*cpu_addr, CalculateGuestSizeInBytes(info), lambda);
+    kledd_last_dma.candidates = static_cast<u32>(image_ids.size());
     if (image_ids.size() <= 1) [[likely]] {
         return image_id;
     }
