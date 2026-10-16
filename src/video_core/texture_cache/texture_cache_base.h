@@ -250,6 +250,11 @@ public:
     };
     KleddDmaDiag kledd_last_dma{};
 
+    /// eden-kledd: queue an async readback of a D24S8 region into guest memory with depth and
+    /// stencil downloaded separately and re-packed when the download completes.
+    bool KleddDownloadDepthStencilToGuest(Image* image, const BufferImageCopy& copy,
+                                          GPUVAddr address, size_t size);
+
 private:
     void KleddDownloadDepthStencil(Image& image);
 
@@ -479,6 +484,13 @@ private:
     struct BufferDownload {
         GPUVAddr address;
         size_t size;
+        // eden-kledd: split depth/stencil readback that must be re-packed before writing
+        bool kledd_ds = false;
+        bool kledd_stencil_low = false;
+        size_t kledd_split = 0;
+        u32 kledd_width = 0;
+        u32 kledd_height = 0;
+        u32 kledd_row = 0;
     };
 
     struct PendingDownload {

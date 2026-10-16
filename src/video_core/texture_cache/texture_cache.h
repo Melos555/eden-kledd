@@ -986,8 +986,28 @@ void TextureCache<P>::PopAsyncFlushes() {
                 const BufferDownload& buffer_info = slot_buffer_downloads[download_info.object_id];
                 std::span<u8> download_span =
                     download_buffer.mapped_span.subspan(download_buffer.offset);
-                gpu_memory->WriteBlockUnsafe(buffer_info.address, download_span.data(),
-                                             buffer_info.size);
+                if (buffer_info.kledd_ds) {
+                    u8* const base = download_span.data();
+                    for (u32 y = 0; y < buffer_info.kledd_height; ++y) {
+                        for (u32 x = 0; x < buffer_info.kledd_width; ++x) {
+                            const size_t texel =
+                                static_cast<size_t>(y) * buffer_info.kledd_row + x;
+                            u8* const word_ptr = base + texel * 4;
+                            u32 word;
+                            std::memcpy(&word, word_ptr, sizeof(word));
+                            const u32 d24 = word & 0x00FFFFFFu;
+                            const u32 s8 = base[buffer_info.kledd_split + texel];
+                            word = buffer_info.kledd_stencil_low ? ((d24 << 8) | s8)
+                                                                 : (d24 | (s8 << 24));
+                            std::memcpy(word_ptr, &word, sizeof(word));
+                        }
+                    }
+                    gpu_memory->WriteBlock(buffer_info.address, download_span.data(),
+                                           buffer_info.size);
+                } else {
+                    gpu_memory->WriteBlockUnsafe(buffer_info.address, download_span.data(),
+                                                 buffer_info.size);
+                }
                 slot_buffer_downloads.erase(download_info.object_id);
             }
         }
@@ -1054,12 +1074,6 @@ ImageId TextureCache<P>::DmaImageId(const Tegra::DMA::ImageOperand& operand, boo
     kledd_last_dma.format = static_cast<u32>(image.info.format);
     kledd_last_dma.tick = image.modification_tick;
     const bool kledd_fix = !is_upload && Settings::values.kledd_dma_readback_fix.GetValue();
-    if (kledd_fix && image.KleddCanSplitDepthStencil()) {
-        // Accelerated path would copy overlapping depth/stencil regions; use the CPU path,
-        // which flushes through KleddDownloadDepthStencil.
-        kledd_last_dma.reason = 7;
-        return NULL_IMAGE_ID;
-    }
     if (kledd_fix && True(image.flags & ImageFlagBits::CpuModified)) {
         // Guest memory is newer than the host image: let the CPU path copy it.
         kledd_last_dma.reason = 6;
@@ -1157,6 +1171,44 @@ std::pair<typename TextureCache<P>::Image*, BufferImageCopy> TextureCache<P>::Dm
             },
     };
     return {image, copy};
+}
+
+template <class P>
+bool TextureCache<P>::KleddDownloadDepthStencilToGuest(Image* image, const BufferImageCopy& copy,
+                                                       GPUVAddr address, size_t size) {
+    if constexpr (IMPLEMENTS_ASYNC_DOWNLOADS) {
+        if (!image->KleddCanSplitDepthStencil()) {
+            return false;
+        }
+        const u32 row =
+            copy.buffer_row_length != 0 ? copy.buffer_row_length : copy.image_extent.width;
+        const size_t split = Common::AlignUp(size, 256);
+        auto staging = runtime.DownloadStagingBuffer(split + size / 4 + 256, true);
+        std::array buffers{staging.buffer};
+        std::array<size_t, 1> offsets{static_cast<size_t>(staging.offset)};
+        image->kledd_stencil_split = split;
+        image->DownloadMemory(buffers, offsets, std::span<const BufferImageCopy>(&copy, 1));
+        image->kledd_stencil_split = 0;
+
+        BufferDownload download{address, size};
+        download.kledd_ds = true;
+        download.kledd_stencil_low = image->info.format == PixelFormat::S8_UINT_D24_UNORM;
+        download.kledd_split = split;
+        download.kledd_width = copy.image_extent.width;
+        download.kledd_height = copy.image_extent.height;
+        download.kledd_row = row;
+        auto slot = slot_buffer_downloads.insert(download);
+        const PendingDownload pending{false, uncommitted_async_buffers.size(), slot};
+        uncommitted_downloads.emplace_back(pending);
+        uncommitted_async_buffers.emplace_back(staging);
+        if (Settings::values.kledd_dma_readback_log.GetValue()) {
+            LOG_INFO(HW_GPU, "KLEDD ds-dma {}x{} row={} dst={:#x} size={}",
+                     copy.image_extent.width, copy.image_extent.height, row, address, size);
+        }
+        return true;
+    } else {
+        return false;
+    }
 }
 
 template <class P>
