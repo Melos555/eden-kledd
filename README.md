@@ -25,7 +25,7 @@ The fix is behind two options under **Properties → Ext. Graphics**:
 - `[Kledd] DMA readback fix`: turns the fix on
 - `[Kledd] DMA readback log`: debug logging (leave off for normal play)
 
-Tested on Windows with an RTX 2060, in both Accurate and Fast GPU mode.
+Tested on Windows with an RTX 2060 Mobile (6GB VRAM), in both Accurate and Fast GPU mode.
 
 ## Verify the build yourself
 
