@@ -1,0 +1,51 @@
+name: Build Eden (Linux)
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: ubuntu:26.04
+    timeout-minutes: 340
+    steps:
+      - name: Install dependencies (from docs/Deps.md, Ubuntu)
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates curl unzip zip xz-utils \
+            autoconf cmake g++ gcc git glslang-tools libglu1-mesa-dev libhidapi-dev libpulse-dev \
+            libtool libudev-dev libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 \
+            libxcb-xinerama0 libxcb-xkb1 libxext-dev libxkbcommon-x11-0 mesa-common-dev nasm \
+            ninja-build qt6-base-private-dev catch2 libfmt-dev liblz4-dev nlohmann-json3-dev \
+            libzstd-dev libssl-dev libavfilter-dev libavcodec-dev libswscale-dev pkg-config \
+            zlib1g-dev libva-dev libvdpau-dev qt6-tools-dev qt6-charts-dev libvulkan-dev \
+            spirv-tools spirv-headers libusb-1.0-0-dev libxbyak-dev libboost-dev \
+            libboost-fiber-dev libboost-context-dev libsdl3-dev libopus-dev libasound2t64 \
+            vulkan-utility-libraries-dev
+
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DYUZU_TESTS=OFF
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Package
+        run: |
+          mkdir -p out
+          cp build/bin/eden* out/ 2>/dev/null || cp -r build/bin/* out/
+          tar -C out -czf eden-kledd-linux-x86_64.tar.gz .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eden-kledd-linux-x86_64
+          path: eden-kledd-linux-x86_64.tar.gz
