@@ -7,6 +7,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <deque>
 #include <limits>
 #include <mutex>
@@ -257,6 +258,10 @@ public:
 
 private:
     void KleddDownloadDepthStencil(Image& image);
+
+    /// eden-kledd: log the previous frame if it took too long, then reset the frame counters
+    void KleddLogLongFrame();
+    std::chrono::steady_clock::time_point kledd_last_frame{};
 
 public:
 

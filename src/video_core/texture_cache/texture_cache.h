@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <limits>
 #include <optional>
 #include <bit>
@@ -14,6 +15,7 @@
 #include <boost/container/small_vector.hpp>
 
 #include "common/alignment.h"
+#include "common/kledd_frame_stats.h"
 #include "common/settings.h"
 #include "common/slot_vector.h"
 #include "video_core/control/channel_state.h"
@@ -139,7 +141,10 @@ void TextureCache<P>::RunGarbageCollector() {
         if ((!aggressive_mode && True(image.flags & ImageFlagBits::CostlyLoad)) || (!high_priority_mode && must_download)) {
             return false;
         }
+        Common::Kledd::GetFrameStats().gc_deleted.fetch_add(1, std::memory_order_relaxed);
         if (must_download) {
+            Common::Kledd::GetFrameStats().gc_sync_downloads.fetch_add(1,
+                                                                      std::memory_order_relaxed);
             auto map = runtime.DownloadStagingBuffer(image.unswizzled_size_bytes);
             const auto copies = FullDownloadCopies(image.info);
             image.DownloadMemory(map, copies);
@@ -170,6 +175,7 @@ void TextureCache<P>::RunGarbageCollector() {
 
 template <class P>
 void TextureCache<P>::TickFrame() {
+    KleddLogLongFrame();
     // If we can obtain the memory info, use it instead of the estimate.
     if (runtime.CanReportMemoryUsage()) {
         total_used_memory = runtime.GetDeviceMemoryUsage();
@@ -192,6 +198,42 @@ void TextureCache<P>::TickFrame() {
         }
         async_buffers_death_ring.clear();
     }
+}
+
+template <class P>
+void TextureCache<P>::KleddLogLongFrame() {
+    auto& s = Common::Kledd::GetFrameStats();
+    const auto take = [](auto& counter) { return counter.exchange(0, std::memory_order_relaxed); };
+    const u32 created = take(s.images_created);
+    const u32 deleted = take(s.images_deleted);
+    const u32 gc_deleted = take(s.gc_deleted);
+    const u32 gc_sync = take(s.gc_sync_downloads);
+    const u32 join_dropped = take(s.join_dropped_gpu);
+    const u32 uploads = take(s.uploads);
+    const u64 upload_bytes = take(s.upload_bytes);
+    const u32 decodes = take(s.async_decodes);
+    const u32 unswizzles = take(s.async_unswizzles);
+    const u32 gfx_pipelines = take(s.graphics_pipelines);
+    const u32 cmp_pipelines = take(s.compute_pipelines);
+
+    const auto now = std::chrono::steady_clock::now();
+    const auto last = std::exchange(kledd_last_frame, now);
+    if (!Settings::values.kledd_frame_log.GetValue() ||
+        last == std::chrono::steady_clock::time_point{}) {
+        return;
+    }
+    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - last).count();
+    if (ms < 50) {
+        return;
+    }
+    constexpr u64 MiB = 1024 * 1024;
+    LOG_INFO(HW_GPU,
+             "[Kledd] long frame {} ms | images new {} deleted {} (gc {}, gc sync downloads {}, "
+             "join drops {}) | uploads {} ({} MiB) async decode {} unswizzle {} | pipelines "
+             "built gfx {} compute {} | texture memory {}/{}/{} MiB (used/expected/critical)",
+             ms, created, deleted, gc_deleted, gc_sync, join_dropped, uploads, upload_bytes / MiB,
+             decodes, unswizzles, gfx_pipelines, cmp_pipelines, total_used_memory / MiB,
+             expected_memory / MiB, critical_memory / MiB);
 }
 
 template <class P>
@@ -1254,7 +1296,9 @@ void TextureCache<P>::RefreshContents(Image& image, ImageId image_id) {
         runtime.TransitionImageLayout(image);
         return;
     }
+    auto& kledd_stats = Common::Kledd::GetFrameStats();
     if (True(image.flags & ImageFlagBits::AsynchronousDecode)) {
+        kledd_stats.async_decodes.fetch_add(1, std::memory_order_relaxed);
         QueueAsyncDecode(image, image_id);
         return;
     }
@@ -1269,9 +1313,12 @@ void TextureCache<P>::RefreshContents(Image& image, ImageId image_id) {
         MapSizeBytes(image) >= gpu_unswizzle_maxsize &&
         False(image.flags & ImageFlagBits::GpuModified)) {
 
+        kledd_stats.async_unswizzles.fetch_add(1, std::memory_order_relaxed);
         QueueAsyncUnswizzle(image, image_id);
         return;
     }
+    kledd_stats.uploads.fetch_add(1, std::memory_order_relaxed);
+    kledd_stats.upload_bytes.fetch_add(MapSizeBytes(image), std::memory_order_relaxed);
     auto staging = runtime.UploadStagingBuffer(MapSizeBytes(image));
     UploadImageContents(image, staging);
     runtime.InsertUploadMemoryBarrier();
@@ -1764,6 +1811,7 @@ ImageId TextureCache<P>::JoinImages(const ImageInfo& info, GPUVAddr gpu_addr, DA
 
     const ImageId new_image_id = slot_images.insert(runtime, new_info, gpu_addr, cpu_addr);
     Image& new_image = slot_images[new_image_id];
+    Common::Kledd::GetFrameStats().images_created.fetch_add(1, std::memory_order_relaxed);
 
     new_image.allocation_tick = frame_tick;
 
@@ -1775,6 +1823,8 @@ ImageId TextureCache<P>::JoinImages(const ImageInfo& info, GPUVAddr gpu_addr, DA
     for (const ImageId overlap_id : join_ignore_textures) {
         Image& overlap = slot_images[overlap_id];
         if (True(overlap.flags & ImageFlagBits::GpuModified)) {
+            Common::Kledd::GetFrameStats().join_dropped_gpu.fetch_add(1,
+                                                                     std::memory_order_relaxed);
             UNIMPLEMENTED();
         }
         if (True(overlap.flags & ImageFlagBits::Tracked)) {
@@ -2443,6 +2493,7 @@ void TextureCache<P>::UntrackImage(ImageBase& image, ImageId image_id) {
 
 template <class P>
 void TextureCache<P>::DeleteImage(ImageId image_id, bool immediate_delete) {
+    Common::Kledd::GetFrameStats().images_deleted.fetch_add(1, std::memory_order_relaxed);
     ImageBase& image = slot_images[image_id];
     if (image.HasScaled()) {
         total_used_memory -= GetScaledImageSizeBytes(image);
