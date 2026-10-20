@@ -629,8 +629,7 @@ void TextureCache<P>::DownloadMemory(DAddr cpu_addr, size_t size) {
     });
     for (const ImageId image_id : images) {
         Image& image = slot_images[image_id];
-        if (Settings::values.kledd_dma_readback_fix.GetValue() &&
-            image.KleddCanSplitDepthStencil()) {
+        if (image.KleddCanSplitDepthStencil()) {
             KleddDownloadDepthStencil(image);
             continue;
         }
@@ -1073,7 +1072,8 @@ ImageId TextureCache<P>::DmaImageId(const Tegra::DMA::ImageOperand& operand, boo
     kledd_last_dma.height = image.info.size.height;
     kledd_last_dma.format = static_cast<u32>(image.info.format);
     kledd_last_dma.tick = image.modification_tick;
-    const bool kledd_fix = !is_upload && Settings::values.kledd_dma_readback_fix.GetValue();
+    // eden-kledd: readbacks always take the fixed path (uploads keep the original checks).
+    const bool kledd_fix = !is_upload;
     if (kledd_fix && True(image.flags & ImageFlagBits::CpuModified)) {
         // Guest memory is newer than the host image: let the CPU path copy it.
         kledd_last_dma.reason = 6;
