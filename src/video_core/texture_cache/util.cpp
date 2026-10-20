@@ -955,9 +955,13 @@ void ConvertImage(std::span<const u8> input, const ImageInfo& info, std::span<u8
         } else if (astc) {
             // BC1 uses 0.5 bytes per texel
             // BC3 uses 1 byte per texel
-            const auto compress = recompression_setting == Settings::AstcRecompression::Bc1
-                                      ? Tegra::Texture::BCN::CompressBC1
-                                      : Tegra::Texture::BCN::CompressBC3;
+            // eden-kledd: BC7 is the same size as BC3 but much closer to the original quality
+            const auto compress =
+                recompression_setting == Settings::AstcRecompression::Bc1
+                    ? Tegra::Texture::BCN::CompressBC1
+                    : (recompression_setting == Settings::AstcRecompression::Bc7
+                           ? Tegra::Texture::BCN::CompressBC7
+                           : Tegra::Texture::BCN::CompressBC3);
             const auto bpp_div = recompression_setting == Settings::AstcRecompression::Bc1 ? 2 : 1;
 
             const u32 plane_dim = copy.image_extent.width * copy.image_extent.height;

@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright 2023 yuzu Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <mutex>
+#include <bc7enc.h>
 #include <stb_dxt.h>
 #include <string.h>
 #include "common/alignment.h"
@@ -80,6 +82,24 @@ void CompressBC3(std::span<const uint8_t> data, uint32_t width, uint32_t height,
     CompressBCN<16, false>(data, width, height, depth, output,
                            [](u8* block_output, const u8* block_input, bool any_alpha) {
                                stb_compress_bc3_block(block_output, block_input, STB_DXT_NORMAL);
+                           });
+}
+
+// eden-kledd: BC7 via bc7enc (Rich Geldreich, MIT/Unlicense). Same size as BC3, near-uncompressed
+// quality. Uses modes 1/6 with a limited partition search to keep load times reasonable.
+void CompressBC7(std::span<const uint8_t> data, uint32_t width, uint32_t height, uint32_t depth,
+                 std::span<uint8_t> output) {
+    static std::once_flag init_flag;
+    static bc7enc_compress_block_params params;
+    std::call_once(init_flag, [] {
+        bc7enc_compress_block_init();
+        bc7enc_compress_block_params_init(&params);
+        params.m_max_partitions = 16;
+        params.m_uber_level = 0;
+    });
+    CompressBCN<16, false>(data, width, height, depth, output,
+                           [](u8* block_output, const u8* block_input, bool) {
+                               bc7enc_compress_block(block_output, block_input, &params);
                            });
 }
 

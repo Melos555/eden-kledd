@@ -404,6 +404,7 @@ std::unique_ptr<ComboboxTranslationMap> ComboboxEnumeration(QObject* parent) {
              PAIR(AstcRecompression, Uncompressed, tr("Uncompressed (Best quality)")),
              PAIR(AstcRecompression, Bc1, tr("BC1 (Low quality)")),
              PAIR(AstcRecompression, Bc3, tr("BC3 (Medium quality)")),
+             PAIR(AstcRecompression, Bc7, tr("[Kledd] BC7 (High quality, slower to load)")),
          }});
     translations->insert({Settings::EnumMetadata<Settings::FramePacingMode>::Index(),
                           {
