@@ -7,6 +7,10 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -34,10 +38,29 @@ jobs:
       - name: Configure
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DYUZU_TESTS=OFF
+          set +e
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DYUZU_TESTS=OFF > configure.log 2>&1
+          code=$?
+          if [ $code -ne 0 ]; then
+            msg=$(grep -E -A6 'CMake Error|Could NOT|not found' configure.log | head -40)
+            [ -z "$msg" ] && msg=$(tail -40 configure.log)
+            msg=${msg//'%'/'%25'}; msg=${msg//$'\n'/'%0A'}
+            echo "::error title=Configure failed::$msg"
+            exit $code
+          fi
 
       - name: Build
-        run: cmake --build build
+        run: |
+          set +e
+          cmake --build build > build.log 2>&1
+          code=$?
+          if [ $code -ne 0 ]; then
+            msg=$(grep -E -B2 -A4 'error:|Error ' build.log | head -40)
+            [ -z "$msg" ] && msg=$(tail -40 build.log)
+            msg=${msg//'%'/'%25'}; msg=${msg//$'\n'/'%0A'}
+            echo "::error title=Build failed::$msg"
+            exit $code
+          fi
 
       - name: Package
         run: |
