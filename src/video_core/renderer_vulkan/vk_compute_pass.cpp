@@ -26,13 +26,13 @@
 #include "video_core/host_shaders/vulkan_bc7_encode_comp_spv.h"
 #include "video_core/host_shaders/block_linear_unswizzle_3d_bcn_comp_spv.h"
 #include "video_core/renderer_vulkan/vk_compute_pass.h"
-#include "video_core/surface.h"
 #include "video_core/renderer_vulkan/vk_descriptor_pool.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_staging_buffer_pool.h"
 #include "video_core/renderer_vulkan/vk_update_descriptor.h"
 #include "video_core/texture_cache/accelerated_swizzle.h"
 #include "video_core/texture_cache/types.h"
+#include "video_core/texture_cache/util.h"
 #include "video_core/textures/decoders.h"
 #include "video_core/vulkan_common/vulkan_device.h"
 #include "video_core/vulkan_common/vulkan_wrapper.h"
@@ -901,7 +901,7 @@ struct alignas(16) BlockLinearUnswizzle3DPushConstants {
 
     u32 block_depth;             // Offset 48
     u32 block_depth_mask;        // Offset 52
-    s32 _pad;                    // Offset 56
+    u32 src_buffer_byte_bias;    // Offset 56
 
     s32 destination[3];          // Offset 60
     s32 _pad_end;                // Offset 72
@@ -970,44 +970,111 @@ void BlockLinearUnswizzle3DPass::Unswizzle(
     Image& image,
     const StagingBufferRef& swizzled,
     std::span<const VideoCommon::SwizzleParameters> swizzles,
-    u32 z_start, u32 z_count)
+    u32 z_src_start, u32 z_image_start, u32 z_count,
+    std::span<const u8> slice_has_data,
+    bool image_already_uploaded)
 {
     using namespace VideoCommon::Accelerated;
 
     const u32 MAX_BATCH_SLICES = (std::min)(z_count, image.info.size.depth);
 
-    // Allocate or grow to cover this batch's slice count
+    // Removing the if (!image.has_compute_unswizzle_buffer) check here is not ideal but MAX_BATCH_SLICES can changed mid-way through and I don't want to cause device loss or corruption
     image.AllocateComputeUnswizzleBuffer(MAX_BATCH_SLICES);
 
     ASSERT(swizzles.size() == 1);
     const auto& sw = swizzles[0];
     const auto params = MakeBlockLinearSwizzle3DParams(sw, image.info);
 
-    const u32 blocks_x = (image.info.size.width  + 3) / 4;
-    const u32 blocks_y = (image.info.size.height + 3) / 4;
+    const u32 blocks_x = sw.num_tiles.width;
+    const u32 blocks_y = sw.num_tiles.height;
+
+    const VkImageLayout initial_prior_layout = image_already_uploaded
+        ? VK_IMAGE_LAYOUT_GENERAL
+        : VK_IMAGE_LAYOUT_UNDEFINED;
 
     scheduler.RequestOutsideRenderPassOperationContext();
+
+    const u32 src_buffer_byte_bias = (z_src_start < image.slice_offsets.size())
+        ? image.slice_offsets[z_src_start] : 0;
+
+    scheduler.Record([dst_image = image.Handle(), aspect = image.AspectMask(), initial_prior_layout](vk::CommandBuffer cmdbuf) {
+        if (dst_image == VK_NULL_HANDLE) {
+            return;
+        }
+
+        const VkAccessFlags src_access = initial_prior_layout == VK_IMAGE_LAYOUT_GENERAL
+            ? (VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT) : 0u;
+        const VkPipelineStageFlags src_stage = initial_prior_layout == VK_IMAGE_LAYOUT_GENERAL
+            ? (VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT) : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+
+        const VkImageMemoryBarrier pre_barrier{
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            .pNext = nullptr,
+            .srcAccessMask = src_access,
+            .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+            .oldLayout = initial_prior_layout,
+            .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = dst_image,
+            .subresourceRange = {aspect, 0, 1, 0, 1},
+        };
+
+        cmdbuf.PipelineBarrier(src_stage, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, pre_barrier);
+    });
+
+    compute_pass_descriptor_queue.Acquire(scheduler, 3);
+    compute_pass_descriptor_queue.AddBuffer(swizzled.buffer, sw.buffer_offset + swizzled.offset, VK_WHOLE_SIZE);
+    compute_pass_descriptor_queue.AddBuffer(*image.compute_unswizzle_buffer, 0, image.compute_unswizzle_buffer_size);
+
+    const void* descriptor_data = compute_pass_descriptor_queue.UpdateData();
+    const VkDescriptorSet set = descriptor_allocator.Commit();
+
+    scheduler.Record([this, set, descriptor_data](vk::CommandBuffer cmdbuf) {
+        device.GetLogical().UpdateDescriptorSet(set, *descriptor_template, descriptor_data);
+        cmdbuf.BindPipeline(VK_PIPELINE_BIND_POINT_COMPUTE, *pipeline);
+        cmdbuf.BindDescriptorSets(VK_PIPELINE_BIND_POINT_COMPUTE, *layout, 0, set, {});
+    });
+
     for (u32 z_offset = 0; z_offset < z_count; z_offset += MAX_BATCH_SLICES) {
         const u32 current_chunk_slices = (std::min)(MAX_BATCH_SLICES, z_count - z_offset);
-        const u32 current_z_start = z_start + z_offset;
+        const u32 current_z_src = z_src_start + z_offset;
+        const u32 current_z_dst = z_image_start + z_offset;
 
-        UnswizzleChunk(image, swizzled, sw, params, blocks_x, blocks_y,
-                       current_z_start, current_chunk_slices);
+        bool chunk_has_data = slice_has_data.empty();
+        if (!chunk_has_data) {
+            const size_t max_index = std::min<size_t>(current_z_src + current_chunk_slices, slice_has_data.size());
+            if (current_z_src < max_index) {
+                auto span = slice_has_data.subspan(current_z_src, max_index - current_z_src);
+                chunk_has_data = std::any_of(span.begin(), span.end(), [](u8 v) { return v != 0; });
+            }
+        }
+
+        if (chunk_has_data) {
+            UnswizzleChunk(image, params, blocks_x, blocks_y,
+                           current_z_src, current_z_dst, current_chunk_slices,
+                           src_buffer_byte_bias);
+        }/* else { // If junk data appears uncomment this
+            UnswizzleZeroChunk(image, blocks_x, blocks_y, bytes_per_block,
+                               current_z_dst, current_chunk_slices);
+        }*/
     }
+
+    image.has_pending_gpu_write_sync = true;
 }
 
 void BlockLinearUnswizzle3DPass::UnswizzleChunk(
     Image& image,
-    const StagingBufferRef& swizzled,
-    const VideoCommon::SwizzleParameters& sw,
     const BlockLinearSwizzle3DParams& params,
     u32 blocks_x, u32 blocks_y,
-    u32 z_start, u32 z_count)
+    u32 z_src, u32 z_dst, u32 z_count,
+    u32 src_buffer_byte_bias)
 {
     BlockLinearUnswizzle3DPushConstants pc{};
+
     pc.origin[0] = params.origin[0];
     pc.origin[1] = params.origin[1];
-    pc.origin[2] = z_start; // Current chunk's Z start
+    pc.origin[2] = z_src; // Current chunk's Z start
 
     pc.destination[0] = params.destination[0];
     pc.destination[1] = params.destination[1];
@@ -1021,20 +1088,11 @@ void BlockLinearUnswizzle3DPass::UnswizzleChunk(
     pc.block_height_mask    = params.block_height_mask;
     pc.block_depth          = params.block_depth;
     pc.block_depth_mask     = params.block_depth_mask;
+    pc.src_buffer_byte_bias = src_buffer_byte_bias;
 
     pc.blocks_dim[0] = blocks_x;
     pc.blocks_dim[1] = blocks_y;
     pc.blocks_dim[2] = z_count; // Only process the count
-
-    compute_pass_descriptor_queue.Acquire(scheduler, 3);
-    compute_pass_descriptor_queue.AddBuffer(swizzled.buffer,
-                                           sw.buffer_offset + swizzled.offset,
-                                           image.guest_size_bytes - sw.buffer_offset);
-    compute_pass_descriptor_queue.AddBuffer(*image.compute_unswizzle_buffer, 0,
-                                           image.compute_unswizzle_buffer_size);
-
-    const void* descriptor_data = compute_pass_descriptor_queue.UpdateData();
-    const VkDescriptorSet set = descriptor_allocator.Commit();
 
     const u32 gx = Common::DivCeil(blocks_x, 8u);
     const u32 gy = Common::DivCeil(blocks_y, 8u);
@@ -1045,26 +1103,35 @@ void BlockLinearUnswizzle3DPass::UnswizzleChunk(
         static_cast<VkDeviceSize>(blocks_x) * blocks_y * bytes_per_block;
     const VkDeviceSize barrier_size = output_slice_size * z_count;
 
-    const bool is_first_chunk = (z_start == 0);
-
     const VkBuffer out_buffer = *image.compute_unswizzle_buffer;
     const VkImage dst_image = image.Handle();
     const VkImageAspectFlags aspect = image.AspectMask();
     const u32 image_width = image.info.size.width;
     const u32 image_height = image.info.size.height;
 
-    scheduler.Record([this, set, descriptor_data, pc, gx, gy, gz, z_start, z_count,
-                      barrier_size, is_first_chunk, out_buffer, dst_image, aspect,
-                      image_width, image_height
-                      ](vk::CommandBuffer cmdbuf) {
+    scheduler.Record([this, pc, gx, gy, gz, z_dst,
+                      z_count, barrier_size,
+                      out_buffer, dst_image, aspect,
+                      image_width, image_height](vk::CommandBuffer cmdbuf) {
 
         if (dst_image == VK_NULL_HANDLE || out_buffer == VK_NULL_HANDLE) {
             return;
         }
 
-        device.GetLogical().UpdateDescriptorSet(set, *descriptor_template, descriptor_data);
-        cmdbuf.BindPipeline(VK_PIPELINE_BIND_POINT_COMPUTE, *pipeline);
-        cmdbuf.BindDescriptorSets(VK_PIPELINE_BIND_POINT_COMPUTE, *layout, 0, set, {});
+        const VkBufferMemoryBarrier war_barrier{
+            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+            .pNext = nullptr,
+            .srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+            .dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .buffer = out_buffer,
+            .offset = 0,
+            .size = VK_WHOLE_SIZE,
+        };
+        cmdbuf.PipelineBarrier(VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                               0, war_barrier);
+
         cmdbuf.PushConstants(*layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(pc), &pc);
         cmdbuf.Dispatch(gx, gy, gz);
 
@@ -1081,29 +1148,7 @@ void BlockLinearUnswizzle3DPass::UnswizzleChunk(
             .size = barrier_size,
         };
 
-        // Image layout transition
-        const VkImageMemoryBarrier pre_barrier{
-            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-            .pNext = nullptr,
-            .srcAccessMask = is_first_chunk ? VkAccessFlags{} :
-                            static_cast<VkAccessFlags>(VK_ACCESS_TRANSFER_WRITE_BIT),
-            .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-            .oldLayout = is_first_chunk ? VK_IMAGE_LAYOUT_UNDEFINED :
-                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .image = dst_image,
-            .subresourceRange = {aspect, 0, 1, 0, 1},
-        };
-
-        // Single barrier handles both buffer and image
-        cmdbuf.PipelineBarrier(
-            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-            VK_PIPELINE_STAGE_TRANSFER_BIT,
-            0,
-            nullptr, buffer_barrier, pre_barrier
-        );
+        cmdbuf.PipelineBarrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, buffer_barrier);
 
         // Copy chunk to correct Z position in image
         const VkBufferImageCopy copy{
@@ -1111,32 +1156,75 @@ void BlockLinearUnswizzle3DPass::UnswizzleChunk(
             .bufferRowLength = 0,
             .bufferImageHeight = 0,
             .imageSubresource = {aspect, 0, 0, 1},
-            .imageOffset = {0, 0, static_cast<s32>(z_start)}, // Write to correct Z
+            .imageOffset = {0, 0, static_cast<s32>(z_dst)}, // Write to correct Z
             .imageExtent = {image_width, image_height, z_count},
         };
         cmdbuf.CopyBufferToImage(out_buffer, dst_image,
-                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, copy);
+                                VK_IMAGE_LAYOUT_GENERAL, copy);
+    });
+}
 
-        // Post-copy transition
-        const VkImageMemoryBarrier post_barrier{
-            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+// I feel there was a better way to do this like a image.Clear or something but I couldn't find anything or am blind.
+// So enjoy this mess
+void BlockLinearUnswizzle3DPass::UnswizzleZeroChunk(
+    Image& image,
+    u32 blocks_x, u32 blocks_y,
+    u32 bytes_per_block,
+    u32 z_dst, u32 z_count)
+{
+    ASSERT(image.has_compute_unswizzle_buffer);
+
+    const VkBuffer out_buffer = *image.compute_unswizzle_buffer;
+    const VkImage  dst_image  = image.Handle();
+    const VkImageAspectFlags aspect = image.AspectMask();
+    const u32 image_width  = image.info.size.width;
+    const u32 image_height = image.info.size.height;
+
+    // Size of one unswizzled z-slice in the output buffer (bytes).
+    // bytes_per_block was removed here at one point but caused graphics corruption which makes sense as this is processing DXT1-7 textures and without it I'll be initilizing a buffer that is far far smaller than the actual texture
+    // I can look more into this later if at some point I want this to work with non-DXT textures
+    const VkDeviceSize output_slice_bytes =
+        static_cast<VkDeviceSize>(blocks_x) * blocks_y * bytes_per_block;
+    const VkDeviceSize fill_size = output_slice_bytes * z_count;
+
+    scheduler.Record([out_buffer, dst_image, aspect, z_dst, z_count,
+                      fill_size, image_width, image_height](vk::CommandBuffer cmdbuf) {
+
+        if (dst_image == VK_NULL_HANDLE || out_buffer == VK_NULL_HANDLE) {
+            return;
+        }
+
+        // Zero the output buffer region that CopyBufferToImage will read.
+        cmdbuf.FillBuffer(out_buffer, 0, fill_size, 0u);
+
+        const VkBufferMemoryBarrier buffer_barrier{
+            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
             .pNext = nullptr,
             .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-            .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
-            .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+            .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
             .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .image = dst_image,
-            .subresourceRange = {aspect, 0, 1, 0, 1},
+            .buffer = out_buffer,
+            .offset = 0,
+            .size = fill_size,
         };
 
         cmdbuf.PipelineBarrier(
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
             VK_PIPELINE_STAGE_TRANSFER_BIT,
-            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-            0,
-            nullptr, nullptr, post_barrier
-        );
+            0, buffer_barrier);
+
+        // Copy the zeroed buffer region into the correct Z position of the image.
+        const VkBufferImageCopy copy{
+            .bufferOffset      = 0,
+            .bufferRowLength   = 0,
+            .bufferImageHeight = 0,
+            .imageSubresource  = {aspect, 0, 0, 1},
+            .imageOffset       = {0, 0, static_cast<s32>(z_dst)},
+            .imageExtent       = {image_width, image_height, z_count},
+        };
+        cmdbuf.CopyBufferToImage(out_buffer, dst_image,
+                                VK_IMAGE_LAYOUT_GENERAL, copy);
     });
 }
 

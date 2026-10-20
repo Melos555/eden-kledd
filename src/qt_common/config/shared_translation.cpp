@@ -236,22 +236,16 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
     INSERT(Settings, gpu_clock, tr("GPU Clocks"),
            tr("Makes the game believe GPU work finishes faster than it does, so it stops lowering "
               "resolution and render distance to fit the Switch's clocks."));
-    INSERT(Settings, gpu_unswizzle_enabled, tr("GPU Unswizzle"),
-           tr("Accelerates BCn 3D texture decoding using GPU compute.\n"
-              "Disable if experiencing crashes or graphical glitches."));
-    INSERT(Settings, gpu_unswizzle_texture_size, tr("GPU Unswizzle Max Texture Size"),
-           tr("Sets the maximum size (MiB) for GPU-based texture unswizzling.\n"
-              "While the GPU is faster for medium and large textures, the CPU may be more "
-              "efficient for very small ones.\n"
-              "Adjust this to find the balance between GPU acceleration and CPU overhead."));
-    INSERT(Settings, gpu_unswizzle_stream_size, tr("GPU Unswizzle Stream Size"),
-           tr("Sets the maximum amount of texture data (in MiB) processed per frame.\n"
-              "Higher values can reduce stutter during texture loading but may impact frame "
-              "consistency."));
-    INSERT(Settings, gpu_unswizzle_chunk_size, tr("GPU Unswizzle Chunk Size"),
+    INSERT(Settings, gpu_unswizzle_chunk_size, tr("Async Unswizzle Chunk Size"),
            tr("Determines the number of depth slices processed in a single dispatch.\n"
               "Increasing this can improve throughput on high-end GPUs but may cause TDR or driver "
               "timeouts on weaker hardware."));
+    INSERT(Settings, async_unswizzle_mode, tr("Async Unswizzle Mode"),
+           tr("This option controls how chunked texture uploads are unswizzled.\n"
+              "Off: Disables asynchronous texture unswizzling.\n"
+              "CPU: Uses the CPU for asynchronous unswizzling.\n"
+              "GPU: Accelerates BCn 3D texture decoding using GPU compute (recommended).\n"
+              "Change to CPU or Off if VRAM is limited."));
 
     INSERT(Settings, use_vulkan_driver_pipeline_cache, tr("Use Vulkan pipeline cache"),
            tr("Enables GPU vendor-specific pipeline cache.\nThis option can improve shader loading "
@@ -687,6 +681,7 @@ std::unique_ptr<ComboboxTranslationMap> ComboboxEnumeration(QObject* parent) {
                               PAIR(GpuUnswizzle, Normal, tr("Normal (16 MB)")),
                               PAIR(GpuUnswizzle, Medium, tr("Medium (32 MB)")),
                               PAIR(GpuUnswizzle, High, tr("High (64 MB)")),
+                              PAIR(GpuUnswizzle, Off, tr("Off")),
                           }});
     translations->insert({Settings::EnumMetadata<Settings::GpuUnswizzleChunk>::Index(),
                           {
@@ -695,6 +690,13 @@ std::unique_ptr<ComboboxTranslationMap> ComboboxEnumeration(QObject* parent) {
                               PAIR(GpuUnswizzleChunk, Normal, tr("Normal (128)")),
                               PAIR(GpuUnswizzleChunk, Medium, tr("Medium (256)")),
                               PAIR(GpuUnswizzleChunk, High, tr("High (512)")),
+                              PAIR(GpuUnswizzleChunk, Off, tr("Off")),
+                          }});
+    translations->insert({Settings::EnumMetadata<Settings::AsyncUnswizzleMode>::Index(),
+                          {
+                              PAIR(AsyncUnswizzleMode, Off, tr("Off")),
+                              PAIR(AsyncUnswizzleMode, Cpu, tr("CPU")),
+                              PAIR(AsyncUnswizzleMode, Gpu, tr("GPU")),
                           }});
 
     translations->insert({Settings::EnumMetadata<Settings::ExtendedDynamicState>::Index(),

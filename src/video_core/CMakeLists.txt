@@ -472,6 +472,16 @@ endif()
 
 if (ARCHITECTURE_x86_64)
     target_link_libraries(video_core PUBLIC xbyak::xbyak)
+
+    target_sources(video_core PRIVATE
+            textures/decoders_avx2.cpp
+            textures/decoders_avx2.h
+    )
+    if (MSVC AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+        set_source_files_properties(textures/decoders_avx2.cpp PROPERTIES COMPILE_OPTIONS "/arch:AVX2")
+    else()
+        set_source_files_properties(textures/decoders_avx2.cpp PROPERTIES COMPILE_OPTIONS "-mavx2")
+    endif()
 endif()
 
 if (ARCHITECTURE_x86_64 OR ARCHITECTURE_arm64)

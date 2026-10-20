@@ -41,6 +41,8 @@ using VideoCommon::NUM_RT;
 using VideoCommon::Region2D;
 using VideoCommon::RenderTargets;
 
+using VideoCore::Surface::PixelFormat;
+
 struct FormatProperties {
     GLenum compatibility_class;
     bool compatibility_by_size;
@@ -122,11 +124,15 @@ public:
 
     void AccelerateImageUpload(Image& image, const StagingBufferMap& map,
                                std::span<const VideoCommon::SwizzleParameters> swizzles,
-                               u32 z_start, u32 z_count);
+                               u32 z_src_start, u32 z_image_start, u32 z_count,
+                               std::span<const u8> slice_has_data = {},
+                               bool image_already_uploaded = false);
 
     void InsertUploadMemoryBarrier();
 
     void TransitionImageLayout(Image& image) {}
+
+    void SynchronizePendingGpuWrite(Image& image) {}
 
     FormatProperties FormatInfo(VideoCommon::ImageType type, GLenum internal_format) const;
 
@@ -140,6 +146,8 @@ public:
     }
 
     bool HasNativeASTC() const noexcept;
+
+    void ReleaseSparseUnswizzleBuffer(Image& image) {}
 
     void TickFrame() {}
 

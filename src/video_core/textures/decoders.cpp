@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright 2025 Eden Emulator Project
+// SPDX-FileCopyrightText: Copyright 2026 Eden Emulator Project
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // SPDX-FileCopyrightText: Copyright 2018 yuzu Emulator Project
@@ -12,9 +12,13 @@
 #include "common/alignment.h"
 #include "common/assert.h"
 #include "common/bit_util.h"
+#include "common/cpu_features.h"
 #include "common/div_ceil.h"
 #include "video_core/gpu.h"
 #include "video_core/textures/decoders.h"
+#if defined(ARCHITECTURE_x86_64)
+#include "video_core/textures/decoders_avx2.h"
+#endif
 
 namespace Tegra::Texture {
 namespace {
@@ -58,34 +62,90 @@ void SwizzleImpl(std::span<u8> output, std::span<const u8> input, u32 width, u32
     const u32 block_depth_mask = (1U << block_depth) - 1;
     const u32 x_shift = GOB_SIZE_SHIFT + block_height + block_depth;
 
-    for (u32 slice = 0; slice < depth; ++slice) {
-        const u32 z = slice + origin_z;
-        const u32 offset_z = (z >> block_depth) * slice_size +
-                             ((z & block_depth_mask) << (GOB_SIZE_SHIFT + block_height));
-        for (u32 line = 0; line < height; ++line) {
-            const u32 y = line + origin_y;
-            const u32 swizzled_y = pdep<SWIZZLE_Y_BITS>(y);
+    if constexpr (BYTES_PER_PIXEL == 1 || BYTES_PER_PIXEL == 2 || BYTES_PER_PIXEL == 4 ||
+                 BYTES_PER_PIXEL == 8 || BYTES_PER_PIXEL == 16) {
+        static constexpr u32 RUN_BYTES = 16;
+        static constexpr u32 PIXELS_PER_RUN = RUN_BYTES / BYTES_PER_PIXEL;
 
-            const u32 block_y = y >> GOB_SIZE_Y_SHIFT;
-            const u32 offset_y = (block_y >> block_height) * block_size +
-                                 ((block_y & block_height_mask) << GOB_SIZE_SHIFT);
+        for (u32 slice = 0; slice < depth; ++slice) {
+            const u32 z = slice + origin_z;
+            const u32 offset_z = (z >> block_depth) * slice_size +
+                                 ((z & block_depth_mask) << (GOB_SIZE_SHIFT + block_height));
+            for (u32 line = 0; line < height; ++line) {
+                const u32 y = line + origin_y;
+                const u32 swizzled_y = pdep<SWIZZLE_Y_BITS>(y);
 
-            u32 swizzled_x = pdep<SWIZZLE_X_BITS>(origin_x * BYTES_PER_PIXEL);
-            for (u32 column = 0; column < width;
-                 ++column, incrpdep<SWIZZLE_X_BITS, BYTES_PER_PIXEL>(swizzled_x)) {
-                const u32 x = (column + origin_x) * BYTES_PER_PIXEL;
-                const u32 offset_x = (x >> GOB_SIZE_X_SHIFT) << x_shift;
+                const u32 block_y = y >> GOB_SIZE_Y_SHIFT;
+                const u32 offset_y = (block_y >> block_height) * block_size +
+                                     ((block_y & block_height_mask) << GOB_SIZE_SHIFT);
 
-                const u32 base_swizzled_offset = offset_z + offset_y + offset_x;
-                const u32 swizzled_offset = base_swizzled_offset + (swizzled_x | swizzled_y);
+                u32 swizzled_x = pdep<SWIZZLE_X_BITS>(origin_x * BYTES_PER_PIXEL);
+                u32 column = 0;
 
-                const u32 unswizzled_offset =
-                    slice * pitch * height + line * pitch + column * BYTES_PER_PIXEL;
+                for (; column + PIXELS_PER_RUN <= width;
+                     column += PIXELS_PER_RUN, incrpdep<SWIZZLE_X_BITS, RUN_BYTES>(swizzled_x)) {
+                    const u32 x = (column + origin_x) * BYTES_PER_PIXEL;
+                    const u32 offset_x = (x >> GOB_SIZE_X_SHIFT) << x_shift;
 
-                u8* const dst = &output[TO_LINEAR ? swizzled_offset : unswizzled_offset];
-                const u8* const src = &input[TO_LINEAR ? unswizzled_offset : swizzled_offset];
+                    const u32 base_swizzled_offset = offset_z + offset_y + offset_x;
+                    const u32 swizzled_offset = base_swizzled_offset + (swizzled_x | swizzled_y);
 
-                std::memcpy(dst, src, BYTES_PER_PIXEL);
+                    const u32 unswizzled_offset =
+                        slice * pitch * height + line * pitch + column * BYTES_PER_PIXEL;
+
+                    u8* const dst = &output[TO_LINEAR ? swizzled_offset : unswizzled_offset];
+                    const u8* const src = &input[TO_LINEAR ? unswizzled_offset : swizzled_offset];
+
+                    std::memcpy(dst, src, RUN_BYTES);
+                }
+                for (; column < width;
+                     ++column, incrpdep<SWIZZLE_X_BITS, BYTES_PER_PIXEL>(swizzled_x)) {
+                    const u32 x = (column + origin_x) * BYTES_PER_PIXEL;
+                    const u32 offset_x = (x >> GOB_SIZE_X_SHIFT) << x_shift;
+
+                    const u32 base_swizzled_offset = offset_z + offset_y + offset_x;
+                    const u32 swizzled_offset = base_swizzled_offset + (swizzled_x | swizzled_y);
+
+                    const u32 unswizzled_offset =
+                        slice * pitch * height + line * pitch + column * BYTES_PER_PIXEL;
+
+                    u8* const dst = &output[TO_LINEAR ? swizzled_offset : unswizzled_offset];
+                    const u8* const src = &input[TO_LINEAR ? unswizzled_offset : swizzled_offset];
+
+                    std::memcpy(dst, src, BYTES_PER_PIXEL);
+                }
+            }
+        }
+    } else {
+        for (u32 slice = 0; slice < depth; ++slice) {
+            const u32 z = slice + origin_z;
+            const u32 offset_z = (z >> block_depth) * slice_size +
+                                 ((z & block_depth_mask) << (GOB_SIZE_SHIFT + block_height));
+            for (u32 line = 0; line < height; ++line) {
+                const u32 y = line + origin_y;
+                const u32 swizzled_y = pdep<SWIZZLE_Y_BITS>(y);
+
+                const u32 block_y = y >> GOB_SIZE_Y_SHIFT;
+                const u32 offset_y = (block_y >> block_height) * block_size +
+                                     ((block_y & block_height_mask) << GOB_SIZE_SHIFT);
+
+                u32 swizzled_x = pdep<SWIZZLE_X_BITS>(origin_x * BYTES_PER_PIXEL);
+                for (u32 column = 0; column < width;
+                     ++column, incrpdep<SWIZZLE_X_BITS, BYTES_PER_PIXEL>(swizzled_x)) {
+                    const u32 x = (column + origin_x) * BYTES_PER_PIXEL;
+                    const u32 offset_x = (x >> GOB_SIZE_X_SHIFT) << x_shift;
+
+                    const u32 base_swizzled_offset = offset_z + offset_y + offset_x;
+                    const u32 swizzled_offset = base_swizzled_offset + (swizzled_x | swizzled_y);
+
+                    const u32 unswizzled_offset =
+                        slice * pitch * height + line * pitch + column * BYTES_PER_PIXEL;
+
+                    u8* const dst = &output[TO_LINEAR ? swizzled_offset : unswizzled_offset];
+                    const u8* const src = &input[TO_LINEAR ? unswizzled_offset : swizzled_offset];
+
+                    std::memcpy(dst, src, BYTES_PER_PIXEL);
+                }
             }
         }
     }
@@ -157,6 +217,28 @@ void SwizzleSubrectImpl(std::span<u8> output, std::span<const u8> input, u32 wid
 template <bool TO_LINEAR>
 void Swizzle(std::span<u8> output, std::span<const u8> input, u32 bytes_per_pixel, u32 width,
              u32 height, u32 depth, u32 block_height, u32 block_depth, u32 stride_alignment) {
+// This is quite ugly and has duplicate code but I want to make sure this is an actual speedup on stuff like SteamDeck
+#if defined(ARCHITECTURE_x86_64)
+    if constexpr (!TO_LINEAR) {
+        switch (bytes_per_pixel) {
+        case 1:
+        case 2:
+        case 4:
+        case 8:
+        case 16:
+            // This needs more testing but in my benchmarks this is roughly 1.5x faster than master
+            // A check for AVX-512 could be possible but my CPU doesn't support it so no way to test it
+            if (Common::g_cpu_caps.avx2) {
+                UnswizzleGobPermuteAVX2(output, input, bytes_per_pixel, width, height, depth,
+                                        block_height, block_depth, stride_alignment);
+                return;
+            }
+            break;
+        default:
+            break;
+        }
+    }
+#endif
     switch (bytes_per_pixel) {
 #define BPP_CASE(x)                                                                                \
     case x:                                                                                        \

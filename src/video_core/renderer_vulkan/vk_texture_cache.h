@@ -17,6 +17,7 @@
 #include "video_core/texture_cache/image_view_base.h"
 #include "video_core/vulkan_common/vulkan_memory_allocator.h"
 #include "video_core/vulkan_common/vulkan_wrapper.h"
+#include "video_core/delayed_destruction_ring.h"
 
 namespace Settings {
 struct ResolutionScalingInfo;
@@ -57,6 +58,8 @@ public:
     StagingBufferRef DownloadStagingBuffer(size_t size, bool deferred = false);
 
     void FreeDeferredStagingBuffer(StagingBufferRef& ref);
+
+    void ReleaseSparseUnswizzleBuffer(Image& image);
 
     void TickFrame();
 
@@ -99,7 +102,11 @@ public:
 
     void AccelerateImageUpload(Image&, const StagingBufferRef&,
                                std::span<const VideoCommon::SwizzleParameters>,
-                               u32 z_start, u32 z_count);
+                               u32 z_src_start, u32 z_image_start, u32 z_count,
+                               std::span<const u8> slice_has_data,
+                               bool image_already_uploaded);
+
+    void SynchronizePendingGpuWrite(Image& image);
 
     void InsertUploadMemoryBarrier() {}
 
@@ -164,6 +171,8 @@ public:
 
     static constexpr size_t indexing_slots = 8 * sizeof(size_t);
     std::array<vk::Buffer, indexing_slots> buffers{};
+
+    VideoCommon::DelayedDestructionRing<vk::Buffer, 8> sentenced_unswizzle_buffers;
     struct MsaaScratchKey {
         VkFormat format;
         VkImageType type;
@@ -374,6 +383,8 @@ public:
     u64 allocation_tick;
 
     friend class BlockLinearUnswizzle3DPass;
+    friend class BlockLinearUnswizzle2DPass;
+    friend class TextureCacheRuntime;
 
 private:
     bool BlitScaleHelper(bool scale_up);
@@ -389,6 +400,8 @@ private:
     vk::Buffer compute_unswizzle_buffer;
     VkDeviceSize compute_unswizzle_buffer_size = 0;
     bool has_compute_unswizzle_buffer = false;
+    bool compute_unswizzle_buffer_is_zero = false;
+    bool has_pending_gpu_write_sync = false;
 
     void AllocateComputeUnswizzleBuffer(u32 max_slices);
 

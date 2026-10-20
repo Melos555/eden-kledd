@@ -41,6 +41,7 @@ UNIFORM(6) uint block_height;
 UNIFORM(7) uint block_height_mask;
 UNIFORM(8) uint block_depth;
 UNIFORM(9) uint block_depth_mask;
+UNIFORM(10) uvec3 valid_extent;
 END_PUSH_CONSTANTS
 
 #if HAS_EXTENDED_TYPES
@@ -106,6 +107,10 @@ uvec4 ReadTexel(uint offset) {
 }
 
 void main() {
+    if (any(greaterThanEqual(gl_GlobalInvocationID, valid_extent))) {
+        return;
+    }
+
     uvec3 pos = gl_GlobalInvocationID + origin;
     pos.x <<= bytes_per_block_log2;
 

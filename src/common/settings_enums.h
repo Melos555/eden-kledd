@@ -129,6 +129,7 @@ ENUM(TimeZone, Auto, Default, Cet, Cst6Cdt, Cuba, Eet, Egypt, Eire, Est, Est5Edt
     Japan, Kwajalein, Libya, Met, Mst, Mst7Mdt, Navajo, Nz, NzChat, Poland, Portugal, Prc, Pst8Pdt,
     Roc, Rok, Singapore, Turkey, Uct, Universal, Utc, WSu, Wet, Zulu);
 ENUM(AnisotropyMode, Automatic, Default, X2, X4, X8, X16);
+ENUM(TexUnswizzleMode, Cpu, Gpu);
 ENUM(AstcDecodeMode, Cpu, Gpu, CpuAsynchronous);
 ENUM(AstcRecompression, Uncompressed, Bc1, Bc3, Bc7);
 ENUM(FramePacingMode, Target_Auto, Target_30, Target_60, Target_90, Target_120);
@@ -154,8 +155,9 @@ ENUM(AppletMode, HLE, LLE, Disabled);
 ENUM(SpirvOptimizeMode, Never, OnLoad, Always);
 ENUM(GpuClock, Normal, Boost, Overclock)
 ENUM(GpuUnswizzleSize, VerySmall, Small, Normal, Large, VeryLarge)
-ENUM(GpuUnswizzle, VeryLow, Low, Normal, Medium, High)
-ENUM(GpuUnswizzleChunk, VeryLow, Low, Normal, Medium, High)
+ENUM(GpuUnswizzle, VeryLow, Low, Normal, Medium, High, Off)
+ENUM(GpuUnswizzleChunk, VeryLow, Low, Normal, Medium, High, Off)
+ENUM(AsyncUnswizzleMode, Off, Gpu, Cpu)
 ENUM(TemperatureUnits, Celsius, Fahrenheit)
 ENUM(ExtendedDynamicState, Disabled, EDS1, EDS2, EDS3);
 ENUM(GpuLogLevel, Off, Errors, Standard, Verbose, All)

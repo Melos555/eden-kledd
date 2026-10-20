@@ -486,7 +486,8 @@ void SetCurrentThreadPriority(ThreadPriority new_priority) {
     RememberCurrentThreadNice(tid, nice_value);
 #elif defined(__linux__)
     const int nice_value = NiceValueForPriority(new_priority);
-    if (setpriority(PRIO_PROCESS, 0, nice_value) != 0) {
+    const pid_t tid = gettid();
+    if (setpriority(PRIO_PROCESS, static_cast<id_t>(tid), nice_value) != 0) {
         LOG_DEBUG(Common, "Could not set thread nice value to {}: {}", nice_value,
                   GetLastErrorMsg());
     }

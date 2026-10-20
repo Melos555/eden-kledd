@@ -4,21 +4,12 @@
 #version 430
 
 #ifdef VULKAN
-    #extension GL_EXT_shader_16bit_storage : require
-    #extension GL_EXT_shader_8bit_storage  : require
-    #define HAS_EXTENDED_TYPES 1
     #define BEGIN_PUSH_CONSTANTS layout(push_constant) uniform PushConstants {
     #define END_PUSH_CONSTANTS };
     #define UNIFORM(n)
     #define BINDING_INPUT_BUFFER   0
     #define BINDING_OUTPUT_BUFFER  1
 #else
-    #extension GL_NV_gpu_shader5 : enable
-    #ifdef GL_NV_gpu_shader5
-        #define HAS_EXTENDED_TYPES 1
-    #else
-        #define HAS_EXTENDED_TYPES 0
-    #endif
     #define BEGIN_PUSH_CONSTANTS
     #define END_PUSH_CONSTANTS
     #define UNIFORM(n) layout(location = n) uniform
@@ -42,7 +33,7 @@ layout(push_constant) uniform PushConstants {
 
     uint block_depth;           // Offset 48
     uint block_depth_mask;      // Offset 52
-    int _pad;                   // Offset 56
+    uint src_buffer_byte_bias;  // Offset 56
 
     ivec3 destination;          // Offset 60
 } pc;
@@ -64,16 +55,14 @@ END_PUSH_CONSTANTS
 #endif
 
 // --- Buffers ---
-#if HAS_EXTENDED_TYPES
-layout(binding = BINDING_INPUT_BUFFER, std430) buffer InputBufferU8   { uint8_t  u8data[];  };
-layout(binding = BINDING_INPUT_BUFFER, std430) buffer InputBufferU16  { uint16_t u16data[]; };
-#endif
-layout(binding = BINDING_INPUT_BUFFER, std430) buffer InputBufferU32  { uint   u32data[];  };
 layout(binding = BINDING_INPUT_BUFFER, std430) buffer InputBufferU64  { uvec2  u64data[];  };
 layout(binding = BINDING_INPUT_BUFFER, std430) buffer InputBufferU128 { uvec4  u128data[]; };
 
-layout(binding = BINDING_OUTPUT_BUFFER, std430) writeonly buffer OutputBuffer {
-    uint out_u32[];
+layout(binding = BINDING_OUTPUT_BUFFER, std430) writeonly buffer OutputBufferU64 {
+    uvec2 out_u64[];
+};
+layout(binding = BINDING_OUTPUT_BUFFER, std430) writeonly buffer OutputBufferU128 {
+    uvec4 out_u128[];
 };
 
 // --- Constants ---
@@ -107,20 +96,10 @@ uint SwizzleOffset(uvec2 pos) {
 }
 
 uvec4 ReadTexel(uint offset) {
-    uint bpl2 = pc.bytes_per_block_log2;
-    switch (bpl2) {
-#if HAS_EXTENDED_TYPES
-        case 0u: return uvec4(u8data[offset], 0u, 0u, 0u);
-        case 1u: return uvec4(u16data[offset / 2u], 0u, 0u, 0u);
-#else
-        case 0u: return uvec4(bitfieldExtract(u32data[offset / 4u], int((offset * 8u) & 24u), 8), 0u, 0u, 0u);
-        case 1u: return uvec4(bitfieldExtract(u32data[offset / 4u], int((offset * 8u) & 16u), 16), 0u, 0u, 0u);
-#endif
-        case 2u: return uvec4(u32data[offset / 4u], 0u, 0u, 0u);
-        case 3u: return uvec4(u64data[offset / 8u], 0u, 0u);
-        case 4u: return u128data[offset / 16u];
+    if (pc.bytes_per_block_log2 == 4u) {
+        return u128data[offset / 16u];
     }
-    return uvec4(0u);
+    return uvec4(u64data[offset / 8u], 0u, 0u);
 }
 
 void main() {
@@ -146,6 +125,7 @@ void main() {
     offset += (block_y & pc.block_height_mask) << GOB_SIZE_SHIFT;
     offset += (pos.x >> GOB_SIZE_X_SHIFT) << pc.x_shift;
     offset += swizzle;
+    offset -= pc.src_buffer_byte_bias;
 
     uvec4 texel = ReadTexel(offset);
 
@@ -153,12 +133,10 @@ void main() {
     uint block_index = block_coord.x +
                        (block_coord.y * pc.blocks_dim.x) +
                        (block_coord.z * pc.blocks_dim.x * pc.blocks_dim.y);
-    uint out_idx = block_index * (bytes_per_block >> 2u);
 
-    out_u32[out_idx]     = texel.x;
-    out_u32[out_idx + 1u] = texel.y;
-    if (pc.bytes_per_block_log2 == 4u) {
-        out_u32[out_idx + 2u] = texel.z;
-        out_u32[out_idx + 3u] = texel.w;
+    if (pc.bytes_per_block_log2 == 4u) {         // 16 bytes (BC3/BC7)
+        out_u128[block_index] = texel;
+    } else {                                     // 8 bytes (BC1/BC4)
+        out_u64[block_index] = texel.xy;
     }
 }

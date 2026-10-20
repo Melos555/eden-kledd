@@ -140,6 +140,7 @@ void UtilShaders::BlockLinearUpload2D(Image& image, const StagingBufferMap& map,
         glUniform1ui(5, params.x_shift);
         glUniform1ui(6, params.block_height);
         glUniform1ui(7, params.block_height_mask);
+        glUniform3ui(8, num_tiles.width, num_tiles.height, image.info.resources.layers);
         glBindBufferRange(GL_SHADER_STORAGE_BUFFER, BINDING_INPUT_BUFFER, map.buffer, input_offset,
                           image.guest_size_bytes - swizzle.buffer_offset);
         glBindImageTexture(BINDING_OUTPUT_IMAGE, image.StorageHandle(), swizzle.level, GL_TRUE, 0,
@@ -178,6 +179,7 @@ void UtilShaders::BlockLinearUpload3D(Image& image, const StagingBufferMap& map,
         glUniform1ui(7, params.block_height_mask);
         glUniform1ui(8, params.block_depth);
         glUniform1ui(9, params.block_depth_mask);
+        glUniform3ui(10, num_tiles.width, num_tiles.height, num_tiles.depth);
         glBindBufferRange(GL_SHADER_STORAGE_BUFFER, BINDING_INPUT_BUFFER, map.buffer, input_offset,
                           image.guest_size_bytes - swizzle.buffer_offset);
         glBindImageTexture(BINDING_OUTPUT_IMAGE, image.StorageHandle(), swizzle.level, GL_TRUE, 0,

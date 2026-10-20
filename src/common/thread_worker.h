@@ -105,6 +105,10 @@ public:
         condition.notify_one();
     }
 
+    size_t NumWorkers() const noexcept {
+        return threads.size();
+    }
+
     void WaitForRequests(std::stop_token stop_token = {}) {
         std::stop_callback callback(stop_token, [this] {
             for (auto& thread : threads) {
