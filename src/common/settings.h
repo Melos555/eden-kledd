@@ -661,6 +661,9 @@ struct Values {
     // eden-kledd: log frames that take too long, with texture/pipeline work done in them
     SwitchableSetting<bool> kledd_frame_log{linkage, false, "kledd_frame_log",
                                             Category::RendererHacks};
+    // eden-kledd: keep recently used textures longer before the garbage collector deletes them
+    SwitchableSetting<bool> kledd_gentle_gc{linkage, false, "kledd_gentle_gc",
+                                            Category::RendererHacks};
 
     SwitchableSetting<bool> emulate_bgr565{linkage, false, "emulate_bgr565",
                                             Category::RendererHacks};

@@ -126,6 +126,11 @@ void TextureCache<P>::RunGarbageCollector() {
         high_priority_mode = total_used_memory >= expected_memory;
         aggressive_mode = allow_aggressive && total_used_memory >= critical_memory;
         ticks_to_destroy = aggressive_mode ? 10ULL : high_priority_mode ? 25ULL : 50ULL;
+        if (Settings::values.kledd_gentle_gc.GetValue()) {
+            // eden-kledd: 10 frames is ~0.1 s at 100 FPS, so turning the camera away and back
+            // deletes and re-uploads the same textures (thrashing). Keep them a few seconds.
+            ticks_to_destroy = aggressive_mode ? 240ULL : high_priority_mode ? 480ULL : 900ULL;
+        }
         num_iterations = aggressive_mode ? 40 : (high_priority_mode ? 20 : 10);
     };
     const auto Cleanup = [this, &num_iterations, &high_priority_mode, &aggressive_mode](ImageId image_id) {

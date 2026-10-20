@@ -282,6 +282,9 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
     INSERT(Settings, kledd_frame_log, tr("[Kledd] Long frame log"),
            tr("Writes a log line for every frame that takes longer than 50 ms, listing the "
               "texture and shader work done in it.\nFor debugging only."));
+    INSERT(Settings, kledd_gentle_gc, tr("[Kledd] Gentle texture cleanup"),
+           tr("When texture memory is high, only delete textures that have not been used for a "
+              "few seconds, instead of a few frames.\nExperimental: may use more VRAM."));
 
     // Renderer (Extensions)
     INSERT(Settings, dyna_state, tr("Extended Dynamic State"),
