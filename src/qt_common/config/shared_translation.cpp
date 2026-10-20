@@ -285,6 +285,10 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
     INSERT(Settings, kledd_gentle_gc, tr("[Kledd] Gentle texture cleanup"),
            tr("When texture memory is high, only delete textures that have not been used for a "
               "few seconds, instead of a few frames.\nExperimental: may use more VRAM."));
+    INSERT(Settings, kledd_gpu_bc7, tr("[Kledd] GPU BC7 encoding"),
+           tr("When ASTC Recompression is BC7 and ASTC Decoding is GPU, decode and re-encode "
+              "textures on the GPU instead of the CPU (no CPU load, no audio crackle).\n"
+              "Experimental, Vulkan only."));
 
     // Renderer (Extensions)
     INSERT(Settings, dyna_state, tr("Extended Dynamic State"),

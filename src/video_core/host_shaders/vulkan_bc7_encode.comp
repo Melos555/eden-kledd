@@ -1,0 +1,198 @@
+// SPDX-FileCopyrightText: Copyright 2026 Eden Emulator Project
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+// eden-kledd: encodes an RGBA8 image into BC7 blocks on the GPU (mode 6 only: one subset,
+// 7-bit RGBA endpoints with p-bits, 4-bit indices). One invocation per 4x4 block.
+
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(push_constant) uniform PushConstants {
+    uvec2 size;          // texels of this mip level
+    uint blocks_x;       // ceil(size.x / 4)
+    uint blocks_y;       // ceil(size.y / 4)
+    uint layers;
+    uint out_offset;     // in blocks (uvec4)
+};
+
+layout(binding = 0, std430) writeonly restrict buffer OutputBlocks {
+    uvec4 out_blocks[];
+};
+
+layout(binding = 1, rgba8) uniform readonly restrict image2DArray src_image;
+
+const float WEIGHTS[16] = float[16](0.0, 4.0, 9.0, 13.0, 17.0, 21.0, 26.0, 30.0, 34.0, 38.0,
+                                    43.0, 47.0, 51.0, 55.0, 60.0, 64.0);
+
+vec4 px[16];
+
+uvec4 bits_out;
+uint bit_pos;
+
+void PutBits(uint value, uint count) {
+    value &= (1u << count) - 1u;
+    const uint word = bit_pos >> 5;
+    const uint shift = bit_pos & 31u;
+    bits_out[word] |= value << shift;
+    if (shift + count > 32u) {
+        bits_out[word + 1u] |= value >> (32u - shift);
+    }
+    bit_pos += count;
+}
+
+// Evaluates one endpoint pair for the given p-bits. Returns the total error, fills idx.
+float Evaluate(vec4 e0, vec4 e1, uint pb0, uint pb1, out uvec4 q0, out uvec4 q1,
+               inout uint idx[16]) {
+    q0 = uvec4(clamp(round((e0 - float(pb0)) * 0.5), vec4(0.0), vec4(127.0)));
+    q1 = uvec4(clamp(round((e1 - float(pb1)) * 0.5), vec4(0.0), vec4(127.0)));
+    const vec4 E0 = vec4(q0 * 2u + pb0);
+    const vec4 E1 = vec4(q1 * 2u + pb1);
+    vec4 pal[16];
+    for (int i = 0; i < 16; ++i) {
+        pal[i] = floor(((64.0 - WEIGHTS[i]) * E0 + WEIGHTS[i] * E1 + 32.0) / 64.0);
+    }
+    float total = 0.0;
+    for (int p = 0; p < 16; ++p) {
+        float best = 1e30;
+        uint best_i = 0u;
+        for (int i = 0; i < 16; ++i) {
+            const vec4 d = px[p] - pal[i];
+            const float err = dot(d, d);
+            if (err < best) {
+                best = err;
+                best_i = uint(i);
+            }
+        }
+        idx[p] = best_i;
+        total += best;
+    }
+    return total;
+}
+
+void main() {
+    const uvec3 gid = gl_GlobalInvocationID;
+    if (gid.x >= blocks_x || gid.y >= blocks_y || gid.z >= layers) {
+        return;
+    }
+    const ivec2 base = ivec2(gid.xy * 4u);
+    const ivec2 max_coord = ivec2(size) - 1;
+    vec4 mean = vec4(0.0);
+    vec4 lo = vec4(255.0);
+    vec4 hi = vec4(0.0);
+    for (int j = 0; j < 4; ++j) {
+        for (int i = 0; i < 4; ++i) {
+            const ivec2 c = min(base + ivec2(i, j), max_coord);
+            const vec4 v = imageLoad(src_image, ivec3(c, int(gid.z))) * 255.0;
+            px[j * 4 + i] = v;
+            mean += v;
+            lo = min(lo, v);
+            hi = max(hi, v);
+        }
+    }
+    mean *= 1.0 / 16.0;
+
+    // Principal axis by power iteration on the 4x4 covariance matrix
+    mat4 cov = mat4(0.0);
+    for (int p = 0; p < 16; ++p) {
+        const vec4 d = px[p] - mean;
+        cov += outerProduct(d, d);
+    }
+    vec4 axis = hi - lo;
+    for (int it = 0; it < 8; ++it) {
+        axis = cov * axis;
+        const float len = length(axis);
+        axis = len > 1e-6 ? axis / len : vec4(0.57735, 0.57735, 0.57735, 0.0);
+    }
+    float tmin = 1e30;
+    float tmax = -1e30;
+    for (int p = 0; p < 16; ++p) {
+        const float t = dot(px[p] - mean, axis);
+        tmin = min(tmin, t);
+        tmax = max(tmax, t);
+    }
+    vec4 e0 = clamp(mean + axis * tmin, vec4(0.0), vec4(255.0));
+    vec4 e1 = clamp(mean + axis * tmax, vec4(0.0), vec4(255.0));
+
+    float best_err = 1e30;
+    uvec4 best_q0 = uvec4(0u);
+    uvec4 best_q1 = uvec4(0u);
+    uint best_pb0 = 0u;
+    uint best_pb1 = 0u;
+    uint best_idx[16];
+    uint idx[16];
+    for (int p = 0; p < 16; ++p) {
+        best_idx[p] = 0u;
+        idx[p] = 0u;
+    }
+
+    for (int pass = 0; pass < 2; ++pass) {
+        for (uint pb = 0u; pb < 4u; ++pb) {
+            uvec4 q0;
+            uvec4 q1;
+            const float err = Evaluate(e0, e1, pb & 1u, pb >> 1, q0, q1, idx);
+            if (err < best_err) {
+                best_err = err;
+                best_q0 = q0;
+                best_q1 = q1;
+                best_pb0 = pb & 1u;
+                best_pb1 = pb >> 1;
+                for (int p = 0; p < 16; ++p) {
+                    best_idx[p] = idx[p];
+                }
+            }
+        }
+        if (pass == 1) {
+            break;
+        }
+        // Least-squares refit of the endpoints for the chosen indices
+        float aa = 0.0;
+        float ab = 0.0;
+        float bb = 0.0;
+        vec4 ax = vec4(0.0);
+        vec4 bx = vec4(0.0);
+        for (int p = 0; p < 16; ++p) {
+            const float w = WEIGHTS[best_idx[p]] / 64.0;
+            const float a = 1.0 - w;
+            aa += a * a;
+            ab += a * w;
+            bb += w * w;
+            ax += a * px[p];
+            bx += w * px[p];
+        }
+        const float det = aa * bb - ab * ab;
+        if (abs(det) > 1e-6) {
+            const float inv = 1.0 / det;
+            e0 = clamp((ax * bb - bx * ab) * inv, vec4(0.0), vec4(255.0));
+            e1 = clamp((bx * aa - ax * ab) * inv, vec4(0.0), vec4(255.0));
+        }
+    }
+
+    // The anchor (first) index is stored with 3 bits, so its top bit must be 0
+    if (best_idx[0] >= 8u) {
+        const uvec4 tq = best_q0;
+        best_q0 = best_q1;
+        best_q1 = tq;
+        const uint tp = best_pb0;
+        best_pb0 = best_pb1;
+        best_pb1 = tp;
+        for (int p = 0; p < 16; ++p) {
+            best_idx[p] = 15u - best_idx[p];
+        }
+    }
+
+    bits_out = uvec4(0u);
+    bit_pos = 0u;
+    PutBits(1u << 6, 7); // mode 6
+    for (int c = 0; c < 4; ++c) {
+        PutBits(best_q0[c], 7);
+        PutBits(best_q1[c], 7);
+    }
+    PutBits(best_pb0, 1);
+    PutBits(best_pb1, 1);
+    PutBits(best_idx[0], 3);
+    for (int p = 1; p < 16; ++p) {
+        PutBits(best_idx[p], 4);
+    }
+    out_blocks[out_offset + (gid.z * blocks_y + gid.y) * blocks_x + gid.x] = bits_out;
+}

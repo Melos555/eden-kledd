@@ -155,9 +155,19 @@ constexpr VkBorderColor ConvertBorderColor(const std::array<float, 4>& color) {
     if (Settings::values.accelerate_astc.GetValue() != Settings::AstcDecodeMode::Gpu) {
         return false;
     }
-    return Settings::values.astc_recompression.GetValue() ==
-              Settings::AstcRecompression::Uncompressed &&
-          info.size.depth == 1;
+    const auto recompression = Settings::values.astc_recompression.GetValue();
+    // eden-kledd: BC7 can also take the GPU path (decode + encode on the GPU)
+    const bool gpu_bc7 = recompression == Settings::AstcRecompression::Bc7 &&
+                         Settings::values.kledd_gpu_bc7.GetValue();
+    return (recompression == Settings::AstcRecompression::Uncompressed || gpu_bc7) &&
+           info.size.depth == 1;
+}
+
+[[nodiscard]] bool UsesAstcStorageViews(const Device& device, const ImageInfo& info) {
+    // The RGBA8 storage views are only valid when the image itself is RGBA8 (uncompressed)
+    return WillUseAcceleratedAstcDecode(device, info) &&
+           Settings::values.astc_recompression.GetValue() ==
+               Settings::AstcRecompression::Uncompressed;
 }
 
 [[nodiscard]] VkImageCreateInfo MakeImageCreateInfo(const Device& device, const ImageInfo& info,
@@ -1904,7 +1914,7 @@ Image::Image(TextureCacheRuntime& runtime_, const ImageInfo& info_, GPUVAddr gpu
     }
     current_image = &Image::original_image;
     storage_image_views.resize(info.resources.levels);
-    if (WillUseAcceleratedAstcDecode(runtime->device, info)) {
+    if (UsesAstcStorageViews(runtime->device, info)) {
         const auto& device = runtime->device.GetLogical();
         const VkFormat storage_format = VK_FORMAT_A8B8G8R8_UNORM_PACK32;
         for (s32 level = 0; level < info.resources.levels; ++level) {
@@ -2362,7 +2372,7 @@ VkImageView Image::StorageImageView(s32 level) noexcept {
     if (!view) {
         auto format_info =
             MaxwellToVK::SurfaceFormat(runtime->device, FormatType::Optimal, true, info.format);
-        if (WillUseAcceleratedAstcDecode(runtime->device, info)) {
+        if (UsesAstcStorageViews(runtime->device, info)) {
             format_info.format = VK_FORMAT_A8B8G8R8_UNORM_PACK32;
         }
         view = MakeStorageView(runtime->device.GetLogical(), level, *(this->*current_image),
