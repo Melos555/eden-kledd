@@ -41,8 +41,8 @@ if (NOT TARGET enet::enet)
 endif()
 
 # stb
-add_library(stb stb/stb_dxt.cpp)
-target_include_directories(stb PUBLIC ./stb)
+add_library(stb stb/stb_dxt.cpp bc7enc/bc7enc.cpp)
+target_include_directories(stb PUBLIC ./stb ./bc7enc)
 
 if (NOT TARGET stb::headers)
     add_library(stb::headers ALIAS stb)
