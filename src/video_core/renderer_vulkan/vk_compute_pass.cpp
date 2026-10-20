@@ -665,8 +665,8 @@ void ASTCDecoderPass::AssembleBC7(Image& image, const StagingBufferRef& map,
     std::vector<VkDeviceSize> level_offsets(levels, 0);
     VkDeviceSize total_size = 0;
     for (u32 level = 0; level < levels; ++level) {
-        const u32 w = std::max(width >> level, 1U);
-        const u32 h = std::max(height >> level, 1U);
+        const u32 w = (std::max)(width >> level, 1U);
+        const u32 h = (std::max)(height >> level, 1U);
         level_offsets[level] = total_size;
         total_size += static_cast<VkDeviceSize>(Common::DivCeil(w, 4U)) *
                       Common::DivCeil(h, 4U) * layers * 16;
@@ -716,8 +716,8 @@ void ASTCDecoderPass::AssembleBC7(Image& image, const StagingBufferRef& map,
     std::vector<VkBufferImageCopy> copies;
     for (const VideoCommon::SwizzleParameters& swizzle : swizzles) {
         const u32 level = static_cast<u32>(swizzle.level);
-        const u32 w = std::max(width >> level, 1U);
-        const u32 h = std::max(height >> level, 1U);
+        const u32 w = (std::max)(width >> level, 1U);
+        const u32 h = (std::max)(height >> level, 1U);
         const VkDeviceSize level_size = static_cast<VkDeviceSize>(Common::DivCeil(w, 4U)) *
                                         Common::DivCeil(h, 4U) * layers * 16;
         bc7_encode_pass->Encode(*temp_views[level], w, h, layers, out.buffer,
