@@ -123,6 +123,24 @@ private:
     ComputePassDescriptorQueue& compute_pass_descriptor_queue;
 };
 
+/// eden-kledd: encodes an RGBA8 storage image into BC7 blocks in a storage buffer (mode 6)
+class BC7EncodePass final : public ComputePass {
+public:
+    explicit BC7EncodePass(const Device& device_, Scheduler& scheduler_,
+                           DescriptorPool& descriptor_pool_,
+                           ComputePassDescriptorQueue& compute_pass_descriptor_queue_);
+    ~BC7EncodePass();
+
+    /// Records the encode of one mip level. Must be called outside a render pass with the
+    /// source view in GENERAL layout. Writes blocks starting at out_offset (in bytes).
+    void Encode(VkImageView src_view, u32 width, u32 height, u32 layers, VkBuffer out_buffer,
+                VkDeviceSize out_offset, VkDeviceSize out_size);
+
+private:
+    Scheduler& scheduler;
+    ComputePassDescriptorQueue& compute_pass_descriptor_queue;
+};
+
 class ASTCDecoderPass final : public ComputePass {
 public:
     explicit ASTCDecoderPass(const Device& device_, Scheduler& scheduler_,
@@ -139,12 +157,21 @@ public:
                   std::span<const std::pair<u32, u32>> rows = {});
 
 private:
+    /// eden-kledd: decode ASTC into a temporary RGBA8 image, then encode BC7 on the GPU
+    void AssembleBC7(Image& image, const StagingBufferRef& map,
+                     std::span<const VideoCommon::SwizzleParameters> swizzles);
+
+    void RecordDecode(Image& image, const StagingBufferRef& map,
+                      const VideoCommon::SwizzleParameters& swizzle, VkImageView dst_view);
+
     Scheduler& scheduler;
     StagingBufferPool& staging_buffer_pool;
     ComputePassDescriptorQueue& compute_pass_descriptor_queue;
     MemoryAllocator& memory_allocator;
     /// Default subgroup size, for blocks too large to gain from the wave32 pipeline.
     vk::Pipeline large_block_pipeline;
+    DescriptorPool& descriptor_pool;
+    std::optional<BC7EncodePass> bc7_encode_pass;
 };
 
 class BlockLinearUnswizzle2DBufferPass final : public ComputePass {

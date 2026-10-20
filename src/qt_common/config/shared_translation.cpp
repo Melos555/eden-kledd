@@ -306,6 +306,10 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
            tr("Enables access to previous buffer states.\nThis option may improve rendering "
               "quality and performance consistency in some games."));
     INSERT(Settings, fix_bloom_effects, tr("Fix bloom effects"), tr("Removes bloom in Burnout."));
+    INSERT(Settings, kledd_gpu_bc7, tr("[Kledd] GPU BC7 encoding"),
+           tr("When ASTC Recompression is BC7 and ASTC Decoding is GPU, decode and re-encode "
+              "textures on the GPU instead of the CPU (no CPU load, no audio crackle).\n"
+              "Experimental, Vulkan only."));
 
     // Renderer (Extensions)
     INSERT(Settings, dyna_state, tr("Extended Dynamic State"),
