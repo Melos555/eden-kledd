@@ -64,7 +64,7 @@ jobs:
           $code = $LASTEXITCODE
           if ($code -ne 0) {
             $lines = Get-Content build.log
-            $errs = $lines | Select-String -Pattern 'error|FAILED' | Select-Object -First 25 | ForEach-Object { $_.Line }
+            $errs = $lines | Select-String -Pattern '\): error|: error:|fatal error|error C[0-9]+|error LNK' -Context 0,2 | Select-Object -First 15 | ForEach-Object { (@($_.Line) + $_.Context.PostContext) | ForEach-Object { if ($_.Length -gt 400) { $_.Substring(0,400) } else { $_ } } }
             $tail = $lines | Select-Object -Last 40
             $msg = (@('ERRORS:') + $errs + @('TAIL:') + $tail) -join "`n"
             $msg = $msg.Replace('%','%25').Replace("`r",'').Replace("`n",'%0A')
