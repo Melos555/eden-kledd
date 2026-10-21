@@ -34,7 +34,11 @@ using TextureInstVector = boost::container::small_vector<TextureInst, 24>;
 
 constexpr u32 DESCRIPTOR_SIZE = 8;
 constexpr u32 DESCRIPTOR_SIZE_SHIFT = u32(std::countr_zero(DESCRIPTOR_SIZE));
-constexpr u32 DESCRIPTOR_MAX_COUNT = 1024;
+// eden-kledd: adjustable via "[Kledd] Max descriptors per array" (default 1024 = Eden's value).
+// Idea from John's "Adjustable Descriptor" test commit (MP4 needs at least 128).
+u32 DESCRIPTOR_MAX_COUNT() {
+    return std::clamp<u32>(Settings::values.kledd_descriptor_max.GetValue(), 32U, 1024U);
+}
 
 u32 DynamicDescriptorSizeShift(const IR::U32& dynamic_offset) {
     const IR::Inst* const inst = dynamic_offset.InstRecursive();
@@ -48,7 +52,9 @@ u32 DynamicDescriptorSizeShift(const IR::U32& dynamic_offset) {
 }
 
 /// Largest constant buffer span assumed when sizing dynamic descriptor arrays
-constexpr u32 MAX_CBUF_SIZE = 16 * DESCRIPTOR_MAX_COUNT;
+u32 MAX_CBUF_SIZE() {
+    return 16 * DESCRIPTOR_MAX_COUNT();
+}
 
 // Descriptor stride fix by Amicuchu (Eden PR #4549), ported behind the
 // "[Kledd] Descriptor stride fix" toggle. With the toggle off, behaviour is unchanged.
@@ -72,7 +78,7 @@ std::pair<IR::U32, u32> DynamicDescriptorIndex(const IR::U32& dynamic_offset) {
                     const IR::Value factor{inst->Arg(arg)};
                     // Handles are 32-bit words
                     if (factor.IsImmediate() && factor.U32() != 0 && factor.U32() % 4 == 0 &&
-                        factor.U32() < MAX_CBUF_SIZE) {
+                        factor.U32() < MAX_CBUF_SIZE()) {
                         return {IR::U32{inst->Arg(1 - arg)}, factor.U32()};
                     }
                 }
@@ -110,7 +116,7 @@ u32 DynamicIndexBound(const IR::U32& index) {
         return 32;
     case IR::Opcode::BitwiseAnd32:
     case IR::Opcode::UMin32:
-        if (const auto limit{immediate_arg()}; limit && *limit < MAX_CBUF_SIZE) {
+        if (const auto limit{immediate_arg()}; limit && *limit < MAX_CBUF_SIZE()) {
             return *limit + 1;
         }
         return 0;
@@ -159,7 +165,7 @@ u32 DynamicSampledTextureCap(const Info& info, const HostTranslateInfo& host_inf
         auto const resource_cap = resource_budget / dynamic_arrays;
         return (std::max)(1U, (std::min)(sampled_cap, resource_cap));
     }
-    return (std::min)({DESCRIPTOR_MAX_COUNT, sampled_limit, resource_limit});
+    return (std::min)({DESCRIPTOR_MAX_COUNT(), sampled_limit, resource_limit});
 }
 
 IR::Opcode IndexedInstruction(const IR::Inst& inst) {
@@ -533,7 +539,7 @@ std::optional<ConstBufferAddr> TryGetConstBuffer(const IR::Inst* inst, Environme
         .secondary_offset = 0,
         .secondary_shift_left = 0,
         .dynamic_offset = dynamic_offset,
-        .count = DynamicDescriptorCount(base_offset, stride, (std::min)({DESCRIPTOR_MAX_COUNT, sampled_limit, resource_limit})),
+        .count = DynamicDescriptorCount(base_offset, stride, (std::min)({DESCRIPTOR_MAX_COUNT(), sampled_limit, resource_limit})),
         .has_secondary = false,
     };
 }
