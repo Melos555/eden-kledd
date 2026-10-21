@@ -31,7 +31,8 @@ jobs:
             zlib1g-dev libva-dev libvdpau-dev qt6-tools-dev qt6-charts-dev libvulkan-dev \
             spirv-tools spirv-headers libusb-1.0-0-dev libxbyak-dev libboost-dev \
             libboost-fiber-dev libboost-context-dev libsdl3-dev libopus-dev libasound2t64 \
-            vulkan-utility-libraries-dev
+            vulkan-utility-libraries-dev qmake6 qt6-qpa-plugins qt6-wayland libqt6svg6 \
+            libfuse2t64 squashfs-tools desktop-file-utils
 
       - uses: actions/checkout@v4
 
@@ -39,7 +40,8 @@ jobs:
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           set +e
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DYUZU_TESTS=OFF > configure.log 2>&1
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DYUZU_TESTS=OFF \
+            -DCMAKE_INSTALL_PREFIX=/usr > configure.log 2>&1
           code=$?
           if [ $code -ne 0 ]; then
             msg=$(grep -E -A6 'CMake Error|Could NOT|not found' configure.log | head -40)
@@ -68,7 +70,40 @@ jobs:
           cp build/bin/eden* out/ 2>/dev/null || cp -r build/bin/* out/
           tar -C out -czf eden-kledd-linux-x86_64.tar.gz .
 
+      - name: Package AppImage
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+          QMAKE: /usr/bin/qmake6
+          OUTPUT: eden-kledd-x86_64.AppImage
+        run: |
+          set +e
+          {
+            set -x
+            DESTDIR="$PWD/AppDir" cmake --install build &&
+            curl -fsSLo linuxdeploy https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage &&
+            curl -fsSLo linuxdeploy-plugin-qt https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage &&
+            chmod +x linuxdeploy linuxdeploy-plugin-qt &&
+            ./linuxdeploy --appdir AppDir --plugin qt --output appimage \
+              -e AppDir/usr/bin/eden \
+              -d AppDir/usr/share/applications/dev.eden_emu.eden.desktop \
+              -i AppDir/usr/share/icons/hicolor/scalable/apps/dev.eden_emu.eden.svg
+          } > appimage.log 2>&1
+          code=$?
+          if [ $code -ne 0 ] || [ ! -f eden-kledd-x86_64.AppImage ]; then
+            msg=$(grep -E -i -B2 -A3 'error|failed|not found' appimage.log | tail -40)
+            [ -z "$msg" ] && msg=$(tail -40 appimage.log)
+            msg=${msg//'%'/'%25'}; msg=${msg//$'\n'/'%0A'}
+            echo "::error title=AppImage failed::$msg"
+            exit 1
+          fi
+          ls -la eden-kledd-x86_64.AppImage
+
       - uses: actions/upload-artifact@v4
         with:
           name: eden-kledd-linux-x86_64
           path: eden-kledd-linux-x86_64.tar.gz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eden-kledd-linux-appimage
+          path: eden-kledd-x86_64.AppImage
