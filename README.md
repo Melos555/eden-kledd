@@ -12,6 +12,16 @@ Not affiliated with or endorsed by the Eden team. Please don't report bugs from 
 > The only official Eden source is [git.eden-emu.dev/eden-emu/eden](https://git.eden-emu.dev/eden-emu/eden).
 > This repository is a personal test fork. Everything below the line is Eden's own README, kept for credit and reference.
 
+## Download
+
+<p align="center">
+  <a href="https://github.com/Melos555/eden-kledd/releases/latest"><b>⬇️ Download the latest release (Windows / Linux)</b></a>
+</p>
+
+- **Windows:** `eden-kledd-scanfix-windows.zip`. Unzip anywhere and run `eden.exe`. It uses your normal Eden user folder (`%APPDATA%\eden`), so settings, keys and games carry over.
+- **Linux:** `eden-kledd-scanfix-linux-x86_64.tar.gz`. Built on Ubuntu 26.04; needs the usual Eden runtime libraries (Qt 6, SDL2 etc.).
+- The release build has the scan fix **always on**, with no toggle. No login needed to download.
+
 ## What this fork changes
 
 **Fixes the Metroid Prime 4: Beyond scan visor jumping between targets / locking onto things behind walls.**
@@ -21,17 +31,22 @@ In Eden's Vulkan backend, downloading a `D24S8` image created the depth and sten
 writes overlapped and the object IDs came back garbled. This fork downloads depth and stencil into separate regions, merges them back into
 the guest format on the CPU, and does it asynchronously and only for the requested region, so there's no FPS cost.
 
-The fix is behind two options under **Properties → Ext. Graphics**:
-- `[Kledd] DMA readback fix`: turns the fix on
-- `[Kledd] DMA readback log`: debug logging (leave off for normal play)
+In the **release build** (branch `kledd-fix-always-on`) the fix is always on. The test builds on other branches have it behind
+`[Kledd] DMA readback fix` (plus `[Kledd] DMA readback log` for debugging) under **Graphics → Extras**.
+
+Experimental extras (gentle texture cleanup, GPU BC7 recompression, frame logging) live on the `kledd-lab` test branch only. They are
+**not** in the release.
 
 Tested on Windows with an RTX 2060 Mobile (6GB VRAM), in both Accurate and Fast GPU mode.
 
 ## Verify the build yourself
 
 - All changes are in this repository's commit history, on top of upstream Eden snapshot `d8c6c59b6`.
-- Windows builds are made by **GitHub Actions** from this public source (see the [Actions tab](../../actions) and
-  `.github/workflows/build-windows.yml`). Nothing is built or uploaded by hand.
+- Builds are made by **GitHub Actions** from this public source (see the [Actions tab](../../actions) and
+  `.github/workflows/`). Nothing is compiled by hand.
+- The `v0.1-scanfix` release files are the Actions artifacts of runs
+  [39457072636](../../actions/runs/39457072636) (Windows) and [39457537419](../../actions/runs/39457537419) (Linux),
+  repackaged into a zip / renamed and uploaded to the release.
 - The commit hash in Eden's title bar matches the commit the build came from.
 
 ## Credits
