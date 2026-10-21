@@ -285,6 +285,11 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
     INSERT(Settings, kledd_gentle_gc, tr("[Kledd] Gentle texture cleanup"),
            tr("When texture memory is high, only delete textures that have not been used for a "
               "few seconds, instead of a few frames.\nExperimental: may use more VRAM."));
+    INSERT(Settings, kledd_descriptor_stride_fix,
+           tr("[Kledd] Descriptor stride fix (Amicuchu, PR #4549)"),
+           tr("Indexes texture handle arrays inside structs by their real stride instead of the "
+              "power-of-two part of it, so fewer descriptors are bound per draw.\n"
+              "By Amicuchu, from Eden PR #4549. Experimental."));
     INSERT(Settings, kledd_gc_seconds, tr("[Kledd] Texture cleanup: keep for (seconds)"),
            tr("Counts real seconds instead of frames before unused textures may be deleted "
               "(when memory is tight; 2x and 4x longer when it is not). 0 = off.\n"

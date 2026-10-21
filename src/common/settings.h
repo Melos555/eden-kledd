@@ -664,6 +664,10 @@ struct Values {
     // eden-kledd: keep recently used textures longer before the garbage collector deletes them
     SwitchableSetting<bool> kledd_gentle_gc{linkage, false, "kledd_gentle_gc",
                                             Category::RendererHacks};
+    // eden-kledd: descriptor stride fix by Amicuchu (Eden PR #4549), as a toggle for testing
+    SwitchableSetting<bool> kledd_descriptor_stride_fix{linkage, false,
+                                                        "kledd_descriptor_stride_fix",
+                                                        Category::RendererHacks};
     // eden-kledd: keep unused textures at least this many seconds (0 = off, count frames)
     SwitchableSetting<u32, true> kledd_gc_seconds{linkage,           0,   0, 120,
                                                   "kledd_gc_seconds", Category::RendererHacks,
