@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cstddef>
 #include <mutex>
+#include <string>
 #include "common/common_types.h"
 
 namespace Core {
@@ -51,8 +52,18 @@ public:
      */
     double GetLastFrameTimeScale() const;
 
+    /// eden-kledd: writes the last ~2 minutes of presented frames (plus a summary and the
+    /// current settings) to the log folder. Returns the summary file path, or "" on failure.
+    std::string KleddSaveFrameRecording();
+
 private:
     mutable std::mutex object_mutex;
+
+    /// eden-kledd frame recorder: ring buffer of present timestamps (steady clock, ns)
+    static constexpr std::size_t KleddRecordFrames = 32768;
+    std::mutex kledd_mutex;
+    std::array<s64, KleddRecordFrames> kledd_frames{};
+    std::size_t kledd_count{0};
 
     /// Title ID for the game that is running. 0 if there is no game running yet
     u64 title_id{0};
