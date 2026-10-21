@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <chrono>
 #include <limits>
 #include <optional>
@@ -131,6 +132,13 @@ void TextureCache<P>::RunGarbageCollector() {
             // deletes and re-uploads the same textures (thrashing). Keep them a few seconds.
             ticks_to_destroy = aggressive_mode ? 240ULL : high_priority_mode ? 480ULL : 900ULL;
         }
+        if (const u32 seconds = Settings::values.kledd_gc_seconds.GetValue(); seconds > 0) {
+            // eden-kledd: count real seconds instead of frames, so the frame rate (60 vs 120)
+            // and long pauses like the scan text don't change how long textures survive.
+            ticks_to_destroy = KleddTicksForSeconds(aggressive_mode     ? seconds
+                                                    : high_priority_mode ? seconds * 2
+                                                                         : seconds * 4);
+        }
         num_iterations = aggressive_mode ? 40 : (high_priority_mode ? 20 : 10);
     };
     const auto Cleanup = [this, &num_iterations, &high_priority_mode, &aggressive_mode](ImageId image_id) {
@@ -181,6 +189,14 @@ void TextureCache<P>::RunGarbageCollector() {
 template <class P>
 void TextureCache<P>::TickFrame() {
     KleddLogLongFrame();
+    {
+        const auto now = std::chrono::steady_clock::now();
+        kledd_tick_times.emplace_back(frame_tick, now);
+        while (!kledd_tick_times.empty() &&
+               now - kledd_tick_times.front().second > std::chrono::seconds(500)) {
+            kledd_tick_times.pop_front();
+        }
+    }
     // If we can obtain the memory info, use it instead of the estimate.
     if (runtime.CanReportMemoryUsage()) {
         total_used_memory = runtime.GetDeviceMemoryUsage();
@@ -203,6 +219,20 @@ void TextureCache<P>::TickFrame() {
         }
         async_buffers_death_ring.clear();
     }
+}
+
+template <class P>
+u64 TextureCache<P>::KleddTicksForSeconds(u32 seconds) const {
+    // Frames that passed since `seconds` ago. If the history is shorter than that, keep all.
+    const auto cutoff = std::chrono::steady_clock::now() - std::chrono::seconds(seconds);
+    const auto it = std::upper_bound(
+        kledd_tick_times.begin(), kledd_tick_times.end(), cutoff,
+        [](const auto& time, const auto& entry) { return time < entry.second; });
+    if (it == kledd_tick_times.begin()) {
+        return frame_tick;
+    }
+    const u64 tick_then = std::prev(it)->first;
+    return frame_tick - (std::min)(tick_then, frame_tick);
 }
 
 template <class P>

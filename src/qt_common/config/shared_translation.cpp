@@ -285,6 +285,10 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
     INSERT(Settings, kledd_gentle_gc, tr("[Kledd] Gentle texture cleanup"),
            tr("When texture memory is high, only delete textures that have not been used for a "
               "few seconds, instead of a few frames.\nExperimental: may use more VRAM."));
+    INSERT(Settings, kledd_gc_seconds, tr("[Kledd] Texture cleanup: keep for (seconds)"),
+           tr("Counts real seconds instead of frames before unused textures may be deleted "
+              "(when memory is tight; 2x and 4x longer when it is not). 0 = off.\n"
+              "Experimental: higher values use more VRAM."));
     INSERT(Settings, kledd_gpu_bc7, tr("[Kledd] GPU BC7 encoding"),
            tr("When ASTC Recompression is BC7 and ASTC Decoding is GPU, decode and re-encode "
               "textures on the GPU instead of the CPU (no CPU load, no audio crackle).\n"

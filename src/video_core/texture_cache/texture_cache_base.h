@@ -262,6 +262,9 @@ private:
     /// eden-kledd: log the previous frame if it took too long, then reset the frame counters
     void KleddLogLongFrame();
     std::chrono::steady_clock::time_point kledd_last_frame{};
+    /// eden-kledd: (frame_tick, time) history so the cleanup can think in seconds, not frames
+    std::deque<std::pair<u64, std::chrono::steady_clock::time_point>> kledd_tick_times;
+    u64 KleddTicksForSeconds(u32 seconds) const;
 
 public:
 

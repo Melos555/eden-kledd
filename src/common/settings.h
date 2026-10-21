@@ -664,6 +664,10 @@ struct Values {
     // eden-kledd: keep recently used textures longer before the garbage collector deletes them
     SwitchableSetting<bool> kledd_gentle_gc{linkage, false, "kledd_gentle_gc",
                                             Category::RendererHacks};
+    // eden-kledd: keep unused textures at least this many seconds (0 = off, count frames)
+    SwitchableSetting<u32, true> kledd_gc_seconds{linkage,           0,   0, 120,
+                                                  "kledd_gc_seconds", Category::RendererHacks,
+                                                  Specialization::Countable};
     // eden-kledd: with BC7 recompression + GPU ASTC decoding, encode BC7 on the GPU
     SwitchableSetting<bool> kledd_gpu_bc7{linkage, false, "kledd_gpu_bc7",
                                           Category::RendererHacks};

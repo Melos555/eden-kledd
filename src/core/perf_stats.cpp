@@ -164,12 +164,13 @@ std::string PerfStats::KleddSaveFrameRecording() {
     const auto& v = Settings::values;
     const std::string settings_line = fmt::format(
         "GPU mode={} | ASTC decode={} | ASTC recompression={} | VRAM mode={} | Resolution={} | "
-        "Async shaders={} | DMA fix={} | Gentle cleanup={} | GPU BC7={} | Long frame log={}",
+        "Async shaders={} | DMA fix={} | Gentle cleanup={} | Keep seconds={} | GPU BC7={} | Long frame log={}",
         v.gpu_accuracy.ToString(), v.accelerate_astc.ToString(), v.astc_recompression.ToString(),
         v.vram_usage_mode.ToString(), v.resolution_setup.ToString(),
         v.use_asynchronous_shaders.GetValue() ? "on" : "off",
         v.kledd_dma_readback_fix.GetValue() ? "on" : "off",
-        v.kledd_gentle_gc.GetValue() ? "on" : "off", v.kledd_gpu_bc7.GetValue() ? "on" : "off",
+        v.kledd_gentle_gc.GetValue() ? "on" : "off", v.kledd_gc_seconds.GetValue(),
+        v.kledd_gpu_bc7.GetValue() ? "on" : "off",
         v.kledd_frame_log.GetValue() ? "on" : "off");
 
     const std::time_t t = std::time(nullptr);
