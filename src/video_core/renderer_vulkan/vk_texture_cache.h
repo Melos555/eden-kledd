@@ -334,9 +334,12 @@ public:
     void DownloadMemory(const StagingBufferRef& map,
                         std::span<const VideoCommon::BufferImageCopy> copies);
 
-    /// eden-kledd: true if this image is single-sample D24S8 stored as host D24_UNORM_S8_UINT,
+    /// eden-kledd: true if this image is single-sample D24S8 stored as host D24_UNORM_S8_UINT
+    /// (or D32_SFLOAT_S8_UINT on GPUs without D24S8),
     /// so depth and stencil can be downloaded to separate buffer regions and merged on the CPU.
     [[nodiscard]] bool KleddCanSplitDepthStencil() const;
+    /// eden-kledd: true if the host stores this D24S8 image as D32_SFLOAT_S8_UINT (no D24 support)
+    [[nodiscard]] bool KleddDepthIsFloat() const;
     /// eden-kledd: when non-zero, depth+stencil downloads write stencil (1 byte/texel) at
     /// buffer offset + kledd_stencil_split + copy.buffer_offset / 4 instead of overlapping depth.
     size_t kledd_stencil_split = 0;

@@ -495,6 +495,7 @@ private:
         // eden-kledd: split depth/stencil readback that must be re-packed before writing
         bool kledd_ds = false;
         bool kledd_stencil_low = false;
+        bool kledd_depth_float = false;
         size_t kledd_split = 0;
         u32 kledd_width = 0;
         u32 kledd_height = 0;

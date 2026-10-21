@@ -2354,7 +2354,15 @@ bool Image::KleddCanSplitDepthStencil() const {
     }
     const auto host = MaxwellToVK::SurfaceFormat(runtime->device, FormatType::Optimal, false,
                                                  info.format);
-    return host.format == VK_FORMAT_D24_UNORM_S8_UINT;
+    // D32_SFLOAT_S8_UINT is what GPUs without D24S8 support (e.g. AMD) get instead.
+    return host.format == VK_FORMAT_D24_UNORM_S8_UINT ||
+           host.format == VK_FORMAT_D32_SFLOAT_S8_UINT;
+}
+
+bool Image::KleddDepthIsFloat() const {
+    const auto host = MaxwellToVK::SurfaceFormat(runtime->device, FormatType::Optimal, false,
+                                                 info.format);
+    return host.format == VK_FORMAT_D32_SFLOAT_S8_UINT;
 }
 
 void Image::DownloadMemory(const StagingBufferRef& map, std::span<const BufferImageCopy> copies) {

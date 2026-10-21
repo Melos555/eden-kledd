@@ -213,6 +213,9 @@ public:
     [[nodiscard]] bool KleddCanSplitDepthStencil() const {
         return false;
     }
+    [[nodiscard]] bool KleddDepthIsFloat() const {
+        return false;
+    }
     size_t kledd_stencil_split = 0;
 
     GLuint StorageHandle() noexcept;
