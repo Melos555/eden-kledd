@@ -82,6 +82,7 @@
 #include <QProgressDialog>
 #include <QScreen>
 #include <QShortcut>
+#include <QApplication>
 #include <QStatusBar>
 #include <QtConcurrentRun>
 
@@ -1346,6 +1347,17 @@ void MainWindow::InitializeHotkeys() {
         if (Settings::values.enable_renderdoc_hotkey) {
             QtCommon::system->GetRenderdocAPI().ToggleCapture();
         }
+    });
+    connect_shortcut(QStringLiteral("[Kledd] Save Frame Recording"), [this] {
+        if (QtCommon::system == nullptr || !QtCommon::system->IsPoweredOn()) {
+            return;
+        }
+        const std::string path = QtCommon::system->GetPerfStats().KleddSaveFrameRecording();
+        QApplication::beep();
+        statusBar()->showMessage(
+            path.empty() ? tr("[Kledd] Frame recording: nothing to save yet")
+                         : tr("[Kledd] Frame recording saved: %1").arg(QString::fromStdString(path)),
+            8000);
     });
     connect_shortcut(QStringLiteral("Toggle Mouse Panning"), [&] {
         Settings::values.mouse_panning = !Settings::values.mouse_panning;
