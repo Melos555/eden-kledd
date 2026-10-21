@@ -668,6 +668,11 @@ struct Values {
     SwitchableSetting<bool> kledd_descriptor_stride_fix{linkage, false,
                                                         "kledd_descriptor_stride_fix",
                                                         Category::RendererHacks};
+    // eden-kledd: max descriptors per dynamically indexed array (Eden default 1024)
+    SwitchableSetting<u32, true> kledd_descriptor_max{linkage,           1024, 32, 1024,
+                                                      "kledd_descriptor_max",
+                                                      Category::RendererHacks,
+                                                      Specialization::Countable};
     // eden-kledd: keep unused textures at least this many seconds (0 = off, count frames)
     SwitchableSetting<u32, true> kledd_gc_seconds{linkage,           0,   0, 120,
                                                   "kledd_gc_seconds", Category::RendererHacks,

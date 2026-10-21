@@ -284,6 +284,10 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
            tr("Indexes texture handle arrays inside structs by their real stride instead of the "
               "power-of-two part of it, so fewer descriptors are bound per draw.\n"
               "By Amicuchu, from Eden PR #4549. Experimental."));
+    INSERT(Settings, kledd_descriptor_max, tr("[Kledd] Max descriptors per array"),
+           tr("Upper limit for textures bound from one dynamically indexed array (Eden "
+              "default 1024). Lower can be faster; Metroid Prime 4 needs at least 128.\n"
+              "Idea from John's adjustable descriptor test build. Needs a game restart."));
     INSERT(Settings, kledd_gc_seconds, tr("[Kledd] Texture cleanup: keep for (seconds)"),
            tr("Counts real seconds instead of frames before unused textures may be deleted "
               "(when memory is tight; 2x and 4x longer when it is not). 0 = off.\n"
