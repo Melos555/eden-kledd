@@ -31,6 +31,7 @@ static const std::map<Settings::AntiAliasing, QString> anti_aliasing_texts_map =
     {Settings::AntiAliasing::None, QStringLiteral(QT_TRANSLATE_NOOP("MainWindow", "None"))},
     {Settings::AntiAliasing::Fxaa, QStringLiteral(QT_TRANSLATE_NOOP("MainWindow", "FXAA"))},
     {Settings::AntiAliasing::Smaa, QStringLiteral(QT_TRANSLATE_NOOP("MainWindow", "SMAA"))},
+    {Settings::AntiAliasing::Taa, QStringLiteral(QT_TRANSLATE_NOOP("MainWindow", "TAA"))},
 };
 
 static const std::map<Settings::ScalingFilter, QString> scaling_filter_texts_map = {

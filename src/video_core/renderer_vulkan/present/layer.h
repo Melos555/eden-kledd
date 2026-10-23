@@ -19,6 +19,7 @@
 #include "video_core/renderer_vulkan/present/post_process.h"
 #endif
 #include "video_core/renderer_vulkan/present/smaa.h"
+#include "video_core/renderer_vulkan/present/taa.h"
 
 namespace Layout {
 struct FramebufferLayout;
@@ -99,7 +100,7 @@ private:
     Service::android::PixelFormat pixel_format{};
 
     Settings::AntiAliasing anti_alias_setting{};
-    std::variant<std::monostate, FXAA, SMAA> anti_alias{};
+    std::variant<std::monostate, FXAA, SMAA, TAA> anti_alias{};
     std::variant<std::monostate, SGSR, FSR> sr_filter{};
 #ifdef HAS_RESHADE
     std::optional<PostProcessChain> post_process{};

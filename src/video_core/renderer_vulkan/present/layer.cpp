@@ -24,6 +24,7 @@
 #endif
 #include "video_core/renderer_vulkan/present/present_push_constants.h"
 #include "video_core/renderer_vulkan/present/smaa.h"
+#include "video_core/renderer_vulkan/present/taa.h"
 #include "video_core/renderer_vulkan/present/util.h"
 #include "video_core/renderer_vulkan/vk_blit_screen.h"
 #include "video_core/textures/decoders.h"
@@ -123,6 +124,8 @@ void Layer::ConfigureDraw(const Device& device, PresentPushConstants* out_push_c
         fxaa->Draw(device, scheduler, image_index, &source_image, &source_image_view);
     } else if (auto* smaa = std::get_if<SMAA>(&anti_alias)) {
         smaa->Draw(device, scheduler, image_index, &source_image, &source_image_view);
+    } else if (auto* taa = std::get_if<TAA>(&anti_alias)) {
+        taa->Draw(device, scheduler, image_index, &source_image, &source_image_view);
     }
 
 #ifdef HAS_RESHADE
@@ -226,6 +229,9 @@ void Layer::SetAntiAliasPass(const Device& device) {
         break;
     case Settings::AntiAliasing::Smaa:
         anti_alias.emplace<SMAA>(device, memory_allocator, image_count, render_area);
+        break;
+    case Settings::AntiAliasing::Taa:
+        anti_alias.emplace<TAA>(device, memory_allocator, image_count, render_area);
         break;
     default:
         anti_alias.emplace<std::monostate>();

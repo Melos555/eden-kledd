@@ -56,6 +56,7 @@ GLuint Layer::ConfigureDraw(std::array<GLfloat, 3 * 2>& out_matrix,
 
         switch (anti_aliasing) {
         case Settings::AntiAliasing::Fxaa:
+        case Settings::AntiAliasing::Taa: // TAA is Vulkan only, OpenGL falls back to FXAA
             CreateFXAA();
             texture = std::get<FXAA>(anti_alias).Draw(program_manager, info.display_texture);
             break;
