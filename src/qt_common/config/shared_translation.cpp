@@ -269,9 +269,6 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
            tr("Enables access to previous buffer states.\nThis option may improve rendering "
               "quality and performance consistency in some games."));
     INSERT(Settings, fix_bloom_effects, tr("Fix bloom effects"), tr("Removes bloom in Burnout."));
-    INSERT(Settings, kledd_dma_readback_fix, tr("[Kledd] DMA readback fix"),
-           tr("Always copy GPU-modified images to buffers on the GPU, instead of mixing GPU and "
-              "CPU copy paths.\nExperimental fix for the Metroid Prime 4 scan target flicker."));
     INSERT(Settings, kledd_dma_readback_log, tr("[Kledd] DMA readback log"),
            tr("Writes a log line for every small GPU->CPU image readback.\nFor debugging only."));
     INSERT(Settings, kledd_frame_log, tr("[Kledd] Long frame log"),

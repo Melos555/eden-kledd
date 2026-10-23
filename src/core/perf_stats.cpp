@@ -168,7 +168,7 @@ std::string PerfStats::KleddSaveFrameRecording() {
         v.gpu_accuracy.ToString(), v.accelerate_astc.ToString(), v.astc_recompression.ToString(),
         v.vram_usage_mode.ToString(), v.resolution_setup.ToString(),
         v.use_asynchronous_shaders.GetValue() ? "on" : "off",
-        v.kledd_dma_readback_fix.GetValue() ? "on" : "off",
+        "on", // the scan readback fix is always on
         v.kledd_gentle_gc.GetValue() ? "on" : "off", v.kledd_gc_seconds.GetValue(),
         v.kledd_descriptor_stride_fix.GetValue() ? "on" : "off", v.kledd_descriptor_max.GetValue(),
         v.kledd_gpu_bc7.GetValue() ? "on" : "off",

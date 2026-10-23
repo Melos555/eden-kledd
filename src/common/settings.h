@@ -652,9 +652,6 @@ struct Values {
     SwitchableSetting<bool> fix_bloom_effects{linkage, false, "fix_bloom_effects",
                                                      Category::RendererHacks};
 
-    // eden-kledd: keep GPU->CPU image readbacks (DMA image-to-buffer) on the GPU path
-    SwitchableSetting<bool> kledd_dma_readback_fix{linkage, false, "kledd_dma_readback_fix",
-                                                   Category::RendererHacks};
     // eden-kledd: log small DMA image-to-buffer readbacks (scan visor investigation)
     SwitchableSetting<bool> kledd_dma_readback_log{linkage, false, "kledd_dma_readback_log",
                                                    Category::RendererHacks};
