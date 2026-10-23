@@ -658,6 +658,9 @@ struct Values {
     // eden-kledd: log small DMA image-to-buffer readbacks (scan visor investigation)
     SwitchableSetting<bool> kledd_dma_readback_log{linkage, false, "kledd_dma_readback_log",
                                                    Category::RendererHacks};
+    // eden-kledd: wait for D24S8 readbacks instead of delivering them asynchronously (diagnostic)
+    SwitchableSetting<bool> kledd_dma_readback_sync{linkage, false, "kledd_dma_readback_sync",
+                                                    Category::RendererHacks};
     // eden-kledd: log frames that take too long, with texture/pipeline work done in them
     SwitchableSetting<bool> kledd_frame_log{linkage, false, "kledd_frame_log",
                                             Category::RendererHacks};

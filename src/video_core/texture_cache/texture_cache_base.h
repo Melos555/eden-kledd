@@ -293,6 +293,9 @@ public:
         u32 candidates = 0;
     };
     KleddDmaDiag kledd_last_dma{};
+    /// eden-kledd: set while DmaImageId looks up a logged readback, so FindDMAImage can report
+    /// overlapping candidate images
+    bool kledd_dma_trace = false;
 
     /// eden-kledd: queue an async readback of a D24S8 region into guest memory with depth and
     /// stencil downloaded separately and re-packed when the download completes.
@@ -557,6 +560,7 @@ private:
         u32 kledd_width = 0;
         u32 kledd_height = 0;
         u32 kledd_row = 0;
+        u64 kledd_queued_frame = 0;
     };
 
     struct PendingDownload {

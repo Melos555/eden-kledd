@@ -721,6 +721,24 @@ inline u32 KleddDepth24(u32 word, bool depth_float) {
     }
     return static_cast<u32>(static_cast<double>(depth) * 16777215.0 + 0.5);
 }
+
+/// Rebuilds packed guest D24S8 words in place from a split readback: depth words at `base`,
+/// stencil bytes at `base + split`.
+inline void KleddRepackDepthStencil(u8* base, size_t split, u32 width, u32 height, u32 row,
+                                    bool stencil_low, bool depth_float) {
+    for (u32 y = 0; y < height; ++y) {
+        for (u32 x = 0; x < width; ++x) {
+            const size_t texel = static_cast<size_t>(y) * row + x;
+            u8* const word_ptr = base + texel * 4;
+            u32 word;
+            std::memcpy(&word, word_ptr, sizeof(word));
+            const u32 d24 = KleddDepth24(word, depth_float);
+            const u32 s8 = base[split + texel];
+            word = stencil_low ? ((d24 << 8) | s8) : (d24 | (s8 << 24));
+            std::memcpy(word_ptr, &word, sizeof(word));
+        }
+    }
+}
 } // namespace KleddDetail
 
 template <class P>
@@ -1070,24 +1088,17 @@ void TextureCache<P>::PopAsyncFlushes() {
                 std::span<u8> download_span =
                     download_buffer.mapped_span.subspan(download_buffer.offset);
                 if (buffer_info.kledd_ds) {
-                    u8* const base = download_span.data();
-                    for (u32 y = 0; y < buffer_info.kledd_height; ++y) {
-                        for (u32 x = 0; x < buffer_info.kledd_width; ++x) {
-                            const size_t texel =
-                                static_cast<size_t>(y) * buffer_info.kledd_row + x;
-                            u8* const word_ptr = base + texel * 4;
-                            u32 word;
-                            std::memcpy(&word, word_ptr, sizeof(word));
-                            const u32 d24 =
-                                KleddDetail::KleddDepth24(word, buffer_info.kledd_depth_float);
-                            const u32 s8 = base[buffer_info.kledd_split + texel];
-                            word = buffer_info.kledd_stencil_low ? ((d24 << 8) | s8)
-                                                                 : (d24 | (s8 << 24));
-                            std::memcpy(word_ptr, &word, sizeof(word));
-                        }
-                    }
+                    KleddDetail::KleddRepackDepthStencil(
+                        download_span.data(), buffer_info.kledd_split, buffer_info.kledd_width,
+                        buffer_info.kledd_height, buffer_info.kledd_row,
+                        buffer_info.kledd_stencil_low, buffer_info.kledd_depth_float);
                     gpu_memory->WriteBlock(buffer_info.address, download_span.data(),
                                            buffer_info.size);
+                    if (Settings::values.kledd_dma_readback_log.GetValue()) {
+                        LOG_INFO(HW_GPU, "KLEDD ds-land dst={:#x} frame={} late={} frames",
+                                 buffer_info.address, frame_tick,
+                                 frame_tick - buffer_info.kledd_queued_frame);
+                    }
                 } else {
                     gpu_memory->WriteBlockUnsafe(buffer_info.address, download_span.data(),
                                                  buffer_info.size);
@@ -1145,7 +1156,9 @@ template <class P>
 ImageId TextureCache<P>::DmaImageId(const Tegra::DMA::ImageOperand& operand, bool is_upload) {
     const ImageInfo dst_info(operand);
     kledd_last_dma = {};
+    kledd_dma_trace = !is_upload && Settings::values.kledd_dma_readback_log.GetValue();
     const ImageId dst_id = FindDMAImage(dst_info, operand.address);
+    kledd_dma_trace = false;
     if (!dst_id) {
         kledd_last_dma.reason = 1;
         return NULL_IMAGE_ID;
@@ -1267,30 +1280,52 @@ bool TextureCache<P>::KleddDownloadDepthStencilToGuest(Image* image, const Buffe
         const u32 row =
             copy.buffer_row_length != 0 ? copy.buffer_row_length : copy.image_extent.width;
         const size_t split = Common::AlignUp(size, 256);
-        auto staging = runtime.DownloadStagingBuffer(split + size / 4 + 256, true);
+        const bool sync = Settings::values.kledd_dma_readback_sync.GetValue();
+        const bool log = Settings::values.kledd_dma_readback_log.GetValue();
+        const bool stencil_low = image->info.format == PixelFormat::S8_UINT_D24_UNORM;
+        const bool depth_float = image->KleddDepthIsFloat();
+        if (log) {
+            LOG_INFO(HW_GPU,
+                     "KLEDD ds-dma {}x{} at {},{} of {}x{} row={} dst={:#x} size={} depth={} "
+                     "frame={} modtick={} rescaled={} mode={}",
+                     copy.image_extent.width, copy.image_extent.height, copy.image_offset.x,
+                     copy.image_offset.y, image->info.size.width, image->info.size.height, row,
+                     address, size, depth_float ? "f32" : "d24", frame_tick,
+                     image->modification_tick,
+                     True(image->flags & ImageFlagBits::Rescaled) ? 1 : 0,
+                     sync ? "sync" : "async");
+        }
+        auto staging = runtime.DownloadStagingBuffer(split + size / 4 + 256, !sync);
         std::array buffers{staging.buffer};
         std::array<size_t, 1> offsets{static_cast<size_t>(staging.offset)};
         image->kledd_stencil_split = split;
         image->DownloadMemory(buffers, offsets, std::span<const BufferImageCopy>(&copy, 1));
         image->kledd_stencil_split = 0;
 
+        if (sync) {
+            // eden-kledd: diagnostic path, wait for the copy so the game sees it right away
+            runtime.Finish();
+            u8* const base = staging.mapped_span.data();
+            KleddDetail::KleddRepackDepthStencil(base, split, copy.image_extent.width,
+                                                 copy.image_extent.height, row, stencil_low,
+                                                 depth_float);
+            gpu_memory->WriteBlock(address, base, size);
+            return true;
+        }
+
         BufferDownload download{address, size};
         download.kledd_ds = true;
-        download.kledd_stencil_low = image->info.format == PixelFormat::S8_UINT_D24_UNORM;
-        download.kledd_depth_float = image->KleddDepthIsFloat();
+        download.kledd_stencil_low = stencil_low;
+        download.kledd_depth_float = depth_float;
         download.kledd_split = split;
         download.kledd_width = copy.image_extent.width;
         download.kledd_height = copy.image_extent.height;
         download.kledd_row = row;
+        download.kledd_queued_frame = frame_tick;
         auto slot = slot_buffer_downloads.insert(download);
         const PendingDownload pending{false, uncommitted_async_buffers.size(), slot};
         uncommitted_downloads.emplace_back(pending);
         uncommitted_async_buffers.emplace_back(staging);
-        if (Settings::values.kledd_dma_readback_log.GetValue()) {
-            LOG_INFO(HW_GPU, "KLEDD ds-dma {}x{} row={} dst={:#x} size={} depth={}",
-                     copy.image_extent.width, copy.image_extent.height, row, address, size,
-                     download.kledd_depth_float ? "f32" : "d24");
-        }
         return true;
     } else {
         return false;
@@ -2695,6 +2730,7 @@ ImageId TextureCache<P>::FindDMAImage(const ImageInfo& info, GPUVAddr gpu_addr) 
         return false;
     };
     ForEachImageInRegion(*cpu_addr, CalculateGuestSizeInBytes(info), lambda);
+    kledd_last_dma.candidates = static_cast<u32>(image_ids.size());
     if (image_ids.size() <= 1) [[likely]] {
         return image_id;
     }
@@ -2703,7 +2739,18 @@ ImageId TextureCache<P>::FindDMAImage(const ImageInfo& info, GPUVAddr gpu_addr) 
         auto& image_b = slot_images[b];
         return image_a.modification_tick < image_b.modification_tick;
     };
-    return *std::ranges::max_element(image_ids, image_ids_compare);
+    const ImageId picked = *std::ranges::max_element(image_ids, image_ids_compare);
+    if (kledd_dma_trace) {
+        // eden-kledd: several images overlap the readback (e.g. the buffer was resized); list them
+        for (const ImageId id : image_ids) {
+            const auto& candidate = slot_images[id];
+            LOG_INFO(HW_GPU, "KLEDD dma candidate img={} {}x{} fmt={} modtick={}{}", id.index,
+                     candidate.info.size.width, candidate.info.size.height,
+                     static_cast<u32>(candidate.info.format), candidate.modification_tick,
+                     id == picked ? " <- picked" : "");
+        }
+    }
+    return picked;
 }
 
 template <class P>

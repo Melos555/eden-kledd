@@ -274,6 +274,9 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
               "CPU copy paths.\nExperimental fix for the Metroid Prime 4 scan target flicker."));
     INSERT(Settings, kledd_dma_readback_log, tr("[Kledd] DMA readback log"),
            tr("Writes a log line for every small GPU->CPU image readback.\nFor debugging only."));
+    INSERT(Settings, kledd_dma_readback_sync, tr("[Kledd] DMA readback sync"),
+           tr("Waits for the scan readback to finish before the game reads it, instead of "
+              "delivering it a frame later.\nDiagnostic: compare with it off to test timing."));
     INSERT(Settings, kledd_frame_log, tr("[Kledd] Long frame log"),
            tr("Writes a log line for every frame that takes longer than 50 ms, listing the "
               "texture and shader work done in it.\nFor debugging only."));
