@@ -343,6 +343,9 @@ public:
     /// eden-kledd: when non-zero, depth+stencil downloads write stencil (1 byte/texel) at
     /// buffer offset + kledd_stencil_split + copy.buffer_offset / 4 instead of overlapping depth.
     size_t kledd_stencil_split = 0;
+    /// eden-kledd: with kledd_stencil_split, copy from the scaled image if the image is rescaled
+    /// (copies are in scaled coordinates) instead of scaling it down first.
+    bool kledd_copy_scaled = false;
 
     void AllocateComputeUnswizzleImage();
 

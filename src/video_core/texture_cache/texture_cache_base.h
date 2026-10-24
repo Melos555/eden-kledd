@@ -492,6 +492,18 @@ private:
         u32 kledd_width = 0;
         u32 kledd_height = 0;
         u32 kledd_row = 0;
+        // eden-kledd: the image was rescaled, so the patch was copied at its scaled size and is
+        // point-sampled down to the guest size into a separate output region
+        bool kledd_scaled = false;
+        u32 kledd_src_width = 0;
+        u32 kledd_src_height = 0;
+        u32 kledd_guest_x = 0;
+        u32 kledd_guest_y = 0;
+        u32 kledd_scaled_x = 0;
+        u32 kledd_scaled_y = 0;
+        u32 kledd_up_scale = 1;
+        u32 kledd_down_shift = 0;
+        size_t kledd_out_offset = 0;
     };
 
     struct PendingDownload {
