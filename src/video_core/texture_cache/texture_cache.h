@@ -720,6 +720,11 @@ inline u32 KleddDepth24(u32 word, bool depth_float) {
     }
     return static_cast<u32>(static_cast<double>(depth) * 16777215.0 + 0.5);
 }
+
+/// Scaled coordinate of the texel under the centre of a guest texel: floor((guest + 0.5) * scale)
+inline u32 KleddScaledCenter(u32 guest, u32 up_scale, u32 down_shift) {
+    return (((guest * 2 + 1) * up_scale) >> down_shift) / 2;
+}
 } // namespace KleddDetail
 
 template <class P>
@@ -1068,7 +1073,41 @@ void TextureCache<P>::PopAsyncFlushes() {
                 const BufferDownload& buffer_info = slot_buffer_downloads[download_info.object_id];
                 std::span<u8> download_span =
                     download_buffer.mapped_span.subspan(download_buffer.offset);
-                if (buffer_info.kledd_ds) {
+                if (buffer_info.kledd_ds && buffer_info.kledd_scaled) {
+                    u8* const base = download_span.data();
+                    u8* const out = base + buffer_info.kledd_out_offset;
+                    for (u32 y = 0; y < buffer_info.kledd_height; ++y) {
+                        const u32 sy = std::clamp(
+                            KleddDetail::KleddScaledCenter(buffer_info.kledd_guest_y + y,
+                                                           buffer_info.kledd_up_scale,
+                                                           buffer_info.kledd_down_shift),
+                            buffer_info.kledd_scaled_y,
+                            buffer_info.kledd_scaled_y + buffer_info.kledd_src_height - 1) -
+                            buffer_info.kledd_scaled_y;
+                        for (u32 x = 0; x < buffer_info.kledd_width; ++x) {
+                            const u32 sx = std::clamp(
+                                KleddDetail::KleddScaledCenter(buffer_info.kledd_guest_x + x,
+                                                               buffer_info.kledd_up_scale,
+                                                               buffer_info.kledd_down_shift),
+                                buffer_info.kledd_scaled_x,
+                                buffer_info.kledd_scaled_x + buffer_info.kledd_src_width - 1) -
+                                buffer_info.kledd_scaled_x;
+                            const size_t src_texel =
+                                static_cast<size_t>(sy) * buffer_info.kledd_src_width + sx;
+                            u32 word;
+                            std::memcpy(&word, base + src_texel * 4, sizeof(word));
+                            const u32 d24 =
+                                KleddDetail::KleddDepth24(word, buffer_info.kledd_depth_float);
+                            const u32 s8 = base[buffer_info.kledd_split + src_texel];
+                            word = buffer_info.kledd_stencil_low ? ((d24 << 8) | s8)
+                                                                 : (d24 | (s8 << 24));
+                            const size_t texel =
+                                static_cast<size_t>(y) * buffer_info.kledd_row + x;
+                            std::memcpy(out + texel * 4, &word, sizeof(word));
+                        }
+                    }
+                    gpu_memory->WriteBlock(buffer_info.address, out, buffer_info.size);
+                } else if (buffer_info.kledd_ds) {
                     u8* const base = download_span.data();
                     for (u32 y = 0; y < buffer_info.kledd_height; ++y) {
                         for (u32 x = 0; x < buffer_info.kledd_width; ++x) {
@@ -1266,15 +1305,52 @@ bool TextureCache<P>::KleddDownloadDepthStencilToGuest(Image* image, const Buffe
         }
         const u32 row =
             copy.buffer_row_length != 0 ? copy.buffer_row_length : copy.image_extent.width;
-        const size_t split = Common::AlignUp(size, 256);
-        auto staging = runtime.DownloadStagingBuffer(split + size / 4 + 256, true);
+        // If the image is rescaled, copy the patch at its scaled size straight from the scaled
+        // image; it is point-sampled down to the guest size when the download lands.
+        const auto& resolution = Settings::values.resolution_info;
+        const u32 x = static_cast<u32>(copy.image_offset.x);
+        const u32 y = static_cast<u32>(copy.image_offset.y);
+        const u32 scaled_x = resolution.ScaleUp(x);
+        const u32 scaled_y = resolution.ScaleUp(y);
+        const u32 src_width = resolution.ScaleUp(x + copy.image_extent.width) - scaled_x;
+        const u32 src_height = resolution.ScaleUp(y + copy.image_extent.height) - scaled_y;
+        const bool scaled = True(image->flags & ImageFlagBits::Rescaled) && resolution.active &&
+                            src_width != 0 && src_height != 0;
+
+        BufferDownload download{address, size};
+        BufferImageCopy src_copy = copy;
+        size_t depth_bytes = size;
+        if (scaled) {
+            depth_bytes = static_cast<size_t>(src_width) * src_height * 4;
+            src_copy.buffer_offset = 0;
+            src_copy.buffer_size = depth_bytes;
+            src_copy.buffer_row_length = 0;
+            src_copy.buffer_image_height = 0;
+            src_copy.image_offset.x = static_cast<s32>(scaled_x);
+            src_copy.image_offset.y = static_cast<s32>(scaled_y);
+            src_copy.image_extent.width = src_width;
+            src_copy.image_extent.height = src_height;
+            download.kledd_scaled = true;
+            download.kledd_src_width = src_width;
+            download.kledd_src_height = src_height;
+            download.kledd_guest_x = x;
+            download.kledd_guest_y = y;
+            download.kledd_scaled_x = scaled_x;
+            download.kledd_scaled_y = scaled_y;
+            download.kledd_up_scale = resolution.up_scale;
+            download.kledd_down_shift = resolution.down_shift;
+        }
+        const size_t split = Common::AlignUp(depth_bytes, 256);
+        const size_t out_offset = Common::AlignUp(split + depth_bytes / 4, 256);
+        auto staging = runtime.DownloadStagingBuffer(out_offset + (scaled ? size : 0) + 256, true);
         std::array buffers{staging.buffer};
         std::array<size_t, 1> offsets{static_cast<size_t>(staging.offset)};
         image->kledd_stencil_split = split;
-        image->DownloadMemory(buffers, offsets, std::span<const BufferImageCopy>(&copy, 1));
+        image->kledd_copy_scaled = scaled;
+        image->DownloadMemory(buffers, offsets, std::span<const BufferImageCopy>(&src_copy, 1));
+        image->kledd_copy_scaled = false;
         image->kledd_stencil_split = 0;
 
-        BufferDownload download{address, size};
         download.kledd_ds = true;
         download.kledd_stencil_low = image->info.format == PixelFormat::S8_UINT_D24_UNORM;
         download.kledd_depth_float = image->KleddDepthIsFloat();
@@ -1282,14 +1358,16 @@ bool TextureCache<P>::KleddDownloadDepthStencilToGuest(Image* image, const Buffe
         download.kledd_width = copy.image_extent.width;
         download.kledd_height = copy.image_extent.height;
         download.kledd_row = row;
+        download.kledd_out_offset = out_offset;
         auto slot = slot_buffer_downloads.insert(download);
         const PendingDownload pending{false, uncommitted_async_buffers.size(), slot};
         uncommitted_downloads.emplace_back(pending);
         uncommitted_async_buffers.emplace_back(staging);
         if (Settings::values.kledd_dma_readback_log.GetValue()) {
-            LOG_INFO(HW_GPU, "KLEDD ds-dma {}x{} row={} dst={:#x} size={} depth={}",
+            LOG_INFO(HW_GPU, "KLEDD ds-dma {}x{} row={} dst={:#x} size={} depth={} scaled={}x{}",
                      copy.image_extent.width, copy.image_extent.height, row, address, size,
-                     download.kledd_depth_float ? "f32" : "d24");
+                     download.kledd_depth_float ? "f32" : "d24", download.kledd_src_width,
+                     download.kledd_src_height);
         }
         return true;
     } else {

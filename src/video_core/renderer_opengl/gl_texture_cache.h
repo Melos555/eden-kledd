@@ -225,6 +225,7 @@ public:
         return false;
     }
     size_t kledd_stencil_split = 0;
+    bool kledd_copy_scaled = false;
 
     GLuint StorageHandle() noexcept;
 
