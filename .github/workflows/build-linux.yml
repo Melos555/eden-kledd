@@ -41,7 +41,7 @@ jobs:
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           set +e
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DYUZU_TESTS=OFF \
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DYUZU_TESTS=OFF \
             -DCMAKE_INSTALL_PREFIX=/usr \
             -DVulkanHeaders_FORCE_BUNDLED=ON -DVulkanUtilityLibraries_FORCE_BUNDLED=ON > configure.log 2>&1
           code=$?
@@ -75,6 +75,8 @@ jobs:
       - name: Package AppImage
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
+          # debug build: keep symbols so crash backtraces show function names
+          NO_STRIP: "1"
           QMAKE: /usr/bin/qmake6
           OUTPUT: eden-kledd-x86_64.AppImage
         run: |
