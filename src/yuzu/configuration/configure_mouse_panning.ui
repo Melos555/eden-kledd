@@ -29,9 +29,37 @@
    <item>
     <widget class="QCheckBox" name="kledd_mouse_gyro_yaw_z">
      <property name="text">
-      <string>[Kledd] Mouse gyro: horizontal on Z (try if left/right does nothing)</string>
+      <string>[Kledd] Mouse gyro: horizontal on Z (on for Metroid Prime 4)</string>
      </property>
     </widget>
+   </item>
+   <item>
+    <widget class="QCheckBox" name="kledd_mouse_gyro_gravity">
+     <property name="text">
+      <string>[Kledd] Mouse gyro: also send gravity (v1 behaviour, for A/B testing)</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout">
+     <item>
+      <widget class="QLabel" name="kledd_mouse_gyro_smoothing_label">
+       <property name="text">
+        <string>[Kledd] Mouse gyro smoothing (updates averaged, 1 = off, v1 = 4)</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QSpinBox" name="kledd_mouse_gyro_smoothing">
+       <property name="minimum">
+        <number>1</number>
+       </property>
+       <property name="maximum">
+        <number>8</number>
+       </property>
+      </widget>
+     </item>
+    </layout>
    </item>
    <item>
     <layout class="QHBoxLayout">

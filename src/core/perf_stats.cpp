@@ -173,7 +173,12 @@ std::string PerfStats::KleddSaveFrameRecording() {
         v.kledd_descriptor_stride_fix.GetValue() ? "on" : "off", v.kledd_descriptor_max.GetValue(),
         v.kledd_gpu_bc7.GetValue() ? "on" : "off",
         v.kledd_frame_log.GetValue() ? "on" : "off",
-        v.kledd_mouse_gyro.GetValue() ? (v.kledd_mouse_gyro_yaw_z.GetValue() ? "on (yaw Z)" : "on") : "off");
+        v.kledd_mouse_gyro.GetValue()
+            ? fmt::format("on (yaw {}, smoothing {}, gravity {})",
+                          v.kledd_mouse_gyro_yaw_z.GetValue() ? "Z" : "Y",
+                          v.kledd_mouse_gyro_smoothing.GetValue(),
+                          v.kledd_mouse_gyro_gravity.GetValue() ? "on" : "off")
+            : std::string("off"));
 
     const std::time_t t = std::time(nullptr);
     std::ostringstream stamp;

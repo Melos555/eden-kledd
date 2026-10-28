@@ -847,8 +847,15 @@ struct Values {
     // eden-kledd: in mouse panning mode, send mouse movement as gyro (motion) instead of stick
     Setting<bool> kledd_mouse_gyro{linkage, false, "kledd_mouse_gyro", Category::Controls};
     // eden-kledd: put horizontal mouse movement on gyro Z (yaw) instead of gyro Y
-    Setting<bool> kledd_mouse_gyro_yaw_z{linkage, false, "kledd_mouse_gyro_yaw_z",
+    Setting<bool> kledd_mouse_gyro_yaw_z{linkage, true, "kledd_mouse_gyro_yaw_z",
                                          Category::Controls};
+    // eden-kledd: mouse gyro smoothing, number of 5 ms updates averaged (1 = off)
+    Setting<u8, true> kledd_mouse_gyro_smoothing{linkage, 1, 1, 8, "kledd_mouse_gyro_smoothing",
+                                                 Category::Controls};
+    // eden-kledd: mouse gyro also reports gravity (v1 behaviour). Off = no gravity, so Eden's
+    // drift correction can't pull the aim back toward level
+    Setting<bool> kledd_mouse_gyro_gravity{linkage, false, "kledd_mouse_gyro_gravity",
+                                           Category::Controls};
 
     Setting<bool> emulate_analog_keyboard{linkage, false, "emulate_analog_keyboard",
                                           Category::Controls};
