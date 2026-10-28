@@ -854,7 +854,7 @@ struct Values {
                                                  Category::Controls};
     // eden-kledd: mouse gyro also reports gravity (v1 behaviour). Off = no gravity, so Eden's
     // drift correction can't pull the aim back toward level
-    Setting<bool> kledd_mouse_gyro_gravity{linkage, false, "kledd_mouse_gyro_gravity",
+    Setting<bool> kledd_mouse_gyro_gravity{linkage, true, "kledd_mouse_gyro_gravity2",
                                            Category::Controls};
     // eden-kledd: flip the direction of the world-vertical yaw correction (test toggle)
     Setting<bool> kledd_mouse_gyro_tilt_flip{linkage, false, "kledd_mouse_gyro_tilt_flip",
