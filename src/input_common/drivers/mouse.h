@@ -123,6 +123,9 @@ private:
     std::array<Common::Vec<float, 2>, 8> kledd_gyro_hist_px{};
     std::array<float, 8> kledd_gyro_hist_dt{};
     std::size_t kledd_gyro_hist_pos{};
+    // eden-kledd: total up/down tilt sent so far (degrees), kept within a limit so the virtual
+    // controller can't tip past vertical and turn the up/down aim upside down
+    float kledd_gyro_pitch_deg{};
     bool button_pressed = false;
 };
 

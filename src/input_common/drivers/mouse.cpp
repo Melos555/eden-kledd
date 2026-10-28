@@ -102,6 +102,8 @@ void Mouse::UpdateStickInput(Common::SteadyClock::time_point timestamp) {
 constexpr float kledd_gyro_degrees_per_pixel = 0.1f;
 // eden-kledd: real gyros top out around 2000 deg/s; clamp to that (in rotations per second)
 constexpr float kledd_gyro_max_rps = 5.5f;
+// eden-kledd: maximum up/down tilt of the virtual controller (degrees from where it started)
+constexpr float kledd_gyro_pitch_limit = 60.0f;
 
 void Mouse::UpdateMotionInput(Common::SteadyClock::time_point timestamp) {
     if (IsMousePanningEnabled() && Settings::values.kledd_mouse_gyro.GetValue()) {
@@ -137,8 +139,17 @@ void Mouse::UpdateMotionInput(Common::SteadyClock::time_point timestamp) {
         // rotations per second, same unit the SDL driver reports
         const float yaw = std::clamp(-sum_px[0] / sum_dt * x_scale, -kledd_gyro_max_rps,
                                      kledd_gyro_max_rps);
-        const float pitch = std::clamp(-sum_px[1] / sum_dt * y_scale, -kledd_gyro_max_rps,
-                                       kledd_gyro_max_rps);
+        float pitch = std::clamp(-sum_px[1] / sum_dt * y_scale, -kledd_gyro_max_rps,
+                                 kledd_gyro_max_rps);
+        // Keep the virtual controller's up/down tilt within +-kledd_gyro_pitch_limit degrees:
+        // only send the part of this update's rotation that stays inside the limit
+        {
+            const float step_deg = pitch * 360.0f * dt;
+            const float next = std::clamp(kledd_gyro_pitch_deg + step_deg,
+                                          -kledd_gyro_pitch_limit, kledd_gyro_pitch_limit);
+            pitch = (next - kledd_gyro_pitch_deg) / (360.0f * dt);
+            kledd_gyro_pitch_deg = next;
+        }
         const bool yaw_on_z = Settings::values.kledd_mouse_gyro_yaw_z.GetValue();
 
         last_motion_change = {};
