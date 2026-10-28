@@ -116,11 +116,19 @@ void Mouse::UpdateMotionInput(Common::SteadyClock::time_point timestamp) {
         kledd_gyro_hist_pos = (kledd_gyro_hist_pos + 1) % kledd_gyro_hist_px.size();
         kledd_gyro_pixels = {};
 
+        // Average over the last N updates (N = smoothing setting, 1 = no smoothing)
+        const std::size_t size = kledd_gyro_hist_px.size();
+        const std::size_t count = std::clamp<std::size_t>(
+            Settings::values.kledd_mouse_gyro_smoothing.GetValue(), 1, size);
         Common::Vec<float, 2> sum_px{};
         float sum_dt = 0.0f;
-        for (std::size_t i = 0; i < kledd_gyro_hist_px.size(); ++i) {
-            sum_px += kledd_gyro_hist_px[i];
-            sum_dt += kledd_gyro_hist_dt[i];
+        for (std::size_t i = 1; i <= count; ++i) {
+            const std::size_t idx = (kledd_gyro_hist_pos + size - i) % size;
+            sum_px += kledd_gyro_hist_px[idx];
+            sum_dt += kledd_gyro_hist_dt[idx];
+        }
+        if (!(sum_dt > 0.0f)) {
+            sum_dt = 0.005f;
         }
         const float x_scale = Settings::values.mouse_panning_x_sensitivity.GetValue() / 100.0f *
                               kledd_gyro_degrees_per_pixel / 360.0f;
@@ -140,7 +148,9 @@ void Mouse::UpdateMotionInput(Common::SteadyClock::time_point timestamp) {
             .gyro_z = yaw_on_z ? yaw : 0.0f,
             .accel_x = 0,
             .accel_y = 0,
-            .accel_z = -1.0f, // held level, gravity straight down
+            // No gravity by default: with gravity Eden's motion fusion keeps pulling the
+            // orientation back to level, which can feel like the aim is on a rubber band
+            .accel_z = Settings::values.kledd_mouse_gyro_gravity.GetValue() ? -1.0f : 0.0f,
             .delta_timestamp = u64(std::chrono::duration_cast<std::chrono::microseconds>(timestamp - last_notify_timestamp).count()),
         });
         return;
