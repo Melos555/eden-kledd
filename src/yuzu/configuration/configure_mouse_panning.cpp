@@ -26,6 +26,8 @@ void ConfigureMousePanning::closeEvent(QCloseEvent* event) {
 
 void ConfigureMousePanning::SetConfiguration(float right_stick_deadzone, float right_stick_range) {
     ui->enable->setChecked(Settings::values.mouse_panning.GetValue());
+    ui->kledd_mouse_gyro->setChecked(Settings::values.kledd_mouse_gyro.GetValue());
+    ui->kledd_mouse_gyro_yaw_z->setChecked(Settings::values.kledd_mouse_gyro_yaw_z.GetValue());
     ui->x_sensitivity->setValue(Settings::values.mouse_panning_x_sensitivity.GetValue());
     ui->y_sensitivity->setValue(Settings::values.mouse_panning_y_sensitivity.GetValue());
     ui->deadzone_counterweight->setValue(
@@ -70,6 +72,8 @@ void ConfigureMousePanning::ConnectEvents() {
 
 void ConfigureMousePanning::ApplyConfiguration() {
     Settings::values.mouse_panning = ui->enable->isChecked();
+    Settings::values.kledd_mouse_gyro = ui->kledd_mouse_gyro->isChecked();
+    Settings::values.kledd_mouse_gyro_yaw_z = ui->kledd_mouse_gyro_yaw_z->isChecked();
     Settings::values.mouse_panning_x_sensitivity = static_cast<float>(ui->x_sensitivity->value());
     Settings::values.mouse_panning_y_sensitivity = static_cast<float>(ui->y_sensitivity->value());
     Settings::values.mouse_panning_deadzone_counterweight =

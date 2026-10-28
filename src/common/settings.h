@@ -844,6 +844,11 @@ struct Values {
                                                    linkage, 18, 0, 100, "mouse_panning_decay_strength", Category::Controls};
     Setting<u8, true> mouse_panning_min_decay{
                                               linkage, 6, 0, 100, "mouse_panning_min_decay", Category::Controls};
+    // eden-kledd: in mouse panning mode, send mouse movement as gyro (motion) instead of stick
+    Setting<bool> kledd_mouse_gyro{linkage, false, "kledd_mouse_gyro", Category::Controls};
+    // eden-kledd: put horizontal mouse movement on gyro Z (yaw) instead of gyro Y
+    Setting<bool> kledd_mouse_gyro_yaw_z{linkage, false, "kledd_mouse_gyro_yaw_z",
+                                         Category::Controls};
 
     Setting<bool> emulate_analog_keyboard{linkage, false, "emulate_analog_keyboard",
                                           Category::Controls};

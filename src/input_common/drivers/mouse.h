@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include <array>
+
 #include <thread>
 #include <chrono>
 
@@ -115,6 +117,12 @@ private:
     Common::Vec<float, 3> last_motion_change;
     Common::Vec<int, 2> wheel_position;
     Common::SteadyClock::time_point last_notify_timestamp{};
+    // eden-kledd mouse gyro: raw pixel movement since the last update, plus a short history
+    // so the rate is averaged over ~20 ms (the game samples motion at its own pace)
+    Common::Vec<float, 2> kledd_gyro_pixels{};
+    std::array<Common::Vec<float, 2>, 4> kledd_gyro_hist_px{};
+    std::array<float, 4> kledd_gyro_hist_dt{};
+    std::size_t kledd_gyro_hist_pos{};
     bool button_pressed = false;
 };
 
