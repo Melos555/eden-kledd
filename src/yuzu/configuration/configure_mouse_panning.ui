@@ -36,14 +36,14 @@
    <item>
     <widget class="QCheckBox" name="kledd_mouse_gyro_gravity">
      <property name="text">
-      <string>[Kledd] Mouse gyro: also send gravity (v1 behaviour, for A/B testing)</string>
+      <string>[Kledd] Mouse gyro: send gravity (matched to the tilt; off = no gravity, v2 behaviour)</string>
      </property>
     </widget>
    </item>
    <item>
     <widget class="QCheckBox" name="kledd_mouse_gyro_tilt_flip">
      <property name="text">
-      <string>[Kledd] Mouse gyro: flip tilt correction (try if aiming goes diagonal when looking up/down)</string>
+      <string>[Kledd] Mouse gyro: flip tilt correction (try if it goes diagonal or rubbery when looking up/down)</string>
      </property>
     </widget>
    </item>

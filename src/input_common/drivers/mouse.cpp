@@ -166,12 +166,20 @@ void Mouse::UpdateMotionInput(Common::SteadyClock::time_point timestamp) {
         // makes the pointer move diagonally and the tilt drift.
         float yaw_main = yaw;
         float yaw_side = 0.0f;
+        const float tilt = kledd_gyro_pitch_deg * 3.14159265f / 180.0f;
+        const float side_sign =
+            Settings::values.kledd_mouse_gyro_tilt_flip.GetValue() ? -1.0f : 1.0f;
         if (yaw_on_z) {
-            const float tilt = kledd_gyro_pitch_deg * 3.14159265f / 180.0f;
-            const float side_sign = Settings::values.kledd_mouse_gyro_tilt_flip.GetValue() ? -1.0f : 1.0f;
             yaw_main = yaw * std::cos(tilt);
             yaw_side = yaw * std::sin(tilt) * side_sign;
         }
+        // Gravity that matches the imaginary controller's tilt (world "down" seen from the
+        // controller). A level controller sees (0, 0, -1). Matching it to the tilt keeps the
+        // motion fusion from pulling the aim back to level, and the game always gets a real
+        // gravity reference instead of free fall.
+        const bool gravity = Settings::values.kledd_mouse_gyro_gravity.GetValue();
+        const float grav_y = gravity && yaw_on_z ? -std::sin(tilt) * side_sign : 0.0f;
+        const float grav_z = gravity ? (yaw_on_z ? -std::cos(tilt) : -1.0f) : 0.0f;
 
         last_motion_change = {};
         SetMotion(motion_identifier, 0, BasicMotion{
@@ -179,10 +187,8 @@ void Mouse::UpdateMotionInput(Common::SteadyClock::time_point timestamp) {
             .gyro_y = yaw_on_z ? yaw_side : yaw,
             .gyro_z = yaw_on_z ? yaw_main : 0.0f,
             .accel_x = 0,
-            .accel_y = 0,
-            // No gravity by default: with gravity Eden's motion fusion keeps pulling the
-            // orientation back to level, which can feel like the aim is on a rubber band
-            .accel_z = Settings::values.kledd_mouse_gyro_gravity.GetValue() ? -1.0f : 0.0f,
+            .accel_y = grav_y,
+            .accel_z = grav_z,
             .delta_timestamp = u64(std::chrono::duration_cast<std::chrono::microseconds>(timestamp - last_notify_timestamp).count()),
         });
         return;
