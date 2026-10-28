@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <fmt/ranges.h>
 #include <math.h>
 
@@ -101,9 +102,9 @@ void Mouse::UpdateStickInput(Common::SteadyClock::time_point timestamp) {
 // eden-kledd: degrees of controller rotation per pixel of mouse movement at 100% sensitivity
 constexpr float kledd_gyro_degrees_per_pixel = 0.1f;
 // eden-kledd: real gyros top out around 2000 deg/s; clamp to that (in rotations per second)
-constexpr float kledd_gyro_max_rps = 5.5f;
+constexpr float kledd_gyro_max_rps = 4.9f;
 // eden-kledd: maximum up/down tilt of the virtual controller (degrees from where it started)
-constexpr float kledd_gyro_pitch_limit = 60.0f;
+constexpr float kledd_gyro_pitch_limit = 75.0f;
 
 void Mouse::UpdateMotionInput(Common::SteadyClock::time_point timestamp) {
     if (IsMousePanningEnabled() && Settings::values.kledd_mouse_gyro.GetValue()) {
@@ -137,10 +138,17 @@ void Mouse::UpdateMotionInput(Common::SteadyClock::time_point timestamp) {
         const float y_scale = Settings::values.mouse_panning_y_sensitivity.GetValue() / 100.0f *
                               kledd_gyro_degrees_per_pixel / 360.0f;
         // rotations per second, same unit the SDL driver reports
-        const float yaw = std::clamp(-sum_px[0] / sum_dt * x_scale, -kledd_gyro_max_rps,
-                                     kledd_gyro_max_rps);
-        float pitch = std::clamp(-sum_px[1] / sum_dt * y_scale, -kledd_gyro_max_rps,
-                                 kledd_gyro_max_rps);
+        float yaw = -sum_px[0] / sum_dt * x_scale;
+        float pitch = -sum_px[1] / sum_dt * y_scale;
+        // Limit the total rotation speed, keeping its direction. Eden clamps each gyro axis
+        // at 5 rotations/s on its own, which on a wild flick would bend the direction.
+        {
+            const float speed = std::sqrt(yaw * yaw + pitch * pitch);
+            if (speed > kledd_gyro_max_rps) {
+                yaw *= kledd_gyro_max_rps / speed;
+                pitch *= kledd_gyro_max_rps / speed;
+            }
+        }
         // Keep the virtual controller's up/down tilt within +-kledd_gyro_pitch_limit degrees:
         // only send the part of this update's rotation that stays inside the limit
         {
@@ -152,11 +160,24 @@ void Mouse::UpdateMotionInput(Common::SteadyClock::time_point timestamp) {
         }
         const bool yaw_on_z = Settings::values.kledd_mouse_gyro_yaw_z.GetValue();
 
+        // Turn left/right around the WORLD's vertical axis, like a person turning a real
+        // controller, not around the controller's own (tilted) axis. When the virtual controller
+        // is tilted up or down, the controller's own axis leans with it, and turning around it
+        // makes the pointer move diagonally and the tilt drift.
+        float yaw_main = yaw;
+        float yaw_side = 0.0f;
+        if (yaw_on_z) {
+            const float tilt = kledd_gyro_pitch_deg * 3.14159265f / 180.0f;
+            const float side_sign = Settings::values.kledd_mouse_gyro_tilt_flip.GetValue() ? -1.0f : 1.0f;
+            yaw_main = yaw * std::cos(tilt);
+            yaw_side = yaw * std::sin(tilt) * side_sign;
+        }
+
         last_motion_change = {};
         SetMotion(motion_identifier, 0, BasicMotion{
             .gyro_x = pitch,
-            .gyro_y = yaw_on_z ? 0.0f : yaw,
-            .gyro_z = yaw_on_z ? yaw : 0.0f,
+            .gyro_y = yaw_on_z ? yaw_side : yaw,
+            .gyro_z = yaw_on_z ? yaw_main : 0.0f,
             .accel_x = 0,
             .accel_y = 0,
             // No gravity by default: with gravity Eden's motion fusion keeps pulling the
