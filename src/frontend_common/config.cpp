@@ -213,6 +213,12 @@ void Config::ReadControlValues() {
 
     ReadCategory(Settings::Category::Controls);
 
+    // eden-kledd: mouse panning itself is never saved (Eden resets it every start); when mouse
+    // gyro is on, start with panning on so the gyro works without re-ticking it each time
+    if (Settings::values.kledd_mouse_gyro.GetValue()) {
+        Settings::values.mouse_panning = true;
+    }
+
     Settings::values.players.SetGlobal(!IsCustomConfig());
     for (std::size_t p = 0; p < Settings::values.players.GetValue().size(); ++p) {
         ReadPlayerValues(p);
