@@ -4,6 +4,7 @@
 // SPDX-FileCopyrightText: Copyright 2021 yuzu Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
 #include <chrono>
 #include <fmt/ranges.h>
 #include <math.h>
@@ -97,7 +98,54 @@ void Mouse::UpdateStickInput(Common::SteadyClock::time_point timestamp) {
     }
 }
 
+// eden-kledd: degrees of controller rotation per pixel of mouse movement at 100% sensitivity
+constexpr float kledd_gyro_degrees_per_pixel = 0.1f;
+// eden-kledd: real gyros top out around 2000 deg/s; clamp to that (in rotations per second)
+constexpr float kledd_gyro_max_rps = 5.5f;
+
 void Mouse::UpdateMotionInput(Common::SteadyClock::time_point timestamp) {
+    if (IsMousePanningEnabled() && Settings::values.kledd_mouse_gyro.GetValue()) {
+        // Mouse movement since the last update becomes a rotation speed: the cursor is
+        // recentered every move, so only real movement counts, and stopping stops the aim.
+        float dt = std::chrono::duration<float>(timestamp - last_notify_timestamp).count();
+        if (!(dt > 0.0f) || dt > 0.1f) {
+            dt = 0.005f; // first update or a long pause: assume the 5 ms timer tick
+        }
+        kledd_gyro_hist_px[kledd_gyro_hist_pos] = kledd_gyro_pixels;
+        kledd_gyro_hist_dt[kledd_gyro_hist_pos] = dt;
+        kledd_gyro_hist_pos = (kledd_gyro_hist_pos + 1) % kledd_gyro_hist_px.size();
+        kledd_gyro_pixels = {};
+
+        Common::Vec<float, 2> sum_px{};
+        float sum_dt = 0.0f;
+        for (std::size_t i = 0; i < kledd_gyro_hist_px.size(); ++i) {
+            sum_px += kledd_gyro_hist_px[i];
+            sum_dt += kledd_gyro_hist_dt[i];
+        }
+        const float x_scale = Settings::values.mouse_panning_x_sensitivity.GetValue() / 100.0f *
+                              kledd_gyro_degrees_per_pixel / 360.0f;
+        const float y_scale = Settings::values.mouse_panning_y_sensitivity.GetValue() / 100.0f *
+                              kledd_gyro_degrees_per_pixel / 360.0f;
+        // rotations per second, same unit the SDL driver reports
+        const float yaw = std::clamp(-sum_px[0] / sum_dt * x_scale, -kledd_gyro_max_rps,
+                                     kledd_gyro_max_rps);
+        const float pitch = std::clamp(-sum_px[1] / sum_dt * y_scale, -kledd_gyro_max_rps,
+                                       kledd_gyro_max_rps);
+        const bool yaw_on_z = Settings::values.kledd_mouse_gyro_yaw_z.GetValue();
+
+        last_motion_change = {};
+        SetMotion(motion_identifier, 0, BasicMotion{
+            .gyro_x = pitch,
+            .gyro_y = yaw_on_z ? 0.0f : yaw,
+            .gyro_z = yaw_on_z ? yaw : 0.0f,
+            .accel_x = 0,
+            .accel_y = 0,
+            .accel_z = -1.0f, // held level, gravity straight down
+            .delta_timestamp = u64(std::chrono::duration_cast<std::chrono::microseconds>(timestamp - last_notify_timestamp).count()),
+        });
+        return;
+    }
+
     const float sensitivity =
         IsMousePanningEnabled() ? default_motion_panning_sensitivity : default_motion_sensitivity;
 
@@ -135,6 +183,11 @@ void Mouse::Move(int x, int y, int center_x, int center_y) {
         auto const x_sensitivity = Settings::values.mouse_panning_x_sensitivity.GetValue() * default_panning_sensitivity;
         auto const y_sensitivity = Settings::values.mouse_panning_y_sensitivity.GetValue() * default_panning_sensitivity;
         auto const deadzone_cw = Settings::values.mouse_panning_deadzone_counterweight.GetValue() * default_deadzone_counterweight;
+        if (Settings::values.kledd_mouse_gyro.GetValue()) {
+            // eden-kledd: movement goes to the gyro only; the stick stays centered
+            kledd_gyro_pixels += mouse_change;
+            return;
+        }
         last_motion_change += {-mouse_change[1] * x_sensitivity, -mouse_change[0] * y_sensitivity, 0};
         last_mouse_change[0] += mouse_change[0] * x_sensitivity;
         last_mouse_change[1] += mouse_change[1] * y_sensitivity;
