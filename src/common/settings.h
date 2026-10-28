@@ -856,6 +856,9 @@ struct Values {
     // drift correction can't pull the aim back toward level
     Setting<bool> kledd_mouse_gyro_gravity{linkage, false, "kledd_mouse_gyro_gravity",
                                            Category::Controls};
+    // eden-kledd: flip the direction of the world-vertical yaw correction (test toggle)
+    Setting<bool> kledd_mouse_gyro_tilt_flip{linkage, false, "kledd_mouse_gyro_tilt_flip",
+                                             Category::Controls};
 
     Setting<bool> emulate_analog_keyboard{linkage, false, "emulate_analog_keyboard",
                                           Category::Controls};
