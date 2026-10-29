@@ -109,6 +109,28 @@ constexpr float kledd_gyro_max_rps = 4.9f;
 constexpr float kledd_gyro_pitch_limit = 75.0f;
 
 void Mouse::UpdateMotionInput(Common::SteadyClock::time_point timestamp) {
+    // eden-kledd: mouse gyro while the mouse is freed (Ctrl+F9): hold the imaginary controller
+    // perfectly still where it is, instead of falling back to stock drag-to-tilt motion
+    if (!IsMousePanningEnabled() && Settings::values.kledd_mouse_gyro.GetValue()) {
+        kledd_gyro_pixels = {};
+        kledd_gyro_hist_px = {};
+        last_motion_change = {};
+        const float tilt = kledd_gyro_pitch_deg * 3.14159265f / 180.0f;
+        const bool yaw_on_z = Settings::values.kledd_mouse_gyro_yaw_z.GetValue();
+        const float side_sign =
+            Settings::values.kledd_mouse_gyro_tilt_flip.GetValue() ? -1.0f : 1.0f;
+        const bool gravity = Settings::values.kledd_mouse_gyro_gravity.GetValue();
+        SetMotion(motion_identifier, 0, BasicMotion{
+            .gyro_x = 0,
+            .gyro_y = 0,
+            .gyro_z = 0,
+            .accel_x = 0,
+            .accel_y = gravity && yaw_on_z ? -std::sin(tilt) * side_sign : 0.0f,
+            .accel_z = gravity ? (yaw_on_z ? -std::cos(tilt) : -1.0f) : 0.0f,
+            .delta_timestamp = u64(std::chrono::duration_cast<std::chrono::microseconds>(timestamp - last_notify_timestamp).count()),
+        });
+        return;
+    }
     if (IsMousePanningEnabled() && Settings::values.kledd_mouse_gyro.GetValue()) {
         // Mouse movement since the last update becomes a rotation speed: the cursor is
         // recentered every move, so only real movement counts, and stopping stops the aim.
@@ -264,6 +286,24 @@ void Mouse::UpdateMotionInput(Common::SteadyClock::time_point timestamp) {
 }
 
 void Mouse::Move(int x, int y, int center_x, int center_y) {
+    // eden-kledd: mouse gyro + Ctrl+F9. While the mouse is freed, the mouse must not move the
+    // gyro at all (stock Eden turns clicks into drag-tilts, and you click to scan). When it is
+    // captured again, the first moves still measure from wherever the free cursor was to the
+    // window center, which would be one giant flick: skip them.
+    if (Settings::values.kledd_mouse_gyro.GetValue()) {
+        const bool panning = IsMousePanningEnabled();
+        if (panning && !kledd_last_panning) {
+            kledd_skip_moves = 2;
+        }
+        kledd_last_panning = panning;
+        if (!panning) {
+            return;
+        }
+        if (kledd_skip_moves > 0) {
+            --kledd_skip_moves;
+            return;
+        }
+    }
     if (IsMousePanningEnabled()) {
         auto const mouse_change_int = Common::Vec<int, 2>(x, y) - Common::Vec<int, 2>(center_x, center_y);
         auto const mouse_change = Common::Vec<float, 2>(float(mouse_change_int[0]), float(mouse_change_int[1]));
