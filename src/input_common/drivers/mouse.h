@@ -133,6 +133,8 @@ private:
     std::atomic<bool> kledd_gravity_check_pending{false};
     Common::SteadyClock::time_point kledd_last_auto_level{};
     bool kledd_at_wall = false;
+    bool kledd_last_panning = false;
+    int kledd_skip_moves = 0;
     bool button_pressed = false;
 };
 
