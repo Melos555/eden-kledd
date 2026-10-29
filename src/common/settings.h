@@ -868,6 +868,21 @@ struct Values {
     // eden-kledd: average the mouse gyro over the game's last frame instead of a fixed window
     Setting<bool> kledd_mouse_gyro_frame_avg{linkage, true, "kledd_mouse_gyro_frame_avg",
                                              Category::Controls};
+    // eden-kledd: absolute mouse gyro (cursor mode): the mouse position in the game window sets
+    // the imaginary controller's angle; the cursor is kept inside the window instead of centered
+    Setting<bool> kledd_mouse_gyro_absolute{linkage, false, "kledd_mouse_gyro_absolute",
+                                            Category::Controls};
+    // eden-kledd: absolute mode calibration: degrees of tilt at the left/right and top/bottom edge
+    Setting<u8, true> kledd_mouse_gyro_abs_range_x{linkage, 30, 1, 90,
+                                                   "kledd_mouse_gyro_abs_range_x",
+                                                   Category::Controls};
+    Setting<u8, true> kledd_mouse_gyro_abs_range_y{linkage, 17, 1, 75,
+                                                   "kledd_mouse_gyro_abs_range_y",
+                                                   Category::Controls};
+    // eden-kledd: absolute mode: show the real mouse cursor (for calibration)
+    Setting<bool> kledd_mouse_gyro_abs_show_cursor{linkage, false,
+                                                   "kledd_mouse_gyro_abs_show_cursor",
+                                                   Category::Controls};
     // eden-kledd: write log/kledd_mouse_gyro.txt (probe)
     Setting<bool> kledd_mouse_gyro_probe{linkage, false, "kledd_mouse_gyro_probe",
                                          Category::Controls};

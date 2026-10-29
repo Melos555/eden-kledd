@@ -68,6 +68,51 @@
     </widget>
    </item>
    <item>
+    <widget class="QCheckBox" name="kledd_mouse_gyro_absolute">
+     <property name="text">
+      <string>[Kledd] Mouse gyro: absolute (cursor mode: the reticle sits where the mouse is)</string>
+     </property>
+     <property name="toolTip">
+      <string>For the cursor/pointer control scheme. The mouse's position in the game window sets where the controller points (center = straight ahead, edges = the calibration angles below). Leave it off for the camera control scheme (mouse look).</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout">
+     <item>
+      <widget class="QLabel" name="kledd_abs_range_label">
+       <property name="text">
+        <string>[Kledd] Absolute calibration: degrees at the side edges / top+bottom edges</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QSpinBox" name="kledd_mouse_gyro_abs_range_x">
+       <property name="minimum"><number>1</number></property>
+       <property name="maximum"><number>90</number></property>
+       <property name="suffix"><string>°</string></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QSpinBox" name="kledd_mouse_gyro_abs_range_y">
+       <property name="minimum"><number>1</number></property>
+       <property name="maximum"><number>75</number></property>
+       <property name="suffix"><string>°</string></property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QCheckBox" name="kledd_mouse_gyro_abs_show_cursor">
+     <property name="text">
+      <string>[Kledd] Absolute: show the real mouse cursor (calibration only)</string>
+     </property>
+     <property name="toolTip">
+      <string>Shows the Windows cursor so you can line the reticle up under it: raise a degree value if the reticle stops short of the cursor near the edges, lower it if the reticle runs ahead of it.</string>
+     </property>
+    </widget>
+   </item>
+   <item>
     <widget class="QCheckBox" name="kledd_mouse_gyro_frame_avg">
      <property name="text">
       <string>[Kledd] Mouse gyro: match the game's frame (steady through slowdowns; smoothing box ignored)</string>

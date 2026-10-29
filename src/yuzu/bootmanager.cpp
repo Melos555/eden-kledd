@@ -515,7 +515,17 @@ void GRenderWindow::mouseMoveEvent(QMouseEvent* event) {
 
     // Center mouse for mouse panning
     if (Settings::values.mouse_panning && !Settings::values.mouse_enabled) {
-        QCursor::setPos(mapToGlobal(QPoint{center_x, center_y}));
+        if (Settings::values.kledd_mouse_gyro.GetValue() &&
+            Settings::values.kledd_mouse_gyro_absolute.GetValue()) {
+            // eden-kledd absolute mouse gyro: keep the cursor inside the window, don't center it
+            const int clamped_x = std::clamp(pos.x(), 0, std::max(0, width() - 1));
+            const int clamped_y = std::clamp(pos.y(), 0, std::max(0, height() - 1));
+            if (clamped_x != pos.x() || clamped_y != pos.y()) {
+                QCursor::setPos(mapToGlobal(QPoint{clamped_x, clamped_y}));
+            }
+        } else {
+            QCursor::setPos(mapToGlobal(QPoint{center_x, center_y}));
+        }
     }
 
     // Constrain mouse for mouse emulation with mouse panning
@@ -557,6 +567,10 @@ void GRenderWindow::ConstrainMouse() {
 }
 
 void GRenderWindow::UpdateMouse() {
+    // eden-kledd absolute mouse gyro: Gravity Check puts the cursor back in the center
+    if (input_subsystem->GetMouse()->KleddTakeCenterRequest() && this->isActiveWindow()) {
+        QCursor::setPos(mapToGlobal(QPoint{width() / 2, height() / 2}));
+    }
     input_subsystem->GetMouse()->NotifyChanged(); // required to reset mouse once it's no longer moved
 }
 

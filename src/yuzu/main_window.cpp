@@ -4351,6 +4351,15 @@ void MainWindow::ShowMouseCursor() {
 void MainWindow::OnMouseActivity() {
     if (!Settings::values.mouse_panning) {
         ShowMouseCursor();
+    } else if (Settings::values.kledd_mouse_gyro.GetValue() &&
+               Settings::values.kledd_mouse_gyro_absolute.GetValue() && emulation_running) {
+        // eden-kledd absolute mouse gyro: the reticle is the pointer; show the real cursor
+        // only for calibration
+        if (Settings::values.kledd_mouse_gyro_abs_show_cursor.GetValue()) {
+            ShowMouseCursor();
+        } else {
+            HideMouseCursor();
+        }
     }
 }
 

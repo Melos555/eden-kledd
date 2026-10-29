@@ -5,6 +5,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
+#include <cstdlib>
 #include <chrono>
 #include <cmath>
 #include <fmt/format.h>
@@ -138,52 +139,69 @@ void Mouse::UpdateMotionInput(Common::SteadyClock::time_point timestamp) {
         if (!(dt > 0.0f) || dt > 0.1f) {
             dt = 0.005f; // first update or a long pause: assume the 5 ms timer tick
         }
-        kledd_gyro_hist_px[kledd_gyro_hist_pos] = kledd_gyro_pixels;
-        kledd_gyro_hist_dt[kledd_gyro_hist_pos] = dt;
-        kledd_gyro_hist_pos = (kledd_gyro_hist_pos + 1) % kledd_gyro_hist_px.size();
-        kledd_gyro_pixels = {};
-
-        const std::size_t size = kledd_gyro_hist_px.size();
-        Common::Vec<float, 2> sum_px{};
-        float sum_dt = 0.0f;
-        if (Settings::values.kledd_mouse_gyro_frame_avg.GetValue()) {
-            // Average over the game's last frame: the game reads the gyro once per frame and
-            // multiplies it by its frame time, so the speed must cover that same window. Then a
-            // long frame (hitch) gets the hand's whole movement, not a 5 ms snapshot of it.
-            const float frame_s = std::clamp(
-                static_cast<float>(Common::KleddMouseGyro::game_frame_ns.load()) * 1e-9f, 0.005f,
-                0.1f);
-            for (std::size_t i = 1; i <= size && sum_dt < frame_s; ++i) {
-                const std::size_t idx = (kledd_gyro_hist_pos + size - i) % size;
-                const float tick_dt = kledd_gyro_hist_dt[idx];
-                if (!(tick_dt > 0.0f)) {
-                    break;
-                }
-                // Last tick may stick out past the window: take only the part inside it
-                const float part = std::min(1.0f, (frame_s - sum_dt) / tick_dt);
-                sum_px += kledd_gyro_hist_px[idx] * part;
-                sum_dt += tick_dt * part;
-            }
+        float yaw = 0.0f;
+        float pitch = 0.0f;
+        const bool absolute = Settings::values.kledd_mouse_gyro_absolute.GetValue();
+        if (absolute) {
+            // Absolute (cursor mode): the cursor's spot in the window is the target angle; send
+            // exactly the rotation that gets the imaginary controller there this update
+            kledd_gyro_pixels = {};
+            const float range_x =
+                static_cast<float>(Settings::values.kledd_mouse_gyro_abs_range_x.GetValue());
+            const float range_y =
+                static_cast<float>(Settings::values.kledd_mouse_gyro_abs_range_y.GetValue());
+            const float target_yaw = -kledd_abs_pos[0] * range_x;
+            const float target_pitch = -kledd_abs_pos[1] * range_y;
+            yaw = (target_yaw - kledd_gyro_yaw_deg) / 360.0f / dt;
+            pitch = (target_pitch - kledd_gyro_pitch_deg) / 360.0f / dt;
         } else {
-            // Average over the last N updates (N = smoothing setting, 1 = no smoothing)
-            const std::size_t count = std::clamp<std::size_t>(
-                Settings::values.kledd_mouse_gyro_smoothing.GetValue(), 1, size);
-            for (std::size_t i = 1; i <= count; ++i) {
-                const std::size_t idx = (kledd_gyro_hist_pos + size - i) % size;
-                sum_px += kledd_gyro_hist_px[idx];
-                sum_dt += kledd_gyro_hist_dt[idx];
+            kledd_gyro_hist_px[kledd_gyro_hist_pos] = kledd_gyro_pixels;
+            kledd_gyro_hist_dt[kledd_gyro_hist_pos] = dt;
+            kledd_gyro_hist_pos = (kledd_gyro_hist_pos + 1) % kledd_gyro_hist_px.size();
+            kledd_gyro_pixels = {};
+
+            const std::size_t size = kledd_gyro_hist_px.size();
+            Common::Vec<float, 2> sum_px{};
+            float sum_dt = 0.0f;
+            if (Settings::values.kledd_mouse_gyro_frame_avg.GetValue()) {
+                // Average over the game's last frame: the game reads the gyro once per frame and
+                // multiplies it by its frame time, so the speed must cover that same window. Then a
+                // long frame (hitch) gets the hand's whole movement, not a 5 ms snapshot of it.
+                const float frame_s = std::clamp(
+                    static_cast<float>(Common::KleddMouseGyro::game_frame_ns.load()) * 1e-9f, 0.005f,
+                    0.1f);
+                for (std::size_t i = 1; i <= size && sum_dt < frame_s; ++i) {
+                    const std::size_t idx = (kledd_gyro_hist_pos + size - i) % size;
+                    const float tick_dt = kledd_gyro_hist_dt[idx];
+                    if (!(tick_dt > 0.0f)) {
+                        break;
+                    }
+                    // Last tick may stick out past the window: take only the part inside it
+                    const float part = std::min(1.0f, (frame_s - sum_dt) / tick_dt);
+                    sum_px += kledd_gyro_hist_px[idx] * part;
+                    sum_dt += tick_dt * part;
+                }
+            } else {
+                // Average over the last N updates (N = smoothing setting, 1 = no smoothing)
+                const std::size_t count = std::clamp<std::size_t>(
+                    Settings::values.kledd_mouse_gyro_smoothing.GetValue(), 1, size);
+                for (std::size_t i = 1; i <= count; ++i) {
+                    const std::size_t idx = (kledd_gyro_hist_pos + size - i) % size;
+                    sum_px += kledd_gyro_hist_px[idx];
+                    sum_dt += kledd_gyro_hist_dt[idx];
+                }
             }
+            if (!(sum_dt > 0.0f)) {
+                sum_dt = 0.005f;
+            }
+            const float x_scale = Settings::values.mouse_panning_x_sensitivity.GetValue() / 100.0f *
+                                  kledd_gyro_degrees_per_pixel / 360.0f;
+            const float y_scale = Settings::values.mouse_panning_y_sensitivity.GetValue() / 100.0f *
+                                  kledd_gyro_degrees_per_pixel / 360.0f;
+            // rotations per second, same unit the SDL driver reports
+            yaw = -sum_px[0] / sum_dt * x_scale;
+            pitch = -sum_px[1] / sum_dt * y_scale;
         }
-        if (!(sum_dt > 0.0f)) {
-            sum_dt = 0.005f;
-        }
-        const float x_scale = Settings::values.mouse_panning_x_sensitivity.GetValue() / 100.0f *
-                              kledd_gyro_degrees_per_pixel / 360.0f;
-        const float y_scale = Settings::values.mouse_panning_y_sensitivity.GetValue() / 100.0f *
-                              kledd_gyro_degrees_per_pixel / 360.0f;
-        // rotations per second, same unit the SDL driver reports
-        float yaw = -sum_px[0] / sum_dt * x_scale;
-        float pitch = -sum_px[1] / sum_dt * y_scale;
         // Limit the total rotation speed, keeping its direction. Eden clamps each gyro axis
         // at 5 rotations/s on its own, which on a wild flick would bend the direction.
         {
@@ -193,6 +211,7 @@ void Mouse::UpdateMotionInput(Common::SteadyClock::time_point timestamp) {
                 pitch *= kledd_gyro_max_rps / speed;
             }
         }
+        kledd_gyro_yaw_deg += yaw * 360.0f * dt;
         const bool probe = Settings::values.kledd_mouse_gyro_probe.GetValue();
         bool resync = false;
 
@@ -206,6 +225,13 @@ void Mouse::UpdateMotionInput(Common::SteadyClock::time_point timestamp) {
             kledd_gyro_pitch_deg = 0.0f;
             pitch = 0.0f;
             resync = true;
+            if (absolute) {
+                // Absolute mode: the cursor goes back to the window center with the aim
+                kledd_abs_pos = {};
+                kledd_gyro_yaw_deg = 0.0f;
+                yaw = 0.0f;
+                kledd_center_request.store(true);
+            }
         }
 
         // Keep the virtual controller's up/down tilt within +-kledd_gyro_pitch_limit degrees:
@@ -331,6 +357,22 @@ void Mouse::Move(int x, int y, int center_x, int center_y) {
         auto const y_sensitivity = Settings::values.mouse_panning_y_sensitivity.GetValue() * default_panning_sensitivity;
         auto const deadzone_cw = Settings::values.mouse_panning_deadzone_counterweight.GetValue() * default_deadzone_counterweight;
         if (Settings::values.kledd_mouse_gyro.GetValue()) {
+            if (Settings::values.kledd_mouse_gyro_absolute.GetValue()) {
+                // eden-kledd absolute mode: the cursor is not recentered, so this is the
+                // cursor's position in the window: -1..1 on each axis (0 = window center)
+                const float cx = static_cast<float>(std::max(1, center_x));
+                const float cy = static_cast<float>(std::max(1, center_y));
+                kledd_abs_pos = {std::clamp(mouse_change[0] / cx, -1.0f, 1.0f),
+                                 std::clamp(mouse_change[1] / cy, -1.0f, 1.0f)};
+                return;
+            }
+            // eden-kledd: a single move bigger than half the window can't be the hand (the
+            // cursor is recentered after every move); it is the cursor leaving the window, e.g.
+            // a dialog opening or alt-tab. Ignore it instead of flinging the aim.
+            if (std::abs(mouse_change_int[0]) > center_x ||
+                std::abs(mouse_change_int[1]) > center_y) {
+                return;
+            }
             // eden-kledd: movement goes to the gyro only; the stick stays centered
             kledd_gyro_pixels += mouse_change;
             return;
@@ -418,6 +460,10 @@ void Mouse::MouseWheelChange(int x, int y) {
     last_motion_change[2] += static_cast<f32>(y);
     SetAxis(identifier, wheel_axis_x, f32(wheel_position[0]));
     SetAxis(identifier, wheel_axis_y, f32(wheel_position[1]));
+}
+
+bool Mouse::KleddTakeCenterRequest() {
+    return kledd_center_request.exchange(false);
 }
 
 void Mouse::KleddRequestGravityCheck() {
