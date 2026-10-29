@@ -100,6 +100,8 @@ public:
 
     /// eden-kledd: level the mouse gyro's imaginary controller and re-sync Eden's orientation
     void KleddRequestGravityCheck();
+    /// eden-kledd: absolute mode wants the OS cursor put back in the window center (once)
+    bool KleddTakeCenterRequest();
 
     /// @brief Notifies we changed something about the mouse state and we must update
     void NotifyChanged();
@@ -134,6 +136,9 @@ private:
     Common::SteadyClock::time_point kledd_last_auto_level{};
     bool kledd_at_wall = false;
     bool kledd_last_panning = false;
+    Common::Vec<float, 2> kledd_abs_pos{};
+    float kledd_gyro_yaw_deg{};
+    std::atomic<bool> kledd_center_request{false};
     int kledd_skip_moves = 0;
     bool button_pressed = false;
 };

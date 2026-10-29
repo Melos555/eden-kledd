@@ -34,6 +34,10 @@ void ConfigureMousePanning::SetConfiguration(float right_stick_deadzone, float r
     ui->kledd_mouse_gyro_no_fusion->setChecked(Settings::values.kledd_mouse_gyro_no_fusion.GetValue());
     ui->kledd_mouse_gyro_probe->setChecked(Settings::values.kledd_mouse_gyro_probe.GetValue());
     ui->kledd_mouse_gyro_frame_avg->setChecked(Settings::values.kledd_mouse_gyro_frame_avg.GetValue());
+    ui->kledd_mouse_gyro_absolute->setChecked(Settings::values.kledd_mouse_gyro_absolute.GetValue());
+    ui->kledd_mouse_gyro_abs_range_x->setValue(Settings::values.kledd_mouse_gyro_abs_range_x.GetValue());
+    ui->kledd_mouse_gyro_abs_range_y->setValue(Settings::values.kledd_mouse_gyro_abs_range_y.GetValue());
+    ui->kledd_mouse_gyro_abs_show_cursor->setChecked(Settings::values.kledd_mouse_gyro_abs_show_cursor.GetValue());
     ui->kledd_mouse_gyro_smoothing->setValue(Settings::values.kledd_mouse_gyro_smoothing.GetValue());
     ui->x_sensitivity->setValue(Settings::values.mouse_panning_x_sensitivity.GetValue());
     ui->y_sensitivity->setValue(Settings::values.mouse_panning_y_sensitivity.GetValue());
@@ -87,6 +91,13 @@ void ConfigureMousePanning::ApplyConfiguration() {
     Settings::values.kledd_mouse_gyro_no_fusion = ui->kledd_mouse_gyro_no_fusion->isChecked();
     Settings::values.kledd_mouse_gyro_probe = ui->kledd_mouse_gyro_probe->isChecked();
     Settings::values.kledd_mouse_gyro_frame_avg = ui->kledd_mouse_gyro_frame_avg->isChecked();
+    Settings::values.kledd_mouse_gyro_absolute = ui->kledd_mouse_gyro_absolute->isChecked();
+    Settings::values.kledd_mouse_gyro_abs_range_x =
+        static_cast<u8>(ui->kledd_mouse_gyro_abs_range_x->value());
+    Settings::values.kledd_mouse_gyro_abs_range_y =
+        static_cast<u8>(ui->kledd_mouse_gyro_abs_range_y->value());
+    Settings::values.kledd_mouse_gyro_abs_show_cursor =
+        ui->kledd_mouse_gyro_abs_show_cursor->isChecked();
     Settings::values.kledd_mouse_gyro_smoothing =
         static_cast<u8>(ui->kledd_mouse_gyro_smoothing->value());
     Settings::values.mouse_panning_x_sensitivity = static_cast<float>(ui->x_sensitivity->value());
