@@ -158,6 +158,7 @@ static FileSys::VirtualFile VfsDirectoryCreateFileWrapper(const FileSys::Virtual
 // Input //
 #include "hid_core/frontend/emulated_controller.h"
 #include "hid_core/hid_core.h"
+#include "input_common/drivers/mouse.h"
 #include "input_common/drivers/virtual_amiibo.h"
 
 // Video Core //
