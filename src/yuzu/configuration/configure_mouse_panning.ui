@@ -48,6 +48,36 @@
     </widget>
    </item>
    <item>
+    <widget class="QCheckBox" name="kledd_mouse_gyro_auto_level">
+     <property name="text">
+      <string>[Kledd] Mouse gyro: auto-level when the aim hits its up/down limit</string>
+     </property>
+     <property name="toolTip">
+      <string>When the imaginary controller is pushed into its up/down limit, Eden re-syncs its motion sensor with it (like a quick Gravity Check). The [Kledd] Gravity Check hotkey does the same by hand.</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QCheckBox" name="kledd_mouse_gyro_no_fusion">
+     <property name="text">
+      <string>[Kledd] Mouse gyro: no drift correction (a mouse never drifts)</string>
+     </property>
+     <property name="toolTip">
+      <string>Skips Eden&apos;s gyro drift learning and gravity correction for mouse motion. Try it with gravity on if circles feel polygonal.</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QCheckBox" name="kledd_mouse_gyro_probe">
+     <property name="text">
+      <string>[Kledd] Mouse gyro: probe log (log/kledd_mouse_gyro.txt)</string>
+     </property>
+     <property name="toolTip">
+      <string>Writes what the mouse sends and what Eden&apos;s motion sensor thinks, 10 times a second, plus events (wall, auto-level, Gravity Check). Watch it live with Gyro Watch. For debugging only.</string>
+     </property>
+    </widget>
+   </item>
+   <item>
     <layout class="QHBoxLayout">
      <item>
       <widget class="QLabel" name="kledd_mouse_gyro_smoothing_label">

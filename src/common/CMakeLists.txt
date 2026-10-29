@@ -97,6 +97,8 @@ add_library(
     ${CMAKE_CURRENT_BINARY_DIR}/scm_rev.cpp
     scm_rev.h
     scope_exit.h
+    kledd_mouse_gyro.cpp
+    kledd_mouse_gyro.h
     scratch_buffer.h
     settings.cpp
     settings.h

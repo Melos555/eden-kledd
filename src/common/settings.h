@@ -859,6 +859,15 @@ struct Values {
     // eden-kledd: flip the direction of the world-vertical yaw correction (test toggle)
     Setting<bool> kledd_mouse_gyro_tilt_flip{linkage, false, "kledd_mouse_gyro_tilt_flip",
                                              Category::Controls};
+    // eden-kledd: when the imaginary controller hits its up/down limit, re-sync Eden's orientation
+    Setting<bool> kledd_mouse_gyro_auto_level{linkage, true, "kledd_mouse_gyro_auto_level",
+                                              Category::Controls};
+    // eden-kledd: skip Eden's drift correction / bias learning for mouse motion
+    Setting<bool> kledd_mouse_gyro_no_fusion{linkage, false, "kledd_mouse_gyro_no_fusion",
+                                             Category::Controls};
+    // eden-kledd: write log/kledd_mouse_gyro.txt (probe)
+    Setting<bool> kledd_mouse_gyro_probe{linkage, false, "kledd_mouse_gyro_probe",
+                                         Category::Controls};
 
     Setting<bool> emulate_analog_keyboard{linkage, false, "emulate_analog_keyboard",
                                           Category::Controls};

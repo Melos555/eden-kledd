@@ -89,6 +89,12 @@ void ConfigureHotkeys::Populate(const HotkeyRegistry& registry) {
                 new QStandardItem(QString::fromStdString(hotkey.second.controller_keyseq));
             action->setEditable(false);
             action->setData(hotkey_action_data);
+            if (hotkey_action_data == QStringLiteral("[Kledd] Gravity Check")) {
+                action->setToolTip(tr(
+                    "Mouse gyro: levels the imaginary controller and briefly sends gravity, so "
+                    "the emulated motion sensor knows which way is down again.\nUse it when the "
+                    "aim drifts, flips or gets stuck at an edge."));
+            }
             keyseq->setEditable(false);
             controller_keyseq->setEditable(false);
             parent_item->appendRow({action, keyseq, controller_keyseq});
