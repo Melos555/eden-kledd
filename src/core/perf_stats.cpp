@@ -20,6 +20,7 @@
 #include "common/fs/fs.h"
 #include "common/fs/fs_util.h"
 #include "common/fs/path_util.h"
+#include "common/kledd_mouse_gyro.h"
 #include "common/logging.h"
 #include "common/settings.h"
 #include "core/perf_stats.h"
@@ -96,6 +97,11 @@ void PerfStats::EndGameFrame() {
         std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now().time_since_epoch())
             .count();
     std::scoped_lock lock{kledd_mutex};
+    if (kledd_count > 0) {
+        // eden-kledd mouse gyro: tell the mouse driver how long the game's frames are
+        Common::KleddMouseGyro::game_frame_ns.store(
+            now_ns - kledd_frames[(kledd_count - 1) % KleddRecordFrames]);
+    }
     kledd_frames[kledd_count % KleddRecordFrames] = now_ns;
     ++kledd_count;
 }

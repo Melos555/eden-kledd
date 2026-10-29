@@ -865,6 +865,9 @@ struct Values {
     // eden-kledd: skip Eden's drift correction / bias learning for mouse motion
     Setting<bool> kledd_mouse_gyro_no_fusion{linkage, false, "kledd_mouse_gyro_no_fusion",
                                              Category::Controls};
+    // eden-kledd: average the mouse gyro over the game's last frame instead of a fixed window
+    Setting<bool> kledd_mouse_gyro_frame_avg{linkage, true, "kledd_mouse_gyro_frame_avg",
+                                             Category::Controls};
     // eden-kledd: write log/kledd_mouse_gyro.txt (probe)
     Setting<bool> kledd_mouse_gyro_probe{linkage, false, "kledd_mouse_gyro_probe",
                                          Category::Controls};

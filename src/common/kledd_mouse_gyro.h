@@ -17,6 +17,9 @@ inline std::atomic<float> tracked_pitch_deg{0.0f};
 /// sent with that sample (re-sync Eden's idea of the tilt with the mouse driver's)
 inline std::atomic<bool> resync_request{false};
 
+/// Length of the game's last frame (time between the last two presented frames), in ns
+inline std::atomic<long long> game_frame_ns{0};
+
 /// Appends a line to log/kledd_mouse_gyro.txt (file is restarted on the first line of a run)
 void ProbeLog(const std::string& line);
 
