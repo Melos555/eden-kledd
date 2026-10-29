@@ -7,6 +7,7 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 
 #include <thread>
 #include <chrono>
@@ -97,6 +98,9 @@ public:
 
     void ReleaseAllButtons();
 
+    /// eden-kledd: level the mouse gyro's imaginary controller and re-sync Eden's orientation
+    void KleddRequestGravityCheck();
+
     /// @brief Notifies we changed something about the mouse state and we must update
     void NotifyChanged();
 
@@ -126,6 +130,9 @@ private:
     // eden-kledd: total up/down tilt sent so far (degrees), kept within a limit so the virtual
     // controller can't tip past vertical and turn the up/down aim upside down
     float kledd_gyro_pitch_deg{};
+    std::atomic<bool> kledd_gravity_check_pending{false};
+    Common::SteadyClock::time_point kledd_last_auto_level{};
+    bool kledd_at_wall = false;
     bool button_pressed = false;
 };
 

@@ -41,7 +41,7 @@ void MotionInput::SetGyroscope(const Common::Vec<f32, 3>& gyroscope) {
     gyro[2] = std::clamp(gyro[2], -GyroMaxValue, GyroMaxValue);
 
     // Auto adjust gyro_bias to minimize drift
-    if (!IsMoving(IsAtRestRelaxed)) {
+    if (!kledd_no_fusion && !IsMoving(IsAtRestRelaxed)) {
         gyro_bias = (gyro_bias * 0.9999f) + (gyroscope * 0.0001f);
     }
 
@@ -88,6 +88,27 @@ void MotionInput::SetUserGyroThreshold(f32 threshold) {
     user_gyro_threshold = threshold / ThresholdStandard;
 }
 
+void MotionInput::SetKleddNoFusion(bool enabled) {
+    if (enabled && !kledd_no_fusion) {
+        // Forget any bias learned earlier: a mouse has none
+        gyro_bias = {};
+        integral_error = {};
+    }
+    kledd_no_fusion = enabled;
+}
+
+void MotionInput::KleddResyncToAccelerometer() {
+    if (accel.Length() < 0.75f || accel.Length() > 1.25f) {
+        return;
+    }
+    gyro_bias = {};
+    integral_error = {};
+    // Force the correction loop to run even if the last error was small
+    real_error = {1.0f, 1.0f, 1.0f};
+    SetOrientationFromAccelerometer();
+    reset_counter = 0;
+}
+
 void MotionInput::EnableReset(bool reset) {
     reset_enabled = reset;
 }
@@ -132,7 +153,7 @@ void MotionInput::StopCalibration() {
 // Based on Madgwick's implementation of Mayhony's AHRS algorithm.
 // https://github.com/xioTechnologies/Open-Source-AHRS-With-x-IMU/blob/master/x-IMU%20IMU%20and%20AHRS%20Algorithms/x-IMU%20IMU%20and%20AHRS%20Algorithms/AHRS/MahonyAHRS.cs
 void MotionInput::UpdateOrientation(u64 elapsed_time) {
-    if (!IsCalibrated(0.1f)) {
+    if (!kledd_no_fusion && !IsCalibrated(0.1f)) {
         ResetOrientation();
     }
     // Short name local variable for readability
@@ -162,7 +183,7 @@ void MotionInput::UpdateOrientation(u64 elapsed_time) {
     }
 
     // Ignore drift correction if acceleration is not reliable
-    if (accel.Length() >= 0.75f && accel.Length() <= 1.25f) {
+    if (!kledd_no_fusion && accel.Length() >= 0.75f && accel.Length() <= 1.25f) {
         const f32 ax = -normal_accel[0];
         const f32 ay = normal_accel[1];
         const f32 az = -normal_accel[2];

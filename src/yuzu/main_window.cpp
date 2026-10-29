@@ -1347,6 +1347,10 @@ void MainWindow::InitializeHotkeys() {
             QtCommon::system->GetRenderdocAPI().ToggleCapture();
         }
     });
+    connect_shortcut(QStringLiteral("[Kledd] Gravity Check"), [&] {
+        input_subsystem->GetMouse()->KleddRequestGravityCheck();
+        statusBar()->showMessage(tr("[Kledd] Gravity Check"), 1500);
+    });
     connect_shortcut(QStringLiteral("Toggle Mouse Panning"), [&] {
         Settings::values.mouse_panning = !Settings::values.mouse_panning;
         if (Settings::values.mouse_panning) {

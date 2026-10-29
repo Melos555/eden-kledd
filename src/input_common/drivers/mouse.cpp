@@ -7,9 +7,11 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <fmt/format.h>
 #include <fmt/ranges.h>
 #include <math.h>
 
+#include "common/kledd_mouse_gyro.h"
 #include "common/param_package.h"
 #include "common/settings.h"
 #include "common/steady_clock.h"
@@ -149,15 +151,48 @@ void Mouse::UpdateMotionInput(Common::SteadyClock::time_point timestamp) {
                 pitch *= kledd_gyro_max_rps / speed;
             }
         }
+        const bool probe = Settings::values.kledd_mouse_gyro_probe.GetValue();
+        bool resync = false;
+
+        // Gravity Check (hotkey): level the imaginary controller and snap Eden's orientation to
+        // it. Only the up/down tilt is reset; left/right stays where it is.
+        if (kledd_gravity_check_pending.exchange(false)) {
+            if (probe) {
+                Common::KleddMouseGyro::ProbeLog(fmt::format(
+                    "GRAVITY CHECK (hotkey)  tracked {:+.2f} -> 0", kledd_gyro_pitch_deg));
+            }
+            kledd_gyro_pitch_deg = 0.0f;
+            pitch = 0.0f;
+            resync = true;
+        }
+
         // Keep the virtual controller's up/down tilt within +-kledd_gyro_pitch_limit degrees:
         // only send the part of this update's rotation that stays inside the limit
         {
             const float step_deg = pitch * 360.0f * dt;
-            const float next = std::clamp(kledd_gyro_pitch_deg + step_deg,
-                                          -kledd_gyro_pitch_limit, kledd_gyro_pitch_limit);
+            const float wanted = kledd_gyro_pitch_deg + step_deg;
+            const float next =
+                std::clamp(wanted, -kledd_gyro_pitch_limit, kledd_gyro_pitch_limit);
             pitch = (next - kledd_gyro_pitch_deg) / (360.0f * dt);
             kledd_gyro_pitch_deg = next;
+
+            // Pushing into the limit: re-sync Eden to the imaginary controller (auto-level), on
+            // entering the wall and then at most twice a second while pushing into it
+            const bool pushing_wall = wanted != next;
+            if (pushing_wall && Settings::values.kledd_mouse_gyro_auto_level.GetValue() &&
+                (!kledd_at_wall ||
+                 timestamp - kledd_last_auto_level > std::chrono::milliseconds(500))) {
+                kledd_last_auto_level = timestamp;
+                resync = true;
+                if (probe) {
+                    Common::KleddMouseGyro::ProbeLog(fmt::format(
+                        "WALL {}  tracked {:+.2f} (wanted {:+.2f})  -> auto-level",
+                        next < 0.0f ? "DOWN" : "UP", next, wanted));
+                }
+            }
+            kledd_at_wall = pushing_wall;
         }
+        Common::KleddMouseGyro::tracked_pitch_deg.store(kledd_gyro_pitch_deg);
         const bool yaw_on_z = Settings::values.kledd_mouse_gyro_yaw_z.GetValue();
 
         // Turn left/right around the WORLD's vertical axis, like a person turning a real
@@ -177,7 +212,11 @@ void Mouse::UpdateMotionInput(Common::SteadyClock::time_point timestamp) {
         // controller). A level controller sees (0, 0, -1). Matching it to the tilt keeps the
         // motion fusion from pulling the aim back to level, and the game always gets a real
         // gravity reference instead of free fall.
-        const bool gravity = Settings::values.kledd_mouse_gyro_gravity.GetValue();
+        // A re-sync sends gravity for this one sample even when gravity is switched off
+        const bool gravity = resync || Settings::values.kledd_mouse_gyro_gravity.GetValue();
+        if (resync) {
+            Common::KleddMouseGyro::resync_request.store(true);
+        }
         const float grav_y = gravity && yaw_on_z ? -std::sin(tilt) * side_sign : 0.0f;
         const float grav_z = gravity ? (yaw_on_z ? -std::cos(tilt) : -1.0f) : 0.0f;
 
@@ -319,6 +358,10 @@ void Mouse::MouseWheelChange(int x, int y) {
     last_motion_change[2] += static_cast<f32>(y);
     SetAxis(identifier, wheel_axis_x, f32(wheel_position[0]));
     SetAxis(identifier, wheel_axis_y, f32(wheel_position[1]));
+}
+
+void Mouse::KleddRequestGravityCheck() {
+    kledd_gravity_check_pending.store(true);
 }
 
 void Mouse::ReleaseAllButtons() {

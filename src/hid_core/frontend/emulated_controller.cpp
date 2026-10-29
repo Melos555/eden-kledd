@@ -9,7 +9,10 @@
 #include <common/scope_exit.h>
 
 #include <ranges>
+#include <fmt/format.h>
 #include "common/thread.h"
+#include "common/kledd_mouse_gyro.h"
+#include "common/settings.h"
 #include "common/assert.h"
 #include "hid_core/frontend/emulated_controller.h"
 #include "hid_core/frontend/input_converter.h"
@@ -1037,6 +1040,13 @@ void EmulatedController::SetMotion(const Common::Input::CallbackStatus& callback
     auto& emulated = controller.motion_values[index].emulated;
 
     raw_status = TransformToMotion(callback);
+
+    // eden-kledd: mouse gyro options (no drift correction, re-sync) and probe log
+    const bool kledd_is_mouse =
+        index < motion_params.size() && motion_params[index].Get("engine", "") == "mouse";
+    emulated.SetKleddNoFusion(kledd_is_mouse &&
+                              Settings::values.kledd_mouse_gyro_no_fusion.GetValue());
+
     emulated.SetAcceleration(Common::Vec<f32, 3>{
         raw_status.accel.x.value,
         raw_status.accel.y.value,
@@ -1048,6 +1058,16 @@ void EmulatedController::SetMotion(const Common::Input::CallbackStatus& callback
         raw_status.gyro.z.value,
     });
     emulated.SetUserGyroThreshold(raw_status.gyro.x.properties.threshold);
+    if (kledd_is_mouse && Common::KleddMouseGyro::resync_request.exchange(false)) {
+        emulated.KleddResyncToAccelerometer();
+        if (Settings::values.kledd_mouse_gyro_probe.GetValue()) {
+            const auto e = emulated.GetEulerAngles();
+            Common::KleddMouseGyro::ProbeLog(fmt::format(
+                "RESYNC  tracked={:+7.2f}  eden euler=({:+7.2f},{:+7.2f},{:+7.2f})",
+                Common::KleddMouseGyro::tracked_pitch_deg.load(), e[0] * 57.29578f,
+                e[1] * 57.29578f, e[2] * 57.29578f));
+        }
+    }
     emulated.UpdateRotation(raw_status.delta_timestamp);
     emulated.UpdateOrientation(raw_status.delta_timestamp);
 
@@ -1058,6 +1078,25 @@ void EmulatedController::SetMotion(const Common::Input::CallbackStatus& callback
     motion.euler = emulated.GetEulerAngles();
     motion.orientation = emulated.GetOrientation();
     motion.is_at_rest = !emulated.IsMoving(motion_sensitivity);
+
+    if (kledd_is_mouse && Settings::values.kledd_mouse_gyro_probe.GetValue()) {
+        static auto last = std::chrono::steady_clock::time_point{};
+        const auto now = std::chrono::steady_clock::now();
+        if (now - last >= std::chrono::milliseconds(100)) {
+            last = now;
+            const auto e = motion.euler;
+            const auto a = motion.accel;
+            const auto g = motion.gyro;
+            const auto b = emulated.GetGyroBias();
+            Common::KleddMouseGyro::ProbeLog(fmt::format(
+                "DATA    tracked={:+7.2f}  eden euler=({:+7.2f},{:+7.2f},{:+7.2f})  "
+                "gyro=({:+.3f},{:+.3f},{:+.3f})  accel=({:+.2f},{:+.2f},{:+.2f})  "
+                "bias=({:+.4f},{:+.4f},{:+.4f})  rest={}",
+                Common::KleddMouseGyro::tracked_pitch_deg.load(), e[0] * 57.29578f,
+                e[1] * 57.29578f, e[2] * 57.29578f, g[0], g[1], g[2], a[0], a[1], a[2], b[0],
+                b[1], b[2], motion.is_at_rest ? 1 : 0));
+        }
+    }
 }
 
 void EmulatedController::SetColors(const Common::Input::CallbackStatus& callback,

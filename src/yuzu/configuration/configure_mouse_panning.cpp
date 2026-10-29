@@ -30,6 +30,9 @@ void ConfigureMousePanning::SetConfiguration(float right_stick_deadzone, float r
     ui->kledd_mouse_gyro_yaw_z->setChecked(Settings::values.kledd_mouse_gyro_yaw_z.GetValue());
     ui->kledd_mouse_gyro_gravity->setChecked(Settings::values.kledd_mouse_gyro_gravity.GetValue());
     ui->kledd_mouse_gyro_tilt_flip->setChecked(Settings::values.kledd_mouse_gyro_tilt_flip.GetValue());
+    ui->kledd_mouse_gyro_auto_level->setChecked(Settings::values.kledd_mouse_gyro_auto_level.GetValue());
+    ui->kledd_mouse_gyro_no_fusion->setChecked(Settings::values.kledd_mouse_gyro_no_fusion.GetValue());
+    ui->kledd_mouse_gyro_probe->setChecked(Settings::values.kledd_mouse_gyro_probe.GetValue());
     ui->kledd_mouse_gyro_smoothing->setValue(Settings::values.kledd_mouse_gyro_smoothing.GetValue());
     ui->x_sensitivity->setValue(Settings::values.mouse_panning_x_sensitivity.GetValue());
     ui->y_sensitivity->setValue(Settings::values.mouse_panning_y_sensitivity.GetValue());
@@ -79,6 +82,9 @@ void ConfigureMousePanning::ApplyConfiguration() {
     Settings::values.kledd_mouse_gyro_yaw_z = ui->kledd_mouse_gyro_yaw_z->isChecked();
     Settings::values.kledd_mouse_gyro_gravity = ui->kledd_mouse_gyro_gravity->isChecked();
     Settings::values.kledd_mouse_gyro_tilt_flip = ui->kledd_mouse_gyro_tilt_flip->isChecked();
+    Settings::values.kledd_mouse_gyro_auto_level = ui->kledd_mouse_gyro_auto_level->isChecked();
+    Settings::values.kledd_mouse_gyro_no_fusion = ui->kledd_mouse_gyro_no_fusion->isChecked();
+    Settings::values.kledd_mouse_gyro_probe = ui->kledd_mouse_gyro_probe->isChecked();
     Settings::values.kledd_mouse_gyro_smoothing =
         static_cast<u8>(ui->kledd_mouse_gyro_smoothing->value());
     Settings::values.mouse_panning_x_sensitivity = static_cast<float>(ui->x_sensitivity->value());
