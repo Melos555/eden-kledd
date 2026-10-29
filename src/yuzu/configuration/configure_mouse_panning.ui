@@ -68,6 +68,16 @@
     </widget>
    </item>
    <item>
+    <widget class="QCheckBox" name="kledd_mouse_gyro_frame_avg">
+     <property name="text">
+      <string>[Kledd] Mouse gyro: match the game's frame (steady through slowdowns; smoothing box ignored)</string>
+     </property>
+     <property name="toolTip">
+      <string>The game reads the gyro once per frame and multiplies it by the frame time. With this on, Eden reports the mouse speed averaged over that same frame, so a hitch gets your whole hand movement instead of a 5 ms snapshot of it (no flying away, nothing lost).</string>
+     </property>
+    </widget>
+   </item>
+   <item>
     <widget class="QCheckBox" name="kledd_mouse_gyro_probe">
      <property name="text">
       <string>[Kledd] Mouse gyro: probe log (log/kledd_mouse_gyro.txt)</string>

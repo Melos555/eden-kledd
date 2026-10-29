@@ -143,16 +143,36 @@ void Mouse::UpdateMotionInput(Common::SteadyClock::time_point timestamp) {
         kledd_gyro_hist_pos = (kledd_gyro_hist_pos + 1) % kledd_gyro_hist_px.size();
         kledd_gyro_pixels = {};
 
-        // Average over the last N updates (N = smoothing setting, 1 = no smoothing)
         const std::size_t size = kledd_gyro_hist_px.size();
-        const std::size_t count = std::clamp<std::size_t>(
-            Settings::values.kledd_mouse_gyro_smoothing.GetValue(), 1, size);
         Common::Vec<float, 2> sum_px{};
         float sum_dt = 0.0f;
-        for (std::size_t i = 1; i <= count; ++i) {
-            const std::size_t idx = (kledd_gyro_hist_pos + size - i) % size;
-            sum_px += kledd_gyro_hist_px[idx];
-            sum_dt += kledd_gyro_hist_dt[idx];
+        if (Settings::values.kledd_mouse_gyro_frame_avg.GetValue()) {
+            // Average over the game's last frame: the game reads the gyro once per frame and
+            // multiplies it by its frame time, so the speed must cover that same window. Then a
+            // long frame (hitch) gets the hand's whole movement, not a 5 ms snapshot of it.
+            const float frame_s = std::clamp(
+                static_cast<float>(Common::KleddMouseGyro::game_frame_ns.load()) * 1e-9f, 0.005f,
+                0.1f);
+            for (std::size_t i = 1; i <= size && sum_dt < frame_s; ++i) {
+                const std::size_t idx = (kledd_gyro_hist_pos + size - i) % size;
+                const float tick_dt = kledd_gyro_hist_dt[idx];
+                if (!(tick_dt > 0.0f)) {
+                    break;
+                }
+                // Last tick may stick out past the window: take only the part inside it
+                const float part = std::min(1.0f, (frame_s - sum_dt) / tick_dt);
+                sum_px += kledd_gyro_hist_px[idx] * part;
+                sum_dt += tick_dt * part;
+            }
+        } else {
+            // Average over the last N updates (N = smoothing setting, 1 = no smoothing)
+            const std::size_t count = std::clamp<std::size_t>(
+                Settings::values.kledd_mouse_gyro_smoothing.GetValue(), 1, size);
+            for (std::size_t i = 1; i <= count; ++i) {
+                const std::size_t idx = (kledd_gyro_hist_pos + size - i) % size;
+                sum_px += kledd_gyro_hist_px[idx];
+                sum_dt += kledd_gyro_hist_dt[idx];
+            }
         }
         if (!(sum_dt > 0.0f)) {
             sum_dt = 0.005f;

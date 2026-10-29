@@ -124,8 +124,8 @@ private:
     // eden-kledd mouse gyro: raw pixel movement since the last update, plus a short history
     // so the rate is averaged over ~20 ms (the game samples motion at its own pace)
     Common::Vec<float, 2> kledd_gyro_pixels{};
-    std::array<Common::Vec<float, 2>, 8> kledd_gyro_hist_px{};
-    std::array<float, 8> kledd_gyro_hist_dt{};
+    std::array<Common::Vec<float, 2>, 32> kledd_gyro_hist_px{};
+    std::array<float, 32> kledd_gyro_hist_dt{};
     std::size_t kledd_gyro_hist_pos{};
     // eden-kledd: total up/down tilt sent so far (degrees), kept within a limit so the virtual
     // controller can't tip past vertical and turn the up/down aim upside down

@@ -16,6 +16,7 @@
 #include "common/fs/file.h"
 #include "common/fs/fs.h"
 #include "common/fs/path_util.h"
+#include "common/kledd_mouse_gyro.h"
 #include "common/settings.h"
 #include "core/perf_stats.h"
 
@@ -85,6 +86,18 @@ void PerfStats::EndSystemFrame() {
 
 void PerfStats::EndGameFrame() {
     game_frames.fetch_add(1, std::memory_order_relaxed);
+
+    // eden-kledd mouse gyro: tell the mouse driver how long the game's frames are
+    // (the lab build got this from its frame recorder; this build has no recorder)
+    static std::atomic<s64> kledd_last_frame_ns{0};
+    const s64 now_ns =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch())
+            .count();
+    const s64 last_ns = kledd_last_frame_ns.exchange(now_ns, std::memory_order_relaxed);
+    if (last_ns != 0) {
+        Common::KleddMouseGyro::game_frame_ns.store(now_ns - last_ns);
+    }
 }
 
 double PerfStats::GetMeanFrametime() const {
