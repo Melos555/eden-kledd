@@ -2471,30 +2471,6 @@ bool Image::IsDepthFloat() const {
     return host.format == VK_FORMAT_D32_SFLOAT_S8_UINT;
 }
 
-bool Image::CanSplitDepthStencil() const {
-    if (info.num_samples != 1) {
-        return false;
-    }
-    if (info.format != PixelFormat::S8_UINT_D24_UNORM &&
-        info.format != PixelFormat::D24_UNORM_S8_UINT) {
-        return false;
-    }
-    if (aspect_mask != (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) {
-        return false;
-    }
-    const auto host =
-        MaxwellToVK::SurfaceFormat(runtime->device, FormatType::Optimal, false, info.format);
-    // Hosts without D24S8 support (e.g. AMD) get D32_SFLOAT_S8_UINT instead
-    return host.format == VK_FORMAT_D24_UNORM_S8_UINT ||
-           host.format == VK_FORMAT_D32_SFLOAT_S8_UINT;
-}
-
-bool Image::IsDepthFloat() const {
-    const auto host =
-        MaxwellToVK::SurfaceFormat(runtime->device, FormatType::Optimal, false, info.format);
-    return host.format == VK_FORMAT_D32_SFLOAT_S8_UINT;
-}
-
 void Image::DownloadMemory(const StagingBufferRef& map, std::span<const BufferImageCopy> copies) {
     std::array buffers{
         map.buffer,
