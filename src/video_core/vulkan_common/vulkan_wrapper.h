@@ -147,16 +147,53 @@ inline VkResult Filter(VkResult result) {
     return result;
 }
 
-inline constexpr VkPipelineStageFlags PIPELINE_STAGE_GRAPHICS_COMPUTE =
-    VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+inline constexpr VkPipelineStageFlags2 PIPELINE_STAGE_HOST = VK_PIPELINE_STAGE_2_HOST_BIT;
 
-inline constexpr VkPipelineStageFlags PIPELINE_STAGE_GRAPHICS_COMPUTE_TRANSFER =
-    PIPELINE_STAGE_GRAPHICS_COMPUTE | VK_PIPELINE_STAGE_TRANSFER_BIT;
+inline constexpr VkPipelineStageFlags2 PIPELINE_STAGE_GRAPHICS_SHADERS =
+    VK_PIPELINE_STAGE_2_PRE_RASTERIZATION_SHADERS_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
 
-inline constexpr VkPipelineStageFlags PIPELINE_STAGE_GRAPHICS_COMPUTE_TRANSFER_HOST =
-    PIPELINE_STAGE_GRAPHICS_COMPUTE_TRANSFER | VK_PIPELINE_STAGE_HOST_BIT;
+inline constexpr VkPipelineStageFlags2 PIPELINE_STAGE_BUFFER_INPUTS =
+    VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT |
+    PIPELINE_STAGE_GRAPHICS_SHADERS | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
 
-inline constexpr VkPipelineStageFlags PIPELINE_STAGE_HOST = VK_PIPELINE_STAGE_HOST_BIT;
+inline constexpr VkPipelineStageFlags2 PIPELINE_STAGE_ATTACHMENTS =
+    VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT |
+    VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+inline constexpr VkAccessFlags2 ACCESS_SHADER_RESOURCES =
+    VK_ACCESS_2_UNIFORM_READ_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT;
+
+inline constexpr VkAccessFlags2 ACCESS_BUFFER_INPUTS =
+    VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_2_INDEX_READ_BIT |
+    VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT | ACCESS_SHADER_RESOURCES;
+
+inline constexpr VkAccessFlags2 ACCESS_ATTACHMENTS =
+    VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT |
+    VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+inline constexpr VkAccessFlags2 ACCESS_TRANSFER =
+    VK_ACCESS_2_TRANSFER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT;
+
+inline constexpr VkPipelineStageFlags2 PIPELINE_STAGE_BUFFER_USERS =
+    PIPELINE_STAGE_BUFFER_INPUTS | VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+
+inline constexpr VkAccessFlags2 ACCESS_BUFFER_WRITES =
+    VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT;
+
+inline constexpr VkAccessFlags2 ACCESS_BUFFER_CONSUMERS =
+    ACCESS_BUFFER_INPUTS | ACCESS_TRANSFER | VK_ACCESS_2_HOST_READ_BIT;
+
+inline constexpr VkPipelineStageFlags2 PIPELINE_STAGE_IMAGE_USERS =
+    PIPELINE_STAGE_GRAPHICS_SHADERS | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT |
+    PIPELINE_STAGE_ATTACHMENTS | VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+
+inline constexpr VkAccessFlags2 ACCESS_IMAGE_WRITES =
+    VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT |
+    VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT;
+
+inline constexpr VkAccessFlags2 ACCESS_IMAGE_USERS =
+    VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT | ACCESS_ATTACHMENTS |
+    ACCESS_TRANSFER;
 
 
 /// Table holding Vulkan instance function pointers.
@@ -169,10 +206,8 @@ struct InstanceDispatch {
     PFN_vkEnumerateInstanceLayerProperties vkEnumerateInstanceLayerProperties{};
 
     PFN_vkCreateDebugUtilsMessengerEXT vkCreateDebugUtilsMessengerEXT{};
-    PFN_vkCreateDebugReportCallbackEXT vkCreateDebugReportCallbackEXT{};
     PFN_vkCreateDevice vkCreateDevice{};
     PFN_vkDestroyDebugUtilsMessengerEXT vkDestroyDebugUtilsMessengerEXT{};
-    PFN_vkDestroyDebugReportCallbackEXT vkDestroyDebugReportCallbackEXT{};
     PFN_vkDestroyDevice vkDestroyDevice{};
     PFN_vkDestroySurfaceKHR vkDestroySurfaceKHR{};
     PFN_vkEnumerateDeviceExtensionProperties vkEnumerateDeviceExtensionProperties{};
@@ -181,7 +216,6 @@ struct InstanceDispatch {
     PFN_vkGetPhysicalDeviceFeatures2 vkGetPhysicalDeviceFeatures2{};
     PFN_vkGetPhysicalDeviceFormatProperties vkGetPhysicalDeviceFormatProperties{};
     PFN_vkGetPhysicalDeviceFormatProperties2 vkGetPhysicalDeviceFormatProperties2{};
-    PFN_vkGetPhysicalDeviceMemoryProperties vkGetPhysicalDeviceMemoryProperties{};
     PFN_vkGetPhysicalDeviceMemoryProperties2 vkGetPhysicalDeviceMemoryProperties2{};
     PFN_vkGetPhysicalDeviceProperties vkGetPhysicalDeviceProperties{};
     PFN_vkGetPhysicalDeviceProperties2 vkGetPhysicalDeviceProperties2{};
@@ -201,27 +235,27 @@ struct DeviceDispatch : InstanceDispatch {
     PFN_vkAllocateCommandBuffers vkAllocateCommandBuffers{};
     PFN_vkAllocateDescriptorSets vkAllocateDescriptorSets{};
     PFN_vkAllocateMemory vkAllocateMemory{};
-    PFN_vkBeginCommandBuffer vkBeginCommandBuffer{};
     PFN_vkBindBufferMemory vkBindBufferMemory{};
-    PFN_vkBindImageMemory vkBindImageMemory{};
+    PFN_vkFreeMemory vkFreeMemory{};
+    PFN_vkBeginCommandBuffer vkBeginCommandBuffer{};
     PFN_vkCmdBeginConditionalRenderingEXT vkCmdBeginConditionalRenderingEXT{};
-    PFN_vkCmdBeginDebugUtilsLabelEXT vkCmdBeginDebugUtilsLabelEXT{};
     PFN_vkCmdBeginQuery vkCmdBeginQuery{};
-    PFN_vkCmdBeginRenderPass vkCmdBeginRenderPass{};
+    PFN_vkCmdBeginRendering vkCmdBeginRendering{};
     PFN_vkCmdBeginTransformFeedbackEXT vkCmdBeginTransformFeedbackEXT{};
     PFN_vkCmdBindDescriptorSets vkCmdBindDescriptorSets{};
     PFN_vkCmdBindIndexBuffer vkCmdBindIndexBuffer{};
+    PFN_vkCmdBindIndexBuffer2KHR vkCmdBindIndexBuffer2KHR{};
     PFN_vkCmdBindPipeline vkCmdBindPipeline{};
     PFN_vkCmdBindTransformFeedbackBuffersEXT vkCmdBindTransformFeedbackBuffersEXT{};
     PFN_vkCmdBindVertexBuffers vkCmdBindVertexBuffers{};
     PFN_vkCmdBindVertexBuffers2EXT vkCmdBindVertexBuffers2EXT{};
-    PFN_vkCmdBlitImage vkCmdBlitImage{};
+    PFN_vkCmdBlitImage2 vkCmdBlitImage2{};
     PFN_vkCmdClearAttachments vkCmdClearAttachments{};
     PFN_vkCmdClearColorImage vkCmdClearColorImage{};
-    PFN_vkCmdCopyBuffer vkCmdCopyBuffer{};
-    PFN_vkCmdCopyBufferToImage vkCmdCopyBufferToImage{};
-    PFN_vkCmdCopyImage vkCmdCopyImage{};
-    PFN_vkCmdCopyImageToBuffer vkCmdCopyImageToBuffer{};
+    PFN_vkCmdCopyBuffer2 vkCmdCopyBuffer2{};
+    PFN_vkCmdCopyBufferToImage2 vkCmdCopyBufferToImage2{};
+    PFN_vkCmdCopyImage2 vkCmdCopyImage2{};
+    PFN_vkCmdCopyImageToBuffer2 vkCmdCopyImageToBuffer2{};
     PFN_vkCmdCopyQueryPoolResults vkCmdCopyQueryPoolResults{};
     PFN_vkCmdDispatch vkCmdDispatch{};
     PFN_vkCmdDispatchIndirect vkCmdDispatchIndirect{};
@@ -233,17 +267,15 @@ struct DeviceDispatch : InstanceDispatch {
     PFN_vkCmdDrawIndexedIndirectCount vkCmdDrawIndexedIndirectCount{};
     PFN_vkCmdDrawIndirectByteCountEXT vkCmdDrawIndirectByteCountEXT{};
     PFN_vkCmdEndConditionalRenderingEXT vkCmdEndConditionalRenderingEXT{};
-    PFN_vkCmdEndDebugUtilsLabelEXT vkCmdEndDebugUtilsLabelEXT{};
     PFN_vkCmdEndQuery vkCmdEndQuery{};
-    PFN_vkCmdEndRenderPass vkCmdEndRenderPass{};
+    PFN_vkCmdEndRendering vkCmdEndRendering{};
     PFN_vkCmdEndTransformFeedbackEXT vkCmdEndTransformFeedbackEXT{};
     PFN_vkCmdFillBuffer vkCmdFillBuffer{};
-    PFN_vkCmdPipelineBarrier vkCmdPipelineBarrier{};
     PFN_vkCmdPipelineBarrier2 vkCmdPipelineBarrier2{};
     PFN_vkCmdPushConstants vkCmdPushConstants{};
     PFN_vkCmdPushDescriptorSetWithTemplateKHR vkCmdPushDescriptorSetWithTemplateKHR{};
     PFN_vkCmdResetQueryPool vkCmdResetQueryPool{};
-    PFN_vkCmdResolveImage vkCmdResolveImage{};
+    PFN_vkCmdResolveImage2 vkCmdResolveImage2{};
     PFN_vkCmdSetBlendConstants vkCmdSetBlendConstants{};
     PFN_vkCmdSetCullModeEXT vkCmdSetCullModeEXT{};
     PFN_vkCmdSetDepthBias vkCmdSetDepthBias{};
@@ -260,13 +292,10 @@ struct DeviceDispatch : InstanceDispatch {
     PFN_vkCmdSetConservativeRasterizationModeEXT vkCmdSetConservativeRasterizationModeEXT{};
     PFN_vkCmdSetLineRasterizationModeEXT vkCmdSetLineRasterizationModeEXT{};
     PFN_vkCmdSetLineStippleEnableEXT vkCmdSetLineStippleEnableEXT{};
-    PFN_vkCmdSetLineStippleEXT vkCmdSetLineStippleEXT{};
     PFN_vkCmdSetDepthBiasEnableEXT vkCmdSetDepthBiasEnableEXT{};
     PFN_vkCmdSetLogicOpEnableEXT vkCmdSetLogicOpEnableEXT{};
     PFN_vkCmdSetDepthClampEnableEXT vkCmdSetDepthClampEnableEXT{};
-    PFN_vkCmdSetEvent vkCmdSetEvent{};
     PFN_vkCmdSetFrontFaceEXT vkCmdSetFrontFaceEXT{};
-    PFN_vkCmdSetPatchControlPointsEXT vkCmdSetPatchControlPointsEXT{};
     PFN_vkCmdSetLogicOpEXT vkCmdSetLogicOpEXT{};
     PFN_vkCmdSetLineWidth vkCmdSetLineWidth{};
     PFN_vkCmdSetPrimitiveTopologyEXT vkCmdSetPrimitiveTopologyEXT{};
@@ -282,7 +311,6 @@ struct DeviceDispatch : InstanceDispatch {
     PFN_vkCmdSetColorWriteEnableEXT vkCmdSetColorWriteEnableEXT{};
     PFN_vkCmdSetColorBlendEnableEXT vkCmdSetColorBlendEnableEXT{};
     PFN_vkCmdSetColorBlendEquationEXT vkCmdSetColorBlendEquationEXT{};
-    PFN_vkCmdWaitEvents vkCmdWaitEvents{};
     PFN_vkCreateBuffer vkCreateBuffer{};
     PFN_vkCreateBufferView vkCreateBufferView{};
     PFN_vkCreateCommandPool vkCreateCommandPool{};
@@ -290,17 +318,12 @@ struct DeviceDispatch : InstanceDispatch {
     PFN_vkCreateDescriptorPool vkCreateDescriptorPool{};
     PFN_vkCreateDescriptorSetLayout vkCreateDescriptorSetLayout{};
     PFN_vkCreateDescriptorUpdateTemplate vkCreateDescriptorUpdateTemplate{};
-    PFN_vkCreateEvent vkCreateEvent{};
     PFN_vkCreateFence vkCreateFence{};
-    PFN_vkCreateFramebuffer vkCreateFramebuffer{};
     PFN_vkCreateGraphicsPipelines vkCreateGraphicsPipelines{};
-    PFN_vkCreateImage vkCreateImage{};
     PFN_vkCreateImageView vkCreateImageView{};
     PFN_vkCreatePipelineCache vkCreatePipelineCache{};
     PFN_vkCreatePipelineLayout vkCreatePipelineLayout{};
     PFN_vkCreateQueryPool vkCreateQueryPool{};
-    PFN_vkCreateRenderPass vkCreateRenderPass{};
-    PFN_vkCreateRenderPass2 vkCreateRenderPass2{};
     PFN_vkCreateSampler vkCreateSampler{};
     PFN_vkCreateSemaphore vkCreateSemaphore{};
     PFN_vkCreateShaderModule vkCreateShaderModule{};
@@ -311,16 +334,13 @@ struct DeviceDispatch : InstanceDispatch {
     PFN_vkDestroyDescriptorPool vkDestroyDescriptorPool{};
     PFN_vkDestroyDescriptorSetLayout vkDestroyDescriptorSetLayout{};
     PFN_vkDestroyDescriptorUpdateTemplate vkDestroyDescriptorUpdateTemplate{};
-    PFN_vkDestroyEvent vkDestroyEvent{};
     PFN_vkDestroyFence vkDestroyFence{};
-    PFN_vkDestroyFramebuffer vkDestroyFramebuffer{};
     PFN_vkDestroyImage vkDestroyImage{};
     PFN_vkDestroyImageView vkDestroyImageView{};
     PFN_vkDestroyPipeline vkDestroyPipeline{};
     PFN_vkDestroyPipelineCache vkDestroyPipelineCache{};
     PFN_vkDestroyPipelineLayout vkDestroyPipelineLayout{};
     PFN_vkDestroyQueryPool vkDestroyQueryPool{};
-    PFN_vkDestroyRenderPass vkDestroyRenderPass{};
     PFN_vkDestroySampler vkDestroySampler{};
     PFN_vkDestroySemaphore vkDestroySemaphore{};
     PFN_vkDestroyShaderModule vkDestroyShaderModule{};
@@ -329,30 +349,22 @@ struct DeviceDispatch : InstanceDispatch {
     PFN_vkEndCommandBuffer vkEndCommandBuffer{};
     PFN_vkFreeCommandBuffers vkFreeCommandBuffers{};
     PFN_vkFreeDescriptorSets vkFreeDescriptorSets{};
-    PFN_vkFreeMemory vkFreeMemory{};
     PFN_vkGetBufferMemoryRequirements2 vkGetBufferMemoryRequirements2{};
+    PFN_vkGetDeviceBufferMemoryRequirements vkGetDeviceBufferMemoryRequirements{};
     PFN_vkGetDeviceQueue vkGetDeviceQueue{};
-    PFN_vkGetEventStatus vkGetEventStatus{};
     PFN_vkGetFenceStatus vkGetFenceStatus{};
-    PFN_vkGetImageMemoryRequirements vkGetImageMemoryRequirements{};
     PFN_vkGetPipelineCacheData vkGetPipelineCacheData{};
-    PFN_vkGetMemoryFdKHR vkGetMemoryFdKHR{};
-#ifdef _WIN32
-    PFN_vkGetMemoryWin32HandleKHR vkGetMemoryWin32HandleKHR{};
-#endif
     PFN_vkGetPipelineExecutablePropertiesKHR vkGetPipelineExecutablePropertiesKHR{};
     PFN_vkGetPipelineExecutableStatisticsKHR vkGetPipelineExecutableStatisticsKHR{};
     PFN_vkGetQueryPoolResults vkGetQueryPoolResults{};
     PFN_vkGetSemaphoreCounterValue vkGetSemaphoreCounterValue{};
-    PFN_vkMapMemory vkMapMemory{};
+    PFN_vkCopyMemoryToImageEXT vkCopyMemoryToImageEXT{};
+    PFN_vkTransitionImageLayoutEXT vkTransitionImageLayoutEXT{};
     PFN_vkQueueBindSparse vkQueueBindSparse{};
-    PFN_vkQueueSubmit vkQueueSubmit{};
     PFN_vkQueueSubmit2 vkQueueSubmit2{};
     PFN_vkResetFences vkResetFences{};
     PFN_vkResetQueryPool vkResetQueryPool{};
     PFN_vkSetDebugUtilsObjectNameEXT vkSetDebugUtilsObjectNameEXT{};
-    PFN_vkSetDebugUtilsObjectTagEXT vkSetDebugUtilsObjectTagEXT{};
-    PFN_vkUnmapMemory vkUnmapMemory{};
     PFN_vkUpdateDescriptorSetWithTemplate vkUpdateDescriptorSetWithTemplate{};
     PFN_vkGetBufferDeviceAddress vkGetBufferDeviceAddress{};
     PFN_vkGetDescriptorSetLayoutSizeEXT vkGetDescriptorSetLayoutSizeEXT{};
@@ -378,27 +390,23 @@ void Destroy(VkDevice, const InstanceDispatch&) noexcept;
 
 void Destroy(VkDevice, VkBuffer, const DeviceDispatch&) noexcept;
 void Destroy(VkDevice, VkBufferView, const DeviceDispatch&) noexcept;
+void Destroy(VkDevice, VkDeviceMemory, const DeviceDispatch&) noexcept;
 void Destroy(VkDevice, VkCommandPool, const DeviceDispatch&) noexcept;
 void Destroy(VkDevice, VkDescriptorPool, const DeviceDispatch&) noexcept;
 void Destroy(VkDevice, VkDescriptorSetLayout, const DeviceDispatch&) noexcept;
 void Destroy(VkDevice, VkDescriptorUpdateTemplate, const DeviceDispatch&) noexcept;
-void Destroy(VkDevice, VkDeviceMemory, const DeviceDispatch&) noexcept;
-void Destroy(VkDevice, VkEvent, const DeviceDispatch&) noexcept;
 void Destroy(VkDevice, VkFence, const DeviceDispatch&) noexcept;
-void Destroy(VkDevice, VkFramebuffer, const DeviceDispatch&) noexcept;
 void Destroy(VkDevice, VkImage, const DeviceDispatch&) noexcept;
 void Destroy(VkDevice, VkImageView, const DeviceDispatch&) noexcept;
 void Destroy(VkDevice, VkPipeline, const DeviceDispatch&) noexcept;
 void Destroy(VkDevice, VkPipelineCache, const DeviceDispatch&) noexcept;
 void Destroy(VkDevice, VkPipelineLayout, const DeviceDispatch&) noexcept;
 void Destroy(VkDevice, VkQueryPool, const DeviceDispatch&) noexcept;
-void Destroy(VkDevice, VkRenderPass, const DeviceDispatch&) noexcept;
 void Destroy(VkDevice, VkSampler, const DeviceDispatch&) noexcept;
 void Destroy(VkDevice, VkSwapchainKHR, const DeviceDispatch&) noexcept;
 void Destroy(VkDevice, VkSemaphore, const DeviceDispatch&) noexcept;
 void Destroy(VkDevice, VkShaderModule, const DeviceDispatch&) noexcept;
 void Destroy(VkInstance, VkDebugUtilsMessengerEXT, const InstanceDispatch&) noexcept;
-void Destroy(VkInstance, VkDebugReportCallbackEXT, const InstanceDispatch&) noexcept;
 void Destroy(VkInstance, VkSurfaceKHR, const InstanceDispatch&) noexcept;
 
 VkResult Free(VkDevice, VkDescriptorPool, Span<VkDescriptorSet>, const DeviceDispatch&) noexcept;
@@ -636,14 +644,14 @@ private:
 };
 
 using DebugUtilsMessenger = Handle<VkDebugUtilsMessengerEXT, VkInstance, InstanceDispatch>;
-using DebugReportCallback = Handle<VkDebugReportCallbackEXT, VkInstance, InstanceDispatch>;
 using DescriptorSetLayout = Handle<VkDescriptorSetLayout, VkDevice, DeviceDispatch>;
 using DescriptorUpdateTemplate = Handle<VkDescriptorUpdateTemplate, VkDevice, DeviceDispatch>;
 using Pipeline = Handle<VkPipeline, VkDevice, DeviceDispatch>;
 using PipelineLayout = Handle<VkPipelineLayout, VkDevice, DeviceDispatch>;
 using QueryPool = Handle<VkQueryPool, VkDevice, DeviceDispatch>;
-using RenderPass = Handle<VkRenderPass, VkDevice, DeviceDispatch>;
 using Sampler = Handle<VkSampler, VkDevice, DeviceDispatch>;
+using DeviceMemory = Handle<VkDeviceMemory, VkDevice, DeviceDispatch>;
+using ExternalBuffer = Handle<VkBuffer, VkDevice, DeviceDispatch>;
 using SurfaceKHR = Handle<VkSurfaceKHR, VkInstance, InstanceDispatch>;
 
 using DescriptorSets = PoolAllocations<VkDescriptorSet, VkDescriptorPool>;
@@ -668,11 +676,6 @@ public:
     /// @throw Exception on creation failure.
     [[nodiscard]] DebugUtilsMessenger CreateDebugUtilsMessenger(
         const VkDebugUtilsMessengerCreateInfoEXT& create_info) const;
-
-    /// Creates a debug report callback.
-    /// @throw Exception on creation failure.
-    [[nodiscard]] DebugReportCallback CreateDebugReportCallback(
-        const VkDebugReportCallbackCreateInfoEXT& create_info) const;
 
     /// Returns dispatch table.
     const InstanceDispatch& Dispatch() const noexcept {
@@ -846,13 +849,7 @@ public:
     constexpr Queue(VkQueue queue_, const DeviceDispatch& dld_) noexcept
         : queue{queue_}, dld{&dld_} {}
 
-    VkResult Submit(Span<VkSubmitInfo> submit_infos,
-                    VkFence fence = VK_NULL_HANDLE) const noexcept {
-        return dld->vkQueueSubmit(queue, submit_infos.size(), submit_infos.data(), fence);
-    }
-
-    /// Submits using VK_KHR_synchronization2 / Vulkan 1.3 vkQueueSubmit2.
-    VkResult Submit2(Span<VkSubmitInfo2> submit_infos,
+    VkResult Submit(Span<VkSubmitInfo2> submit_infos,
                      VkFence fence = VK_NULL_HANDLE) const noexcept {
         return dld->vkQueueSubmit2(queue, submit_infos.size(), submit_infos.data(), fence);
     }
@@ -887,30 +884,6 @@ public:
     void SetObjectNameEXT(const char* name) const;
 };
 
-class DeviceMemory : public Handle<VkDeviceMemory, VkDevice, DeviceDispatch> {
-    using Handle<VkDeviceMemory, VkDevice, DeviceDispatch>::Handle;
-
-public:
-    int GetMemoryFdKHR() const;
-
-#ifdef _WIN32
-    HANDLE GetMemoryWin32HandleKHR() const;
-#endif
-
-    /// Set object name.
-    void SetObjectNameEXT(const char* name) const;
-
-    u8* Map(VkDeviceSize offset, VkDeviceSize size) const {
-        void* data;
-        Check(dld->vkMapMemory(owner, handle, offset, size, 0, &data));
-        return static_cast<u8*>(data);
-    }
-
-    void Unmap() const noexcept {
-        dld->vkUnmapMemory(owner, handle);
-    }
-};
-
 class Fence : public Handle<VkFence, VkDevice, DeviceDispatch> {
     using Handle<VkFence, VkDevice, DeviceDispatch>::Handle;
 
@@ -929,14 +902,6 @@ public:
     void Reset() const {
         Check(dld->vkResetFences(owner, 1, &handle));
     }
-};
-
-class Framebuffer : public Handle<VkFramebuffer, VkDevice, DeviceDispatch> {
-    using Handle<VkFramebuffer, VkDevice, DeviceDispatch>::Handle;
-
-public:
-    /// Set object name.
-    void SetObjectNameEXT(const char* name) const;
 };
 
 class DescriptorPool : public Handle<VkDescriptorPool, VkDevice, DeviceDispatch> {
@@ -965,18 +930,6 @@ class SwapchainKHR : public Handle<VkSwapchainKHR, VkDevice, DeviceDispatch> {
 
 public:
     std::vector<VkImage> GetImages() const;
-};
-
-class Event : public Handle<VkEvent, VkDevice, DeviceDispatch> {
-    using Handle<VkEvent, VkDevice, DeviceDispatch>::Handle;
-
-public:
-    /// Set object name.
-    void SetObjectNameEXT(const char* name) const;
-
-    VkResult GetStatus() const noexcept {
-        return dld->vkGetEventStatus(owner, handle);
-    }
 };
 
 class ShaderModule : public Handle<VkShaderModule, VkDevice, DeviceDispatch> {
@@ -1053,6 +1006,14 @@ public:
 
     [[nodiscard]] BufferView CreateBufferView(const VkBufferViewCreateInfo& ci) const;
 
+    [[nodiscard]] ExternalBuffer CreateExternalBuffer(const VkBufferCreateInfo& ci) const;
+
+    [[nodiscard]] DeviceMemory AllocateMemory(const VkMemoryAllocateInfo& ai) const;
+
+    void BindBufferMemory(VkBuffer buffer, VkDeviceMemory memory, VkDeviceSize offset) const;
+
+    [[nodiscard]] VkMemoryRequirements GetBufferMemoryRequirements(VkBuffer buffer) const noexcept;
+
     [[nodiscard]] ImageView CreateImageView(const VkImageViewCreateInfo& ci) const;
 
     [[nodiscard]] Semaphore CreateSemaphore() const;
@@ -1062,10 +1023,6 @@ public:
     [[nodiscard]] Fence CreateFence(const VkFenceCreateInfo& ci) const;
 
     [[nodiscard]] DescriptorPool CreateDescriptorPool(const VkDescriptorPoolCreateInfo& ci) const;
-
-    [[nodiscard]] RenderPass CreateRenderPass(const VkRenderPassCreateInfo& ci) const;
-
-    [[nodiscard]] RenderPass CreateRenderPass2(const VkRenderPassCreateInfo2& ci) const;
 
     [[nodiscard]] DescriptorSetLayout CreateDescriptorSetLayout(
         const VkDescriptorSetLayoutCreateInfo& ci) const;
@@ -1082,8 +1039,6 @@ public:
 
     [[nodiscard]] Sampler CreateSampler(const VkSamplerCreateInfo& ci) const;
 
-    [[nodiscard]] Framebuffer CreateFramebuffer(const VkFramebufferCreateInfo& ci) const;
-
     [[nodiscard]] CommandPool CreateCommandPool(const VkCommandPoolCreateInfo& ci) const;
 
     [[nodiscard]] DescriptorUpdateTemplate CreateDescriptorUpdateTemplate(
@@ -1093,18 +1048,9 @@ public:
 
     [[nodiscard]] ShaderModule CreateShaderModule(const VkShaderModuleCreateInfo& ci) const;
 
-    [[nodiscard]] Event CreateEvent() const;
-
     [[nodiscard]] SwapchainKHR CreateSwapchainKHR(const VkSwapchainCreateInfoKHR& ci) const;
 
-    [[nodiscard]] DeviceMemory TryAllocateMemory(const VkMemoryAllocateInfo& ai) const noexcept;
-
-    [[nodiscard]] DeviceMemory AllocateMemory(const VkMemoryAllocateInfo& ai) const;
-
-    VkMemoryRequirements GetBufferMemoryRequirements(VkBuffer buffer,
-                                                     void* pnext = nullptr) const noexcept;
-
-    VkMemoryRequirements GetImageMemoryRequirements(VkImage image) const noexcept;
+    VkMemoryRequirements GetDeviceBufferMemoryRequirements(const VkBufferCreateInfo& ci) const noexcept;
 
     std::vector<VkPipelineExecutablePropertiesKHR> GetPipelineExecutablePropertiesKHR(
         VkPipeline pipeline) const;
@@ -1162,6 +1108,14 @@ public:
         dld->vkResetQueryPool(handle, query_pool, first, count);
     }
 
+    void CopyMemoryToImageEXT(const VkCopyMemoryToImageInfoEXT& info) const {
+        Check(dld->vkCopyMemoryToImageEXT(handle, &info));
+    }
+
+    void TransitionImageLayoutEXT(const VkHostImageLayoutTransitionInfoEXT& info) const {
+        Check(dld->vkTransitionImageLayoutEXT(handle, 1, &info));
+    }
+
     VkResult GetQueryResults(VkQueryPool query_pool, u32 first, u32 count, std::size_t data_size,
                              void* data, VkDeviceSize stride,
                              VkQueryResultFlags flags) const noexcept {
@@ -1185,8 +1139,6 @@ public:
     VkPhysicalDeviceProperties GetProperties() const noexcept;
 
     void GetProperties2(VkPhysicalDeviceProperties2&) const noexcept;
-
-    VkPhysicalDeviceFeatures GetFeatures() const noexcept;
 
     void GetFeatures2(VkPhysicalDeviceFeatures2&) const noexcept;
 
@@ -1238,13 +1190,12 @@ public:
         Check(dld->vkEndCommandBuffer(handle));
     }
 
-    void BeginRenderPass(const VkRenderPassBeginInfo& renderpass_bi,
-                         VkSubpassContents contents) const noexcept {
-        dld->vkCmdBeginRenderPass(handle, &renderpass_bi, contents);
+    void BeginRendering(const VkRenderingInfo& rendering_info) const noexcept {
+        dld->vkCmdBeginRendering(handle, &rendering_info);
     }
 
-    void EndRenderPass() const noexcept {
-        dld->vkCmdEndRenderPass(handle);
+    void EndRendering() const noexcept {
+        dld->vkCmdEndRendering(handle);
     }
 
     void BeginQuery(VkQueryPool query_pool, u32 query, VkQueryControlFlags flags) const noexcept {
@@ -1278,6 +1229,11 @@ public:
     void BindIndexBuffer(VkBuffer buffer, VkDeviceSize offset,
                          VkIndexType index_type) const noexcept {
         dld->vkCmdBindIndexBuffer(handle, buffer, offset, index_type);
+    }
+
+    void BindIndexBuffer2KHR(VkBuffer buffer, VkDeviceSize offset, VkDeviceSize size,
+                             VkIndexType index_type) const noexcept {
+        dld->vkCmdBindIndexBuffer2KHR(handle, buffer, offset, size, index_type);
     }
 
     void BindVertexBuffers(u32 first, u32 count, const VkBuffer* buffers,
@@ -1342,16 +1298,35 @@ public:
     }
 
     void BlitImage(VkImage src_image, VkImageLayout src_layout, VkImage dst_image,
-                   VkImageLayout dst_layout, Span<VkImageBlit> regions,
+                   VkImageLayout dst_layout, Span<VkImageBlit2> regions,
                    VkFilter filter) const noexcept {
-        dld->vkCmdBlitImage(handle, src_image, src_layout, dst_image, dst_layout, regions.size(),
-                            regions.data(), filter);
+        const VkBlitImageInfo2 info{
+            .sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2,
+            .pNext = nullptr,
+            .srcImage = src_image,
+            .srcImageLayout = src_layout,
+            .dstImage = dst_image,
+            .dstImageLayout = dst_layout,
+            .regionCount = regions.size(),
+            .pRegions = regions.data(),
+            .filter = filter,
+        };
+        dld->vkCmdBlitImage2(handle, &info);
     }
 
     void ResolveImage(VkImage src_image, VkImageLayout src_layout, VkImage dst_image,
-                      VkImageLayout dst_layout, Span<VkImageResolve> regions) {
-        dld->vkCmdResolveImage(handle, src_image, src_layout, dst_image, dst_layout, regions.size(),
-                               regions.data());
+                      VkImageLayout dst_layout, Span<VkImageResolve2> regions) const noexcept {
+        const VkResolveImageInfo2 info{
+            .sType = VK_STRUCTURE_TYPE_RESOLVE_IMAGE_INFO_2,
+            .pNext = nullptr,
+            .srcImage = src_image,
+            .srcImageLayout = src_layout,
+            .dstImage = dst_image,
+            .dstImageLayout = dst_layout,
+            .regionCount = regions.size(),
+            .pRegions = regions.data(),
+        };
+        dld->vkCmdResolveImage2(handle, &info);
     }
 
     void Dispatch(u32 x, u32 y, u32 z) const noexcept {
@@ -1362,103 +1337,50 @@ public:
         dld->vkCmdDispatchIndirect(handle, indirect_buffer, offset);
     }
 
-    void PipelineBarrier(VkPipelineStageFlags src_stage_mask, VkPipelineStageFlags dst_stage_mask,
-                         VkDependencyFlags dependency_flags, Span<VkMemoryBarrier> memory_barriers,
-                         Span<VkBufferMemoryBarrier> buffer_barriers,
-                         Span<VkImageMemoryBarrier> image_barriers) const noexcept {
-        static constexpr u32 MaxBarriers = 16;
-        if (dld->vkCmdPipelineBarrier2 && memory_barriers.size() <= MaxBarriers &&
-            buffer_barriers.size() <= MaxBarriers && image_barriers.size() <= MaxBarriers) {
-            const auto src_stage_mask2 = static_cast<VkPipelineStageFlags2>(src_stage_mask);
-            const auto dst_stage_mask2 = static_cast<VkPipelineStageFlags2>(dst_stage_mask);
-
-            std::array<VkMemoryBarrier2, MaxBarriers> memory_barriers2;
-            for (u32 i = 0; i < memory_barriers.size(); ++i) {
-                memory_barriers2[i] = VkMemoryBarrier2{
-                    .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
-                    .pNext = nullptr,
-                    .srcStageMask = src_stage_mask2,
-                    .srcAccessMask = static_cast<VkAccessFlags2>(memory_barriers[i].srcAccessMask),
-                    .dstStageMask = dst_stage_mask2,
-                    .dstAccessMask = static_cast<VkAccessFlags2>(memory_barriers[i].dstAccessMask),
-                };
-            }
-            std::array<VkBufferMemoryBarrier2, MaxBarriers> buffer_barriers2;
-            for (u32 i = 0; i < buffer_barriers.size(); ++i) {
-                const auto& barrier = buffer_barriers[i];
-                buffer_barriers2[i] = VkBufferMemoryBarrier2{
-                    .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
-                    .pNext = nullptr,
-                    .srcStageMask = src_stage_mask2,
-                    .srcAccessMask = static_cast<VkAccessFlags2>(barrier.srcAccessMask),
-                    .dstStageMask = dst_stage_mask2,
-                    .dstAccessMask = static_cast<VkAccessFlags2>(barrier.dstAccessMask),
-                    .srcQueueFamilyIndex = barrier.srcQueueFamilyIndex,
-                    .dstQueueFamilyIndex = barrier.dstQueueFamilyIndex,
-                    .buffer = barrier.buffer,
-                    .offset = barrier.offset,
-                    .size = barrier.size,
-                };
-            }
-            std::array<VkImageMemoryBarrier2, MaxBarriers> image_barriers2;
-            for (u32 i = 0; i < image_barriers.size(); ++i) {
-                const auto& barrier = image_barriers[i];
-                image_barriers2[i] = VkImageMemoryBarrier2{
-                    .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-                    .pNext = nullptr,
-                    .srcStageMask = src_stage_mask2,
-                    .srcAccessMask = static_cast<VkAccessFlags2>(barrier.srcAccessMask),
-                    .dstStageMask = dst_stage_mask2,
-                    .dstAccessMask = static_cast<VkAccessFlags2>(barrier.dstAccessMask),
-                    .oldLayout = barrier.oldLayout,
-                    .newLayout = barrier.newLayout,
-                    .srcQueueFamilyIndex = barrier.srcQueueFamilyIndex,
-                    .dstQueueFamilyIndex = barrier.dstQueueFamilyIndex,
-                    .image = barrier.image,
-                    .subresourceRange = barrier.subresourceRange,
-                };
-            }
-            const VkDependencyInfo dependency_info{
-                .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-                .pNext = nullptr,
-                .dependencyFlags = dependency_flags,
-                .memoryBarrierCount = memory_barriers.size(),
-                .pMemoryBarriers = memory_barriers2.data(),
-                .bufferMemoryBarrierCount = buffer_barriers.size(),
-                .pBufferMemoryBarriers = buffer_barriers2.data(),
-                .imageMemoryBarrierCount = image_barriers.size(),
-                .pImageMemoryBarriers = image_barriers2.data(),
-            };
-            dld->vkCmdPipelineBarrier2(handle, &dependency_info);
-            return;
-        }
-        dld->vkCmdPipelineBarrier(handle, src_stage_mask, dst_stage_mask, dependency_flags,
-                                  memory_barriers.size(), memory_barriers.data(),
-                                  buffer_barriers.size(), buffer_barriers.data(),
-                                  image_barriers.size(), image_barriers.data());
+    void PipelineBarrier(VkDependencyFlags dependency_flags,
+                         Span<VkMemoryBarrier2> memory_barriers,
+                         Span<VkBufferMemoryBarrier2> buffer_barriers,
+                         Span<VkImageMemoryBarrier2> image_barriers) const noexcept {
+        const VkDependencyInfo dependency_info{
+            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+            .pNext = nullptr,
+            .dependencyFlags = dependency_flags,
+            .memoryBarrierCount = memory_barriers.size(),
+            .pMemoryBarriers = memory_barriers.data(),
+            .bufferMemoryBarrierCount = buffer_barriers.size(),
+            .pBufferMemoryBarriers = buffer_barriers.data(),
+            .imageMemoryBarrierCount = image_barriers.size(),
+            .pImageMemoryBarriers = image_barriers.data(),
+        };
+        dld->vkCmdPipelineBarrier2(handle, &dependency_info);
     }
 
-    void PipelineBarrier(VkPipelineStageFlags src_stage_mask, VkPipelineStageFlags dst_stage_mask,
+    void PipelineBarrier(VkPipelineStageFlags2 src_stage_mask, VkPipelineStageFlags2 dst_stage_mask,
                          VkDependencyFlags dependency_flags = 0) const noexcept {
-        PipelineBarrier(src_stage_mask, dst_stage_mask, dependency_flags, {}, {}, {});
+        const VkMemoryBarrier2 barrier{
+            .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+            .pNext = nullptr,
+            .srcStageMask = src_stage_mask,
+            .srcAccessMask = VK_ACCESS_2_NONE,
+            .dstStageMask = dst_stage_mask,
+            .dstAccessMask = VK_ACCESS_2_NONE,
+        };
+        PipelineBarrier(dependency_flags, barrier, {}, {});
     }
 
-    void PipelineBarrier(VkPipelineStageFlags src_stage_mask, VkPipelineStageFlags dst_stage_mask,
-                         VkDependencyFlags dependency_flags,
-                         const VkMemoryBarrier& memory_barrier) const noexcept {
-        PipelineBarrier(src_stage_mask, dst_stage_mask, dependency_flags, memory_barrier, {}, {});
+    void PipelineBarrier(const VkMemoryBarrier2& memory_barrier,
+                         VkDependencyFlags dependency_flags = 0) const noexcept {
+        PipelineBarrier(dependency_flags, memory_barrier, {}, {});
     }
 
-    void PipelineBarrier(VkPipelineStageFlags src_stage_mask, VkPipelineStageFlags dst_stage_mask,
-                         VkDependencyFlags dependency_flags,
-                         const VkBufferMemoryBarrier& buffer_barrier) const noexcept {
-        PipelineBarrier(src_stage_mask, dst_stage_mask, dependency_flags, {}, buffer_barrier, {});
+    void PipelineBarrier(const VkBufferMemoryBarrier2& buffer_barrier,
+                         VkDependencyFlags dependency_flags = 0) const noexcept {
+        PipelineBarrier(dependency_flags, {}, buffer_barrier, {});
     }
 
-    void PipelineBarrier(VkPipelineStageFlags src_stage_mask, VkPipelineStageFlags dst_stage_mask,
-                         VkDependencyFlags dependency_flags,
-                         const VkImageMemoryBarrier& image_barrier) const noexcept {
-        PipelineBarrier(src_stage_mask, dst_stage_mask, dependency_flags, {}, {}, image_barrier);
+    void PipelineBarrier(const VkImageMemoryBarrier2& image_barrier,
+                         VkDependencyFlags dependency_flags = 0) const noexcept {
+        PipelineBarrier(dependency_flags, {}, {}, image_barrier);
     }
 
     void BindDescriptorBuffersEXT(Span<VkDescriptorBufferBindingInfoEXT> bindings) const noexcept {
@@ -1474,26 +1396,59 @@ public:
     }
 
     void CopyBufferToImage(VkBuffer src_buffer, VkImage dst_image, VkImageLayout dst_image_layout,
-                           Span<VkBufferImageCopy> regions) const noexcept {
-        dld->vkCmdCopyBufferToImage(handle, src_buffer, dst_image, dst_image_layout, regions.size(),
-                                    regions.data());
+                           Span<VkBufferImageCopy2> regions) const noexcept {
+        const VkCopyBufferToImageInfo2 info{
+            .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_TO_IMAGE_INFO_2,
+            .pNext = nullptr,
+            .srcBuffer = src_buffer,
+            .dstImage = dst_image,
+            .dstImageLayout = dst_image_layout,
+            .regionCount = regions.size(),
+            .pRegions = regions.data(),
+        };
+        dld->vkCmdCopyBufferToImage2(handle, &info);
     }
 
     void CopyBuffer(VkBuffer src_buffer, VkBuffer dst_buffer,
-                    Span<VkBufferCopy> regions) const noexcept {
-        dld->vkCmdCopyBuffer(handle, src_buffer, dst_buffer, regions.size(), regions.data());
+                    Span<VkBufferCopy2> regions) const noexcept {
+        const VkCopyBufferInfo2 info{
+            .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2,
+            .pNext = nullptr,
+            .srcBuffer = src_buffer,
+            .dstBuffer = dst_buffer,
+            .regionCount = regions.size(),
+            .pRegions = regions.data(),
+        };
+        dld->vkCmdCopyBuffer2(handle, &info);
     }
 
     void CopyImage(VkImage src_image, VkImageLayout src_layout, VkImage dst_image,
-                   VkImageLayout dst_layout, Span<VkImageCopy> regions) const noexcept {
-        dld->vkCmdCopyImage(handle, src_image, src_layout, dst_image, dst_layout, regions.size(),
-                            regions.data());
+                   VkImageLayout dst_layout, Span<VkImageCopy2> regions) const noexcept {
+        const VkCopyImageInfo2 info{
+            .sType = VK_STRUCTURE_TYPE_COPY_IMAGE_INFO_2,
+            .pNext = nullptr,
+            .srcImage = src_image,
+            .srcImageLayout = src_layout,
+            .dstImage = dst_image,
+            .dstImageLayout = dst_layout,
+            .regionCount = regions.size(),
+            .pRegions = regions.data(),
+        };
+        dld->vkCmdCopyImage2(handle, &info);
     }
 
     void CopyImageToBuffer(VkImage src_image, VkImageLayout src_layout, VkBuffer dst_buffer,
-                           Span<VkBufferImageCopy> regions) const noexcept {
-        dld->vkCmdCopyImageToBuffer(handle, src_image, src_layout, dst_buffer, regions.size(),
-                                    regions.data());
+                           Span<VkBufferImageCopy2> regions) const noexcept {
+        const VkCopyImageToBufferInfo2 info{
+            .sType = VK_STRUCTURE_TYPE_COPY_IMAGE_TO_BUFFER_INFO_2,
+            .pNext = nullptr,
+            .srcImage = src_image,
+            .srcImageLayout = src_layout,
+            .dstBuffer = dst_buffer,
+            .regionCount = regions.size(),
+            .pRegions = regions.data(),
+        };
+        dld->vkCmdCopyImageToBuffer2(handle, &info);
     }
 
     void CopyQueryPoolResults(VkQueryPool query_pool, u32 first_query, u32 query_count,
@@ -1563,19 +1518,6 @@ public:
         dld->vkCmdSetDepthBounds(handle, min_depth_bounds, max_depth_bounds);
     }
 
-    void SetEvent(VkEvent event, VkPipelineStageFlags stage_flags) const noexcept {
-        dld->vkCmdSetEvent(handle, event, stage_flags);
-    }
-
-    void WaitEvents(Span<VkEvent> events, VkPipelineStageFlags src_stage_mask,
-                    VkPipelineStageFlags dst_stage_mask, Span<VkMemoryBarrier> memory_barriers,
-                    Span<VkBufferMemoryBarrier> buffer_barriers,
-                    Span<VkImageMemoryBarrier> image_barriers) const noexcept {
-        dld->vkCmdWaitEvents(handle, events.size(), events.data(), src_stage_mask, dst_stage_mask,
-                             memory_barriers.size(), memory_barriers.data(), buffer_barriers.size(),
-                             buffer_barriers.data(), image_barriers.size(), image_barriers.data());
-    }
-
     void BindVertexBuffers2EXT(u32 first_binding, u32 binding_count, const VkBuffer* buffers,
                                const VkDeviceSize* offsets, const VkDeviceSize* sizes,
                                const VkDeviceSize* strides) const noexcept {
@@ -1626,11 +1568,6 @@ public:
         dld->vkCmdSetLineStippleEnableEXT(handle, enable ? VK_TRUE : VK_FALSE);
     }
 
-    void SetLineStippleEXT(u32 factor, u16 pattern) const noexcept
-    {
-        dld->vkCmdSetLineStippleEXT(handle, factor, pattern);
-    }
-
     void SetDepthBiasEnableEXT(bool enable) const noexcept {
         dld->vkCmdSetDepthBiasEnableEXT(handle, enable ? VK_TRUE : VK_FALSE);
     }
@@ -1657,10 +1594,6 @@ public:
 
     void SetLogicOpEXT(VkLogicOp logic_op) const noexcept {
         dld->vkCmdSetLogicOpEXT(handle, logic_op);
-    }
-
-    void SetPatchControlPointsEXT(uint32_t patch_control_points) const noexcept {
-        dld->vkCmdSetPatchControlPointsEXT(handle, patch_control_points);
     }
 
     void SetColorWriteMaskEXT(u32 first, Span<VkColorComponentFlags> masks) const noexcept {
@@ -1731,20 +1664,6 @@ public:
 
     void EndConditionalRenderingEXT() const noexcept {
         dld->vkCmdEndConditionalRenderingEXT(handle);
-    }
-
-    void BeginDebugUtilsLabelEXT(const char* label, std::span<float, 4> color) const noexcept {
-        const VkDebugUtilsLabelEXT label_info{
-            .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT,
-            .pNext = nullptr,
-            .pLabelName = label,
-            .color{color[0], color[1], color[2], color[3]},
-        };
-        dld->vkCmdBeginDebugUtilsLabelEXT(handle, &label_info);
-    }
-
-    void EndDebugUtilsLabelEXT() const noexcept {
-        dld->vkCmdEndDebugUtilsLabelEXT(handle);
     }
 
 private:

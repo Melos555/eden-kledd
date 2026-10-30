@@ -15,8 +15,36 @@ namespace Vulkan {
 namespace {
 
 constexpr u32 FIXED_DESCRIPTOR_SETS = 64;
-constexpr u32 DESCRIPTOR_SETS_PER_SLOT = 112;
+constexpr u32 DESCRIPTOR_SETS_PER_SLOT = 100;
 constexpr size_t FIRST_DELTA_LEVEL = 4;
+
+[[nodiscard]] constexpr size_t DeltaStartWave(size_t index) {
+    if (index == 0) {
+        return 0;
+    }
+    return (FIRST_DELTA_LEVEL + index) * LSFG_GAMMA_STAGES;
+}
+
+constexpr size_t GENERATION_WAVES =
+    DeltaStartWave(LSFG_DELTA_INSTANCES - 1) + LSFG_DELTA_STAGES;
+
+template <typename Func>
+void ForEachWaveStage(std::array<LsfgGamma, LSFG_MIP_LEVELS>& gamma,
+                      std::array<LsfgDelta, LSFG_DELTA_INSTANCES>& delta, size_t wave,
+                      Func&& func) {
+    for (size_t i = 0; i < gamma.size(); ++i) {
+        const size_t start = i * LSFG_GAMMA_STAGES;
+        if (wave >= start && wave - start < LSFG_GAMMA_STAGES) {
+            func(gamma[i], wave - start);
+        }
+    }
+    for (size_t i = 0; i < delta.size(); ++i) {
+        const size_t start = DeltaStartWave(i);
+        if (wave >= start && wave - start < LSFG_DELTA_STAGES) {
+            func(delta[i], wave - start);
+        }
+    }
+}
 
 } // Anonymous namespace
 
@@ -47,7 +75,7 @@ LsfgChain::LsfgChain(const Device& device, MemoryAllocator& memory_allocator,
         const size_t level = LSFG_MIP_LEVELS - 1 - i;
         gamma[i] = LsfgGamma(device, memory_allocator, shaders, resources, descriptor_pool,
                              alpha[level].Outputs(),
-                             beta.Output(std::min(level, LSFG_BETA_OUTPUTS - 1)),
+                             beta.Output((std::min)(level, LSFG_BETA_OUTPUTS - 1)),
                              i == 0 ? nullptr : &gamma[i - 1].Output());
 
         if (i < FIRST_DELTA_LEVEL) {
@@ -88,16 +116,20 @@ void LsfgChain::DispatchShared(vk::CommandBuffer cmdbuf, u64 frame_count) {
 }
 
 void LsfgChain::DispatchGeneration(vk::CommandBuffer cmdbuf, u64 frame_count,
-                                   size_t generation_count, size_t generation, u32 target,
-                                   VkImage image, VkExtent2D extent) {
+                                   size_t generation_count, size_t generation, VkImage image,
+                                   VkExtent2D extent) {
     const size_t slot = LsfgGenerationSlot(generation_count, generation);
-    for (size_t i = 0; i < LSFG_MIP_LEVELS; ++i) {
-        gamma[i].Dispatch(cmdbuf, frame_count, slot);
-        if (i >= FIRST_DELTA_LEVEL) {
-            delta[i - FIRST_DELTA_LEVEL].Dispatch(cmdbuf, frame_count, slot);
-        }
+    for (size_t wave = 0; wave < GENERATION_WAVES; ++wave) {
+        LsfgBarriers barriers(cmdbuf);
+        ForEachWaveStage(gamma, delta, wave, [&barriers, frame_count](auto& pass, size_t stage) {
+            pass.PushBarriers(barriers, frame_count, stage);
+        });
+        barriers.Build();
+        ForEachWaveStage(gamma, delta, wave, [cmdbuf, frame_count, slot](auto& pass, size_t stage) {
+            pass.DispatchStage(cmdbuf, frame_count, slot, stage);
+        });
     }
-    generate.Dispatch(cmdbuf, frame_count, slot, target, image, extent);
+    generate.Dispatch(cmdbuf, frame_count, slot, image, extent);
 }
 
 } // namespace Vulkan

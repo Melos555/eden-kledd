@@ -67,7 +67,6 @@ namespace Vulkan {
 
 class Device;
 class PipelineStatistics;
-class RenderPassCache;
 class RescalingPushConstant;
 class RenderAreaPushConstant;
 class Scheduler;
@@ -82,11 +81,14 @@ public:
         const Device& device, DescriptorPool& descriptor_pool,
         GuestDescriptorQueue& guest_descriptor_queue,
         DescriptorBufferRing& descriptor_buffer_ring, Common::ThreadWorker* worker_thread,
-        PipelineStatistics* pipeline_statistics, RenderPassCache& render_pass_cache,
-        const GraphicsPipelineCacheKey& key, std::array<vk::ShaderModule, NUM_STAGES> stages,
+        PipelineStatistics* pipeline_statistics, const GraphicsPipelineCacheKey& key,
+        std::array<vk::ShaderModule, NUM_STAGES> stages,
         const std::array<const Shader::Info*, NUM_STAGES>& infos);
 
     bool HasDynamicVertexInput() const noexcept { return key.state.dynamic_vertex_input; }
+    u32 VertexAttributeMask() const noexcept {
+        return vertex_attribute_mask;
+    }
     bool SupportsAlphaToCoverage() const noexcept {
         return fragment_has_color0_output;
     }
@@ -140,7 +142,7 @@ private:
     bool ConfigureDraw(const RescalingPushConstant& rescaling,
                        const RenderAreaPushConstant& render_are);
 
-    void MakePipeline(VkRenderPass render_pass);
+    void MakePipeline(const RenderingFormats& formats);
 
     void Validate();
 
@@ -169,6 +171,7 @@ private:
     size_t num_image_elements{};
     u32 num_textures{};
     bool fragment_has_color0_output{};
+    u32 vertex_attribute_mask{};
 
     vk::DescriptorSetLayout descriptor_set_layout;
     DescriptorAllocator descriptor_allocator;

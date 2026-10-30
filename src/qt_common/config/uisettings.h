@@ -127,6 +127,8 @@ struct Values {
     Setting<bool> hide_mouse{
         linkage, true, "hideInactiveMouse", Category::UiGeneral, Settings::Specialization::Default,
         true,    true};
+    Setting<bool> controller_applet_disabled{linkage, false, "disableControllerApplet",
+                                             Category::UiGeneral};
     // Set when Vulkan is known to crash the application
     bool has_broken_vulkan = false;
 
@@ -260,6 +262,5 @@ Q_DECLARE_METATYPE(Settings::ResolutionSetup);
 Q_DECLARE_METATYPE(Settings::ScalingFilter);
 Q_DECLARE_METATYPE(Settings::AntiAliasing);
 Q_DECLARE_METATYPE(Settings::RendererBackend);
-Q_DECLARE_METATYPE(Settings::AstcRecompression);
 Q_DECLARE_METATYPE(Settings::AstcDecodeMode);
 Q_DECLARE_METATYPE(Settings::SpirvOptimizeMode);

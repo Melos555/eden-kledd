@@ -1,11 +1,17 @@
-// SPDX-FileCopyrightText: Copyright 2025 Eden Emulator Project
+// SPDX-FileCopyrightText: Copyright 2026 Eden Emulator Project
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 package org.yuzu.yuzu_emu.adapters
 
+import org.yuzu.yuzu_emu.ui.home.ConsoleDialogStyler
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.AnimatorSet
+import android.animation.ObjectAnimator
 import android.content.DialogInterface
 import android.text.Html
 import android.view.LayoutInflater
+import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.Toast
@@ -29,6 +35,7 @@ import org.yuzu.yuzu_emu.databinding.CardGameGridBinding
 import org.yuzu.yuzu_emu.databinding.CardGameCarouselBinding
 import org.yuzu.yuzu_emu.model.Game
 import org.yuzu.yuzu_emu.model.GamesViewModel
+import org.yuzu.yuzu_emu.ui.CarouselRecyclerView
 import org.yuzu.yuzu_emu.utils.GameIconUtils
 import org.yuzu.yuzu_emu.utils.ViewUtils.marquee
 import org.yuzu.yuzu_emu.viewholder.AbstractViewHolder
@@ -48,6 +55,8 @@ class GameAdapter(private val activity: AppCompatActivity) :
         const val VIEW_TYPE_GRID_COMPACT = 1
         const val VIEW_TYPE_LIST = 2
         const val VIEW_TYPE_CAROUSEL = 3
+
+        private const val SHAKE_DURATION_MS = 420L
     }
 
     private var viewType = 0
@@ -216,8 +225,26 @@ class GameAdapter(private val activity: AppCompatActivity) :
 
             carouselBinding.textGameTitle.text = model.title.replace("[\\t\\n\\r]+".toRegex(), " ")
             carouselBinding.textGameTitle.marquee()
-            carouselBinding.cardGameCarousel.setOnClickListener { onClick(model) }
-            carouselBinding.cardGameCarousel.setOnLongClickListener { onLongClick(model) }
+            carouselBinding.cardGameCarousel.rotation = 0f
+            carouselBinding.cardGameCarousel.setOnClickListener {
+                // Console Home: one tap opens the game screen (Home fades out).
+                val carousel = carouselBinding.root.parent as? CarouselRecyclerView
+                if (carousel != null && carousel.consoleStyle) {
+                    openGameScreen(model)
+                } else {
+                    onClick(model)
+                }
+            }
+            carouselBinding.cardGameCarousel.setOnLongClickListener { card ->
+                // Console Home: holding a tile shakes it, then the game starts.
+                val carousel = carouselBinding.root.parent as? CarouselRecyclerView
+                if (carousel != null && carousel.consoleStyle) {
+                    shakeThenLaunch(card, model)
+                    true
+                } else {
+                    onLongClick(model)
+                }
+            }
 
             carouselBinding.imageGameScreen.contentDescription =
                 binding.root.context.getString(R.string.game_image_desc, model.title)
@@ -285,9 +312,40 @@ class GameAdapter(private val activity: AppCompatActivity) :
                         launch()
                     }
                     .setNegativeButton(android.R.string.cancel) { _, _ -> }
-                    .show()
+                    .show().also { ConsoleDialogStyler.style(it) }
             } else {
                 launch()
+            }
+        }
+
+        private fun openGameScreen(game: Game) {
+            val action = HomeNavigationDirections.actionGlobalPerGamePropertiesFragment(game)
+            binding.root.findNavController().navigate(action)
+        }
+
+        /** Short wobble of the tile (like an app icon about to open), then launch. */
+        private fun shakeThenLaunch(card: View, game: Game) {
+            if (card.getTag(R.id.card_game_carousel) == true) return
+            card.setTag(R.id.card_game_carousel, true)
+            val wobble = ObjectAnimator.ofFloat(
+                card,
+                View.ROTATION,
+                0f, -5f, 5f, -4f, 4f, -2.5f, 2.5f, -1f, 0f
+            )
+            val scale = card.scaleX
+            val pulseX = ObjectAnimator.ofFloat(card, View.SCALE_X, scale, scale * 1.06f, scale)
+            val pulseY = ObjectAnimator.ofFloat(card, View.SCALE_Y, scale, scale * 1.06f, scale)
+            AnimatorSet().apply {
+                playTogether(wobble, pulseX, pulseY)
+                duration = SHAKE_DURATION_MS
+                addListener(object : AnimatorListenerAdapter() {
+                    override fun onAnimationEnd(animation: Animator) {
+                        card.rotation = 0f
+                        card.setTag(R.id.card_game_carousel, null)
+                        if (card.isAttachedToWindow) onClick(game)
+                    }
+                })
+                start()
             }
         }
 

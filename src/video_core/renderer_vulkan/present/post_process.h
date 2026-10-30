@@ -77,19 +77,16 @@ private:
     };
 
     struct Pass {
-        vk::RenderPass renderpass{};
         vk::Pipeline pipeline{};
         vk::DescriptorSetLayout sampler_layout{};
         vk::PipelineLayout pipeline_layout{};
         vk::DescriptorSets sampler_sets{};
         std::vector<SamplerBinding> sampler_bindings{};
-        std::vector<vk::Framebuffer> framebuffers{};
         size_t target_texture{};
         VkExtent2D extent{};
         u32 num_vertices{3};
-        bool clear{};
+        VkAttachmentLoadOp load_op{VK_ATTACHMENT_LOAD_OP_LOAD};
         bool writes_backbuffer{};
-        u32 backbuffer_slot{};
     };
 
     struct Effect {
@@ -105,8 +102,6 @@ private:
         vk::DescriptorSetLayout uniform_layout{};
         vk::DescriptorPool descriptor_pool{};
         vk::DescriptorSets uniform_sets{};
-        size_t backbuffer_pass_count{};
-        u32 backbuffer_slots{1};
     };
 
     struct FrameImages {

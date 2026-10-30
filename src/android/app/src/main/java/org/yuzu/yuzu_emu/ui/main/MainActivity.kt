@@ -3,6 +3,7 @@
 
 package org.yuzu.yuzu_emu.ui.main
 
+import org.yuzu.yuzu_emu.ui.home.ConsoleDialogStyler
 import android.content.Intent
 import android.content.Context
 import android.net.Uri
@@ -82,6 +83,11 @@ class MainActivity : AppCompatActivity(), ThemeProvider {
         ThemeHelper.ThemeChangeListener(this)
         ThemeHelper.setTheme(this)
         super.onCreate(savedInstanceState)
+        // Console UI: dialogs take the colors of the current (game) background.
+        supportFragmentManager.registerFragmentLifecycleCallbacks(
+            ConsoleDialogStyler.fragmentCallbacks,
+            true
+        )
         NativeLibrary.initMultiplayer()
 
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -384,6 +390,9 @@ class MainActivity : AppCompatActivity(), ThemeProvider {
     override fun setTheme(resId: Int) {
         super.setTheme(resId)
         themeId = resId
+        // Console UI: every screen and dialog of this activity uses the console colors. Applied
+        // after each setTheme, since ThemeHelper re-applies the app theme (e.g. on resume).
+        theme.applyStyle(R.style.ThemeOverlay_Console, true)
     }
 
     override fun onDestroy() {

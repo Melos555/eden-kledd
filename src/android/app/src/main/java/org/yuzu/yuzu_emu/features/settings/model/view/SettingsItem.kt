@@ -141,14 +141,12 @@ abstract class SettingsItem(
         const val TYPE_SPINBOX = 12
         const val TYPE_LAUNCHABLE = 13
         const val TYPE_PATH = 14
-        const val TYPE_GPU_UNSWIZZLE = 15
         const val TYPE_FX_TOOLBAR = 16
         const val TYPE_FX_PRESET = 17
         const val TYPE_FX_SHADER = 18
         const val TYPE_FX_BUTTON = 19
 
         const val FASTMEM_COMBINED = "fastmem_combined"
-        const val GPU_UNSWIZZLE_COMBINED = "gpu_unswizzle_combined"
 
         val emptySetting = object : AbstractSetting {
             override val key: String = ""
@@ -789,45 +787,6 @@ abstract class SettingsItem(
             )
             put(
                 SingleChoiceSetting(
-                    IntSetting.GPU_UNSWIZZLE_TEXTURE_SIZE,
-                    titleId = R.string.gpu_unswizzle_texture_size,
-                    descriptionId = R.string.gpu_unswizzle_texture_size_description,
-                    choicesId = R.array.gpuTextureSizeSwizzleEntries,
-                    valuesId = R.array.gpuTextureSizeSwizzleValues
-                )
-            )
-            put(
-                SingleChoiceSetting(
-                    IntSetting.GPU_UNSWIZZLE_STREAM_SIZE,
-                    titleId = R.string.gpu_unswizzle_stream_size,
-                    descriptionId = R.string.gpu_unswizzle_stream_size_description,
-                    choicesId = R.array.gpuSwizzleEntries,
-                    valuesId = R.array.gpuSwizzleValues
-                )
-            )
-            put(
-                SingleChoiceSetting(
-                    IntSetting.GPU_UNSWIZZLE_CHUNK_SIZE,
-                    titleId = R.string.gpu_unswizzle_chunk_size,
-                    descriptionId = R.string.gpu_unswizzle_chunk_size_description,
-                    choicesId = R.array.gpuSwizzleChunkEntries,
-                    valuesId = R.array.gpuSwizzleChunkValues
-                )
-            )
-            put(
-                GpuUnswizzleSetting(
-                    titleId = R.string.gpu_unswizzle_settings,
-                    descriptionId = R.string.gpu_unswizzle_settings_description,
-                    textureSizeChoicesId = R.array.gpuTextureSizeSwizzleEntries,
-                    textureSizeValuesId = R.array.gpuTextureSizeSwizzleValues,
-                    streamSizeChoicesId = R.array.gpuSwizzleEntries,
-                    streamSizeValuesId = R.array.gpuSwizzleValues,
-                    chunkSizeChoicesId = R.array.gpuSwizzleChunkEntries,
-                    chunkSizeValuesId = R.array.gpuSwizzleChunkValues
-                )
-            )
-            put(
-                SingleChoiceSetting(
                     IntSetting.FAST_CPU_TIME,
                     titleId = R.string.fast_cpu_time,
                     descriptionId = R.string.fast_cpu_time_description,
@@ -861,13 +820,6 @@ abstract class SettingsItem(
             )
             put(
                 SwitchSetting(
-                    BooleanSetting.NCE_INVALIDATION_GPU_READBACK,
-                    titleId = R.string.nce_invalidation_gpu_readback,
-                    descriptionId = R.string.nce_invalidation_gpu_readback_description
-                )
-            )
-            put(
-                SwitchSetting(
                     BooleanSetting.FIX_BLOOM_EFFECTS,
                     titleId = R.string.fix_bloom_effects,
                     descriptionId = R.string.fix_bloom_effects_description
@@ -896,6 +848,13 @@ abstract class SettingsItem(
             )
             put(
                 SwitchSetting(
+                    BooleanSetting.RELOCATE_36BIT_ADDRESS_SPACE,
+                    titleId = R.string.relocate_36bit_address_space,
+                    descriptionId = R.string.relocate_36bit_address_space_description
+                )
+            )
+            put(
+                SwitchSetting(
                     BooleanSetting.RENDERER_REACTIVE_FLUSHING,
                     titleId = R.string.renderer_reactive_flushing,
                     descriptionId = R.string.renderer_reactive_flushing_description
@@ -903,9 +862,30 @@ abstract class SettingsItem(
             )
             put(
                 SwitchSetting(
+                    BooleanSetting.RENDERER_BARRIER_FEEDBACK_LOOPS,
+                    titleId = R.string.renderer_barrier_feedback_loops,
+                    descriptionId = R.string.renderer_barrier_feedback_loops_description
+                )
+            )
+            put(
+                SwitchSetting(
                     BooleanSetting.ENABLE_BUFFER_HISTORY,
                     titleId = R.string.enable_buffer_history,
                     descriptionId = R.string.enable_buffer_history_description
+                )
+            )
+            put(
+                SwitchSetting(
+                    BooleanSetting.ENABLE_GPU_BUFFER_READBACK,
+                    titleId = R.string.enable_gpu_buffer_readback,
+                    descriptionId = R.string.enable_gpu_buffer_readback_description
+                )
+            )
+            put(
+                SwitchSetting(
+                    BooleanSetting.USE_UNIFIED_MEMORY,
+                    titleId = R.string.use_unified_memory,
+                    descriptionId = R.string.use_unified_memory_description
                 )
             )
             put(
@@ -920,6 +900,13 @@ abstract class SettingsItem(
                     BooleanSetting.SYNC_MEMORY_OPERATIONS,
                     titleId = R.string.sync_memory_operations,
                     descriptionId = R.string.sync_memory_operations_description
+                )
+            )
+            put(
+                SwitchSetting(
+                    BooleanSetting.STALL_ON_GPU_FENCE_WAIT,
+                    titleId = R.string.stall_on_gpu_fence_wait,
+                    descriptionId = R.string.stall_on_gpu_fence_wait_description
                 )
             )
             put(

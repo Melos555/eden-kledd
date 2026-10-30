@@ -22,12 +22,15 @@ constexpr u32 DISPATCH_TILE_SHIFT = 4;
     return (size + (1u << DISPATCH_TILE_SHIFT) - 1) >> DISPATCH_TILE_SHIFT;
 }
 
-VkImageMemoryBarrier MakeTargetBarrier(VkImage image, VkAccessFlags src_access,
-                                       VkAccessFlags dst_access, VkImageLayout old_layout) {
-    return VkImageMemoryBarrier{
-        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+VkImageMemoryBarrier2 MakeTargetBarrier(VkImage image, VkPipelineStageFlags2 src_stage,
+                                        VkAccessFlags2 src_access, VkPipelineStageFlags2 dst_stage,
+                                        VkAccessFlags2 dst_access, VkImageLayout old_layout) {
+    return VkImageMemoryBarrier2{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
         .pNext = nullptr,
+        .srcStageMask = src_stage,
         .srcAccessMask = src_access,
+        .dstStageMask = dst_stage,
         .dstAccessMask = dst_access,
         .oldLayout = old_layout,
         .newLayout = VK_IMAGE_LAYOUT_GENERAL,
@@ -63,25 +66,21 @@ LsfgGenerate::LsfgGenerate(const Device& device, const LsfgShaders& shaders,
     edge_sampler =
         resources.GetSampler(VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_COMPARE_OP_ALWAYS, false);
 
-    const std::vector<VkDescriptorSetLayout> layouts(
-        LSFG_GENERATION_SLOTS * LSFG_MAX_TARGETS * 2, pass.SetLayout());
+    const std::vector<VkDescriptorSetLayout> layouts(LSFG_GENERATION_SLOTS * 2, pass.SetLayout());
     owned_sets = CreateWrappedDescriptorSets(descriptor_pool, layouts);
 
     size_t next = 0;
     for (size_t slot = 0; slot < LSFG_GENERATION_SLOTS; ++slot) {
-        Generation& target = generations[slot];
-        target.buffer = resources.GetBuffer(LsfgSlotTimestamp(slot));
-
-        for (auto& entry : target.targets) {
-            for (auto& set : entry.descriptor_sets) {
-                set = owned_sets[next++];
-            }
+        Generation& entry = generations[slot];
+        entry.buffer = resources.GetBuffer(LsfgSlotTimestamp(slot));
+        for (auto& set : entry.descriptor_sets) {
+            set = owned_sets[next++];
         }
     }
 }
 
-void LsfgGenerate::SetTarget(const Device& device, size_t slot, u32 target, VkImageView view) {
-    Target& entry = generations[slot].targets[target];
+void LsfgGenerate::SetTarget(const Device& device, size_t slot, VkImageView view) {
+    Generation& entry = generations[slot];
     if (entry.view == view) {
         return;
     }
@@ -89,7 +88,7 @@ void LsfgGenerate::SetTarget(const Device& device, size_t slot, u32 target, VkIm
 
     for (size_t i = 0; i < entry.descriptor_sets.size(); ++i) {
         LsfgDescriptorWriter(entry.descriptor_sets[i])
-            .AddUniformBuffer(generations[slot].buffer, LsfgResources::BufferSize())
+            .AddUniformBuffer(entry.buffer, LsfgResources::BufferSize())
             .AddSampler(sampler)
             .AddSampler(edge_sampler)
             .AddSampledImage((*frames)[1 - i])
@@ -102,9 +101,9 @@ void LsfgGenerate::SetTarget(const Device& device, size_t slot, u32 target, VkIm
     }
 }
 
-void LsfgGenerate::Dispatch(vk::CommandBuffer cmdbuf, u64 frame_count, size_t slot, u32 target,
+void LsfgGenerate::Dispatch(vk::CommandBuffer cmdbuf, u64 frame_count, size_t slot,
                             VkImage image, VkExtent2D extent) {
-    const Target& entry = generations[slot].targets[target];
+    const Generation& entry = generations[slot];
 
     LsfgBarriers(cmdbuf)
         .WriteToReadAll(*frames)
@@ -117,14 +116,11 @@ void LsfgGenerate::Dispatch(vk::CommandBuffer cmdbuf, u64 frame_count, size_t sl
     pass.Bind(cmdbuf, entry.descriptor_sets[frame_count % entry.descriptor_sets.size()]);
     cmdbuf.Dispatch(GroupCount(extent.width), GroupCount(extent.height), 1);
 
-    const std::array after{MakeTargetBarrier(
-        image, VK_ACCESS_SHADER_WRITE_BIT,
-        VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_TRANSFER_READ_BIT,
-        VK_IMAGE_LAYOUT_GENERAL)};
-    cmdbuf.PipelineBarrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                           VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-                               VK_PIPELINE_STAGE_TRANSFER_BIT,
-                           0, {}, {}, after);
+    const std::array after{MakeTargetBarrier(image, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                                             VK_ACCESS_2_SHADER_WRITE_BIT,
+                                             vk::PIPELINE_STAGE_IMAGE_USERS,
+                                             vk::ACCESS_IMAGE_USERS, VK_IMAGE_LAYOUT_GENERAL)};
+    cmdbuf.PipelineBarrier(0, {}, {}, after);
 }
 
 } // namespace Vulkan

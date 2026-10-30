@@ -16,11 +16,11 @@ enum class BooleanSetting(override val key: String) : AbstractBooleanSetting {
     RENDERER_USE_SPEED_LIMIT("use_speed_limit"),
     USE_CUSTOM_CPU_TICKS("use_custom_cpu_ticks"),
     SKIP_CPU_INNER_INVALIDATION("skip_cpu_inner_invalidation"),
-    NCE_INVALIDATION_GPU_READBACK("nce_invalidation_gpu_readback"),
     FIX_BLOOM_EFFECTS("fix_bloom_effects"),
     EMULATE_BGR565("emulate_bgr565"),
     RESCALE_HACK("rescale_hack"),
     CPUOPT_UNSAFE_HOST_MMU("cpuopt_unsafe_host_mmu"),
+    RELOCATE_36BIT_ADDRESS_SPACE("relocate_36bit_address_space"),
     USE_DOCKED_MODE("use_docked_mode"),
     USE_AUTO_STUB("use_auto_stub"),
     RENDERER_USE_DISK_SHADER_CACHE("use_disk_shader_cache"),
@@ -28,9 +28,13 @@ enum class BooleanSetting(override val key: String) : AbstractBooleanSetting {
     RENDERER_ASYNCHRONOUS_GPU_EMULATION("use_asynchronous_gpu_emulation"),
     RENDERER_ASYNCHRONOUS_SHADERS("use_asynchronous_shaders"),
     RENDERER_REACTIVE_FLUSHING("use_reactive_flushing"),
+    RENDERER_BARRIER_FEEDBACK_LOOPS("barrier_feedback_loops"),
     ENABLE_BUFFER_HISTORY("enable_buffer_history"),
     USE_OPTIMIZED_VERTEX_BUFFERS("use_optimized_vertex_buffers"),
+    ENABLE_GPU_BUFFER_READBACK("enable_gpu_buffer_readback"),
+    USE_UNIFIED_MEMORY("use_unified_memory"),
     SYNC_MEMORY_OPERATIONS("sync_memory_operations"),
+    STALL_ON_GPU_FENCE_WAIT("stall_on_gpu_fence_wait"),
     BUFFER_REORDER_DISABLE("disable_buffer_reorder"),
     RENDERER_DEBUG("debug"),
     RENDERER_PATCH_OLD_QCOM_DRIVERS("patch_old_qcom_drivers"),
@@ -38,7 +42,6 @@ enum class BooleanSetting(override val key: String) : AbstractBooleanSetting {
     RENDERER_SAMPLE_SHADING("sample_shading"),
     RENDERER_FRAME_GEN("frame_gen"),
     RENDERER_FRAME_GEN_FLOW_SCALE_AUTO("frame_gen_flow_scale_auto"),
-    GPU_UNSWIZZLE_ENABLED("gpu_unswizzle_enabled"),
     PICTURE_IN_PICTURE("picture_in_picture"),
     USE_CUSTOM_RTC("custom_rtc_enabled"),
     BLACK_BACKGROUNDS("black_backgrounds"),
@@ -94,7 +97,7 @@ enum class BooleanSetting(override val key: String) : AbstractBooleanSetting {
 
     ENABLE_QUICK_SETTINGS("enable_quick_settings");
 
-    //external fun isFrameSkippingEnabled(): Boolean
+//  external fun isFrameSkippingEnabled(): Boolean
     external fun isFrameInterpolationEnabled(): Boolean
 
     override fun getBoolean(needsGlobal: Boolean): Boolean =

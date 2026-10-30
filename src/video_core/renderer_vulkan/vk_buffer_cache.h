@@ -55,19 +55,19 @@ public:
         return buffer.Location();
     }
 
-    [[nodiscard]] bool IsRegionUsed(u64 offset, u64 size) const noexcept {
-        return tracker.IsUsed(offset, size);
-    }
+    [[nodiscard]] bool IsRegionUsed(u64 offset, u64 size) const noexcept;
+
+    [[nodiscard]] bool IsRegionUploading(u64 offset, u64 size) const noexcept;
 
     void MarkUsage(u64 offset, u64 size) noexcept;
 
-    void ResetUsageTracking() noexcept {
-        tracker.Reset();
+    void MarkUpload(std::span<const VideoCommon::BufferCopy> copies) noexcept;
+
+    [[nodiscard]] u64 LastUploadTick() const noexcept {
+        return last_upload_tick;
     }
 
-    [[nodiscard]] u64 LastUsageTick() const noexcept {
-        return last_usage_tick;
-    }
+    [[nodiscard]] std::span<u8> CoherentMapping() noexcept;
 
     operator VkBuffer() const noexcept {
         return *buffer;
@@ -86,8 +86,12 @@ private:
     vk::Buffer buffer;
     std::vector<BufferView> views;
     VideoCommon::UsageTracker tracker;
+    VideoCommon::UsageTracker uploads;
     VkDeviceAddress device_address{};
-    u64 last_usage_tick{};
+    u64 usage_tick{};
+    u64 usage_begin{};
+    u64 usage_end{};
+    u64 last_upload_tick{};
     bool is_null{};
     bool sparse_compatible{};
 };
@@ -108,13 +112,19 @@ public:
                                 ComputePassDescriptorQueue& compute_pass_descriptor_queue,
                                 DescriptorPool& descriptor_pool);
 
-    void TickFrame(Common::SlotVector<Buffer>& slot_buffers) noexcept;
+    void TickFrame(Common::SlotVector<Buffer>&) noexcept;
 
     u64 CurrentTick();
 
-    bool IsFree(u64 tick);
+    u64 RenderPassSerial() const noexcept;
 
-    void Wait(u64 tick);
+    u64 WaitForIdleSerial() const noexcept;
+
+    void MarkRenderPassWrites() noexcept;
+
+    u64 KnownGpuTick();
+
+    void Wait(u64 buffer_tick);
 
     void Finish();
 
@@ -134,6 +144,11 @@ public:
 
     bool CanReorderUpload(const Buffer& buffer, std::span<const VideoCommon::BufferCopy> copies);
 
+    [[nodiscard]] std::span<const u8> DirectDownloadSpan(Buffer& buffer);
+
+    [[nodiscard]] std::span<u8> DirectUploadSpan(Buffer& buffer,
+                                                 std::span<const VideoCommon::BufferCopy> copies);
+
     void FreeDeferredStagingBuffer(StagingBufferRef& ref);
 
     void PreCopyBarrier();
@@ -141,6 +156,13 @@ public:
     void CopyBuffer(VkBuffer dst_buffer, VkBuffer src_buffer,
                     std::span<const VideoCommon::BufferCopy> copies, bool barrier,
                     bool can_reorder_upload = false);
+
+    void CopyBuffer(Buffer& dst_buffer, VkBuffer src_buffer,
+                    std::span<const VideoCommon::BufferCopy> copies, bool barrier,
+                    bool can_reorder_upload = false) {
+        dst_buffer.MarkUpload(copies);
+        CopyBuffer(dst_buffer.Handle(), src_buffer, copies, barrier, can_reorder_upload);
+    }
 
     void PostCopyBarrier();
 
@@ -150,6 +172,9 @@ public:
                          u32 base_vertex, VkBuffer buffer, u32 offset, u32 size);
 
     void BindQuadIndexBuffer(PrimitiveTopology topology, u32 first, u32 count);
+
+    bool BindQuadIndices(PrimitiveTopology topology, IndexFormat index_format, u32 base_vertex,
+                         u32 num_indices, std::span<const u8> indices);
 
     void BindVertexBuffer(u32 index, VkBuffer buffer, u32 offset, u32 size, u32 stride);
 
@@ -192,17 +217,13 @@ public:
             .memory_offset = location.offset,
             .offset = offset,
             .size = size,
-            .write_tick = buffer.getWriteTick(),
+            .content_serial = buffer.ContentSerial(),
             .memory_type = location.memory_type,
         });
         multi_range_total += size;
     }
 
     bool BindMultiRangeStorageBuffer(u64 key, bool is_written);
-
-    void InvalidateMultiRange(u64 key) {
-        multi_range_buffers.Invalidate(key);
-    }
 
     void OnBufferDeleted(const Buffer& buffer) {
         multi_range_buffers.DropOwner(scheduler, buffer.Handle());
@@ -244,6 +265,9 @@ private:
 
     VkFormat TexelBufferFormat(VideoCore::Surface::PixelFormat format) const;
 
+    template <u32 N>
+    void RecordVertexBuffers(const VideoCommon::HostBindings<Buffer>& bindings, u32 count);
+
     void ReserveNullBuffer();
     vk::Buffer CreateNullBuffer();
 
@@ -264,6 +288,10 @@ private:
     MultiRangeBufferCache multi_range_buffers;
     boost::container::small_vector<MultiRangeSource, 16> multi_range_sources;
     VkDeviceSize multi_range_total{};
+
+    VkMemoryBarrier2 read_barrier;
+    VkMemoryBarrier2 write_barrier;
+    u64 host_read_tick = 0;
 
     bool limit_dynamic_storage_buffers = false;
     u32 max_dynamic_storage_buffers = (std::numeric_limits<u32>::max)();

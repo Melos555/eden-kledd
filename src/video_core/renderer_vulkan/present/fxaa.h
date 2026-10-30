@@ -25,7 +25,6 @@ public:
 
 private:
     void CreateImages(const Device& device, MemoryAllocator& allocator);
-    void CreateRenderPasses(const Device& device);
     void CreateSampler(const Device& device);
     void CreateShaders(const Device& device);
     void CreateDescriptorPool(const Device& device);
@@ -34,15 +33,10 @@ private:
     void CreatePipelineLayouts(const Device& device);
     void CreatePipelines(const Device& device);
     void UpdateDescriptorSets(const Device& device, VkImageView image_view, size_t image_index);
-    void UploadImages(const Device& device, Scheduler& scheduler);
 
-    struct Image {
-        vk::DescriptorSets descriptor_sets{};
-        vk::Framebuffer framebuffer{};
-        vk::Image image{};
-        vk::ImageView image_view{};
-    };
-    std::vector<Image> m_dynamic_images{};
+    vk::Image m_image{};
+    vk::ImageView m_image_view{};
+    std::vector<vk::DescriptorSets> m_descriptor_sets{};
     const VkExtent2D m_extent;
     const u32 m_image_count;
     vk::ShaderModule m_vertex_shader{};
@@ -51,9 +45,7 @@ private:
     vk::DescriptorSetLayout m_descriptor_set_layout{};
     vk::PipelineLayout m_pipeline_layout{};
     vk::Pipeline m_pipeline{};
-    vk::RenderPass m_renderpass{};
     vk::Sampler m_sampler{};
-    bool m_images_ready{};
 };
 
 } // namespace Vulkan

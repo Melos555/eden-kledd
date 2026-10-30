@@ -25,8 +25,7 @@ WindowAdaptPass::WindowAdaptPass(const Device& device, VkFormat frame_format, vk
     CreateDescriptorSetLayout(device);
     CreatePipelineLayout(device);
     CreateVertexShader(device);
-    CreateRenderPass(device, frame_format);
-    CreatePipelines(device);
+    CreatePipelines(device, frame_format);
 }
 
 WindowAdaptPass::~WindowAdaptPass() = default;
@@ -35,66 +34,70 @@ void WindowAdaptPass::Draw(const Device& device, RasterizerVulkan& rasterizer, S
                            std::list<Layer>& layers,
                            std::span<const Tegra::FramebufferConfig> configs,
                            const Layout::FramebufferLayout& layout, Frame* dst) {
-
-    const VkFramebuffer host_framebuffer{*dst->framebuffer};
-    const VkRenderPass renderpass{*render_pass};
-    const VkPipelineLayout graphics_pipeline_layout{*pipeline_layout};
-    const VkExtent2D render_area{
-        .width = dst->width,
-        .height = dst->height,
-    };
-
     const size_t layer_count = configs.size();
-    std::vector<PresentPushConstants> push_constants(layer_count);
-    std::vector<VkDescriptorSet> descriptor_sets(layer_count);
-    std::vector<VkPipeline> graphics_pipelines(layer_count);
+    layer_push_constants.resize(layer_count);
+    layer_descriptor_sets.resize(layer_count);
+    layer_pipelines.resize(layer_count);
 
     auto layer_it = layers.begin();
     for (size_t i = 0; i < layer_count; i++) {
         switch (configs[i].blending) {
         case Tegra::BlendMode::Opaque:
         default:
-            graphics_pipelines[i] = *opaque_pipeline;
+            layer_pipelines[i] = *opaque_pipeline;
             break;
         case Tegra::BlendMode::Premultiplied:
-            graphics_pipelines[i] = *premultiplied_pipeline;
+            layer_pipelines[i] = *premultiplied_pipeline;
             break;
         case Tegra::BlendMode::Coverage:
-            graphics_pipelines[i] = *coverage_pipeline;
+            layer_pipelines[i] = *coverage_pipeline;
             break;
         }
 
-        layer_it->ConfigureDraw(device, &push_constants[i], &descriptor_sets[i], rasterizer, *sampler,
-                                image_index, configs[i], layout);
+        layer_it->ConfigureDraw(device, &layer_push_constants[i], &layer_descriptor_sets[i],
+                                rasterizer, *sampler, image_index, configs[i], layout);
         layer_it++;
     }
 
-    scheduler.Record([=](vk::CommandBuffer cmdbuf) {
+    Record(scheduler, dst, layer_push_constants, layer_descriptor_sets);
+}
+
+void WindowAdaptPass::DrawGenerated(const Device& device, Scheduler& scheduler, Layer& layer,
+                                    size_t generation, VkImage image, VkImageView view,
+                                    const Layout::FramebufferLayout& layout, Frame* dst) {
+    std::vector<PresentPushConstants> push_constants = layer_push_constants;
+    std::vector<VkDescriptorSet> descriptor_sets = layer_descriptor_sets;
+    layer.ConfigureGenerated(device, &push_constants.front(), &descriptor_sets.front(), *sampler,
+                             generation, image, view, layout);
+    Record(scheduler, dst, std::move(push_constants), std::move(descriptor_sets));
+}
+
+void WindowAdaptPass::Record(Scheduler& scheduler, Frame* dst,
+                             std::vector<PresentPushConstants> push_constants,
+                             std::vector<VkDescriptorSet> descriptor_sets) const {
+    const VkImage host_image{*dst->image};
+    const VkImageView host_view{*dst->image_view};
+    const VkPipelineLayout graphics_pipeline_layout{*pipeline_layout};
+    const VkExtent2D render_area{
+        .width = dst->width,
+        .height = dst->height,
+    };
+    scheduler.Record([host_image, host_view, graphics_pipeline_layout, render_area,
+                      graphics_pipelines = layer_pipelines,
+                      push_constants = std::move(push_constants),
+                      descriptor_sets = std::move(descriptor_sets)](vk::CommandBuffer cmdbuf) {
         const f32 bg_red = Settings::values.bg_red.GetValue() / 255.0f;
         const f32 bg_green = Settings::values.bg_green.GetValue() / 255.0f;
         const f32 bg_blue = Settings::values.bg_blue.GetValue() / 255.0f;
-        const VkClearAttachment clear_attachment{
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .colorAttachment = 0,
-            .clearValue =
-                {
-                    .color = {.float32 = {bg_red, bg_green, bg_blue, 1.0f}},
-                },
-        };
-        const VkClearRect clear_rect{
-            .rect =
-                {
-                    .offset = {0, 0},
-                    .extent = render_area,
-                },
-            .baseArrayLayer = 0,
-            .layerCount = 1,
+        const VkClearValue clear_value{
+            .color = {.float32 = {bg_red, bg_green, bg_blue, 1.0f}},
         };
 
-        BeginRenderPass(cmdbuf, renderpass, host_framebuffer, render_area);
-        cmdbuf.ClearAttachments({clear_attachment}, {clear_rect});
+        TransitionImageLayout(cmdbuf, host_image, VK_IMAGE_LAYOUT_GENERAL,
+                              VK_IMAGE_LAYOUT_UNDEFINED);
+        BeginRendering(cmdbuf, host_view, render_area, VK_ATTACHMENT_LOAD_OP_CLEAR, clear_value);
 
-        for (size_t i = 0; i < layer_count; i++) {
+        for (size_t i = 0; i < graphics_pipelines.size(); i++) {
             cmdbuf.BindPipeline(VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipelines[i]);
             cmdbuf.PushConstants(graphics_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT,
                                  push_constants[i]);
@@ -103,16 +106,12 @@ void WindowAdaptPass::Draw(const Device& device, RasterizerVulkan& rasterizer, S
             cmdbuf.Draw(4, 1, 0, 0);
         }
 
-        cmdbuf.EndRenderPass();
+        cmdbuf.EndRendering();
     });
 }
 
 VkDescriptorSetLayout WindowAdaptPass::GetDescriptorSetLayout() {
     return *descriptor_set_layout;
-}
-
-VkRenderPass WindowAdaptPass::GetRenderPass() {
-    return *render_pass;
 }
 
 void WindowAdaptPass::CreateDescriptorSetLayout(const Device& device) {
@@ -142,17 +141,13 @@ void WindowAdaptPass::CreateVertexShader(const Device& device) {
     vertex_shader = BuildShader(device, VULKAN_PRESENT_VERT_SPV);
 }
 
-void WindowAdaptPass::CreateRenderPass(const Device& device, VkFormat frame_format) {
-    render_pass = CreateWrappedRenderPass(device, frame_format, VK_IMAGE_LAYOUT_UNDEFINED);
-}
-
-void WindowAdaptPass::CreatePipelines(const Device& device) {
-    opaque_pipeline = CreateWrappedPipeline(device, render_pass, pipeline_layout,
+void WindowAdaptPass::CreatePipelines(const Device& device, VkFormat frame_format) {
+    opaque_pipeline = CreateWrappedPipeline(device, frame_format, pipeline_layout,
                                             std::tie(vertex_shader, fragment_shader));
     premultiplied_pipeline = CreateWrappedPremultipliedBlendingPipeline(
-        device, render_pass, pipeline_layout, std::tie(vertex_shader, fragment_shader));
+        device, frame_format, pipeline_layout, std::tie(vertex_shader, fragment_shader));
     coverage_pipeline = CreateWrappedCoverageBlendingPipeline(
-        device, render_pass, pipeline_layout, std::tie(vertex_shader, fragment_shader));
+        device, frame_format, pipeline_layout, std::tie(vertex_shader, fragment_shader));
 }
 
 } // namespace Vulkan

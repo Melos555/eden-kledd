@@ -88,6 +88,18 @@ bool ComputeAttachment0DualSourceBlend(const Maxwell& regs) {
                                          : uses_dual_source(regs.blend);
 }
 
+bool WritesColorTarget(const Maxwell& regs, size_t index, bool static_masks) {
+    if (!static_masks || (index == 0 && regs.anti_alias_alpha_control.alpha_to_coverage != 0)) {
+        return true;
+    }
+    size_t mask_index = index;
+    if (regs.color_mask_common) {
+        mask_index = 0;
+    }
+    const auto& mask = regs.color_mask[mask_index];
+    return mask.R || mask.G || mask.B || mask.A;
+}
+
 void RefreshXfbState(VideoCommon::TransformFeedbackState& state, const Maxwell& regs) {
     std::ranges::transform(regs.transform_feedback.controls, state.layouts.begin(),
                            [](const auto& layout) {
@@ -101,7 +113,8 @@ void RefreshXfbState(VideoCommon::TransformFeedbackState& state, const Maxwell& 
 }
 } // Anonymous namespace
 
-void FixedPipelineState::Refresh(Tegra::Engines::Maxwell3D& maxwell3d, DynamicFeatures& features) {
+void FixedPipelineState::Refresh(Tegra::Engines::Maxwell3D& maxwell3d, DynamicFeatures& features,
+                                 u32 color_outputs) {
     const Maxwell& regs = maxwell3d.regs;
     const auto topology_ = maxwell3d.draw_manager.draw_state.topology;
 
@@ -119,11 +132,14 @@ void FixedPipelineState::Refresh(Tegra::Engines::Maxwell3D& maxwell3d, DynamicFe
     xfb_enabled.Assign(regs.transform_feedback_enabled != 0);
     ndc_minus_one_to_one.Assign(regs.depth_mode == Maxwell::DepthMode::MinusOneToOne ? 1 : 0);
     polygon_mode.Assign(PackPolygonMode(regs.polygon_mode_front));
-    tessellation_primitive.Assign(static_cast<u32>(regs.tessellation.params.domain_type.Value()));
-    tessellation_spacing.Assign(static_cast<u32>(regs.tessellation.params.spacing.Value()));
-    tessellation_clockwise.Assign(regs.tessellation.params.output_primitives.Value() ==
-                                  Maxwell::Tessellation::OutputPrimitives::Triangles_CW);
-    patch_control_points_minus_one.Assign(regs.patch_vertices - 1);
+    if (topology_ == Maxwell::PrimitiveTopology::Patches) {
+        tessellation_primitive.Assign(
+            static_cast<u32>(regs.tessellation.params.domain_type.Value()));
+        tessellation_spacing.Assign(static_cast<u32>(regs.tessellation.params.spacing.Value()));
+        tessellation_clockwise.Assign(regs.tessellation.params.output_primitives.Value() ==
+                                      Maxwell::Tessellation::OutputPrimitives::Triangles_CW);
+        patch_control_points_minus_one.Assign(regs.patch_vertices - 1);
+    }
     const bool can_collapse_topology_class =
         features.has_extended_dynamic_state && features.has_extended_dynamic_state_2;
     topology.Assign(can_collapse_topology_class
@@ -138,8 +154,13 @@ void FixedPipelineState::Refresh(Tegra::Engines::Maxwell3D& maxwell3d, DynamicFe
         regs.alpha_test_enabled != 0 ? regs.alpha_test_func : Maxwell::ComparisonOp::Always_GL;
     alpha_test_func.Assign(PackComparisonOp(test_func));
     early_z.Assign(regs.mandated_early_z != 0 ? 1 : 0);
-    depth_enabled.Assign(regs.zeta_enable != 0 ? 1 : 0);
-    depth_format.Assign(static_cast<u32>(regs.zeta.format));
+    const bool drop_unused = features.has_dynamic_rendering_unused_attachments;
+    const bool depth_used = regs.depth_test_enable || regs.depth_bounds_enable ||
+                            regs.stencil_enable || extended_dynamic_state;
+    if (regs.zeta_enable != 0 && regs.zeta.Address() != 0 && (depth_used || !drop_unused)) {
+        depth_enabled.Assign(1);
+        depth_format.Assign(static_cast<u32>(regs.zeta.format));
+    }
     y_negate.Assign(regs.window_origin.mode != Maxwell::WindowOrigin::Mode::UpperLeft ? 1 : 0);
 
     bool use_last_provoking_vertex = false;
@@ -168,19 +189,39 @@ void FixedPipelineState::Refresh(Tegra::Engines::Maxwell3D& maxwell3d, DynamicFe
     smooth_lines.Assign(regs.line_anti_alias_enable != 0 ? 1 : 0);
     alpha_to_coverage_enabled.Assign(regs.anti_alias_alpha_control.alpha_to_coverage != 0 ? 1 : 0);
     alpha_to_one_enabled.Assign(regs.anti_alias_alpha_control.alpha_to_one != 0 ? 1 : 0);
-    app_stage.Assign(maxwell3d.engine_state);
 
-    depth_bounds_min = static_cast<u32>(regs.depth_bounds[0]);
-    depth_bounds_max = static_cast<u32>(regs.depth_bounds[1]);
-
-    line_stipple_factor = regs.line_stipple_params.factor;
-    line_stipple_pattern = regs.line_stipple_params.pattern;
-
-    for (size_t i = 0; i < regs.rt.size(); ++i) {
-        color_formats[i] = static_cast<u8>(regs.rt[i].format);
+    line_stipple_factor = 0;
+    line_stipple_pattern = 0;
+    if (regs.line_stipple_enable || features.has_dynamic_state3_line_stipple_enable) {
+        line_stipple_factor = regs.line_stipple_params.factor;
+        line_stipple_pattern = regs.line_stipple_params.pattern;
     }
-    alpha_test_ref = std::bit_cast<u32>(regs.alpha_test_ref);
-    point_size = std::bit_cast<u32>(regs.point_size);
+
+    const bool static_masks =
+        !features.has_extended_dynamic_state_3_blend && !features.has_color_write_enable;
+    const auto previous_formats = color_formats;
+    color_formats.fill(static_cast<u8>(Tegra::RenderTargetFormat::NONE));
+    const size_t num_targets = (std::min)(size_t{regs.rt_control.count}, color_formats.size());
+    size_t num_formats = 0;
+    for (size_t index = 0; index < num_targets; ++index) {
+        const bool used = ((color_outputs >> index) & 1) != 0 &&
+                          WritesColorTarget(regs, index, static_masks);
+        if (regs.rt[index].Address() != 0 && (used || !drop_unused)) {
+            num_formats = index + 1;
+        }
+    }
+    for (size_t index = 0; index < num_formats; ++index) {
+        color_formats[index] = static_cast<u8>(regs.rt[index].format);
+    }
+    alpha_test_ref = 0;
+    if (regs.alpha_test_enabled != 0) {
+        alpha_test_ref = std::bit_cast<u32>(regs.alpha_test_ref);
+    }
+    point_size = 0;
+    if (topology_ == Maxwell::PrimitiveTopology::Points ||
+        regs.IsShaderConfigEnabled(Maxwell::ShaderType::Geometry)) {
+        point_size = std::bit_cast<u32>(regs.point_size);
+    }
 
     if (maxwell3d.dirty.flags[Dirty::VertexInput]) {
         if (features.has_dynamic_vertex_input) {
@@ -241,11 +282,15 @@ void FixedPipelineState::Refresh(Tegra::Engines::Maxwell3D& maxwell3d, DynamicFe
         dynamic_state.Refresh2(regs, topology_, extended_dynamic_state_2);
     }
     if (!extended_dynamic_state_3_blend) {
-        if (maxwell3d.dirty.flags[Dirty::Blending]) {
+        if (maxwell3d.dirty.flags[Dirty::Blending] || color_formats != previous_formats) {
             maxwell3d.dirty.flags[Dirty::Blending] = false;
             for (size_t index = 0; index < attachments.size(); ++index) {
-                attachments[index].Refresh(regs, index);
                 auto& attachment = attachments[index];
+                attachment.raw = 0;
+                if (color_formats[index] == static_cast<u8>(Tegra::RenderTargetFormat::NONE)) {
+                    continue;
+                }
+                attachment.Refresh(regs, index);
                 if (color_write_enable_dynamic && attachment.mask_r == 0 &&
                     attachment.mask_g == 0 && attachment.mask_b == 0 &&
                     attachment.mask_a == 0) {
@@ -314,28 +359,34 @@ void FixedPipelineState::DynamicState::Refresh(const Maxwell& regs) {
         packed_front_face = 1 - packed_front_face;
     }
 
-    front.action_stencil_fail.Assign(PackStencilOp(regs.stencil_front_op.fail));
-    front.action_depth_fail.Assign(PackStencilOp(regs.stencil_front_op.zfail));
-    front.action_depth_pass.Assign(PackStencilOp(regs.stencil_front_op.zpass));
-    front.test_func.Assign(PackComparisonOp(regs.stencil_front_op.func));
-    if (regs.stencil_two_side_enable) {
-        back.action_stencil_fail.Assign(PackStencilOp(regs.stencil_back_op.fail));
-        back.action_depth_fail.Assign(PackStencilOp(regs.stencil_back_op.zfail));
-        back.action_depth_pass.Assign(PackStencilOp(regs.stencil_back_op.zpass));
-        back.test_func.Assign(PackComparisonOp(regs.stencil_back_op.func));
-    } else {
-        back.action_stencil_fail.Assign(front.action_stencil_fail);
-        back.action_depth_fail.Assign(front.action_depth_fail);
-        back.action_depth_pass.Assign(front.action_depth_pass);
-        back.test_func.Assign(front.test_func);
+    if (regs.stencil_enable) {
+        front.action_stencil_fail.Assign(PackStencilOp(regs.stencil_front_op.fail));
+        front.action_depth_fail.Assign(PackStencilOp(regs.stencil_front_op.zfail));
+        front.action_depth_pass.Assign(PackStencilOp(regs.stencil_front_op.zpass));
+        front.test_func.Assign(PackComparisonOp(regs.stencil_front_op.func));
+        if (regs.stencil_two_side_enable) {
+            back.action_stencil_fail.Assign(PackStencilOp(regs.stencil_back_op.fail));
+            back.action_depth_fail.Assign(PackStencilOp(regs.stencil_back_op.zfail));
+            back.action_depth_pass.Assign(PackStencilOp(regs.stencil_back_op.zpass));
+            back.test_func.Assign(PackComparisonOp(regs.stencil_back_op.func));
+        } else {
+            back.action_stencil_fail.Assign(front.action_stencil_fail);
+            back.action_depth_fail.Assign(front.action_depth_fail);
+            back.action_depth_pass.Assign(front.action_depth_pass);
+            back.test_func.Assign(front.test_func);
+        }
     }
     stencil_enable.Assign(regs.stencil_enable);
     depth_write_enable.Assign(regs.depth_write_enabled);
     depth_bounds_enable.Assign(regs.depth_bounds_enable);
     depth_test_enable.Assign(regs.depth_test_enable);
     front_face.Assign(packed_front_face);
-    depth_test_func.Assign(PackComparisonOp(regs.depth_test_func));
-    cull_face.Assign(PackCullFace(regs.gl_cull_face));
+    if (regs.depth_test_enable) {
+        depth_test_func.Assign(PackComparisonOp(regs.depth_test_func));
+    }
+    if (regs.gl_cull_test_enabled) {
+        cull_face.Assign(PackCullFace(regs.gl_cull_face));
+    }
     cull_enable.Assign(regs.gl_cull_test_enabled != 0 ? 1 : 0);
 }
 
@@ -364,6 +415,9 @@ void FixedPipelineState::DynamicState::Refresh3(const Maxwell& regs,
                                                 const DynamicFeatures& features) {
     if (!features.has_dynamic_state3_logic_op_enable) {
         logic_op_enable.Assign(regs.logic_op.enable != 0 ? 1 : 0);
+        if (!regs.logic_op.enable) {
+            logic_op.Assign(0);
+        }
     }
     if (!features.has_dynamic_state3_depth_clamp_enable) {
         depth_clamp_disabled.Assign(regs.viewport_clip_control.geometry_clip ==

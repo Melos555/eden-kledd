@@ -7,8 +7,6 @@
 #include <algorithm>
 #include <bitset>
 #include <chrono>
-#include <filesystem>
-#include <fstream>
 #include <optional>
 #include <thread>
 #include "common/container/unordered_map.h"
@@ -19,8 +17,6 @@
 #include <fmt/format.h>
 
 #include "common/assert.h"
-#include "common/fs/fs.h"
-#include "common/fs/path_util.h"
 #include "common/literals.h"
 #include <ranges>
 #include "common/settings.h"
@@ -305,10 +301,6 @@ VkFormatFeatureFlags GetFormatFeatures(VkFormatProperties properties, FormatType
         VK_FORMAT_ETC2_R8G8B8_SRGB_BLOCK,
         VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK,
         VK_FORMAT_ETC2_R8G8B8A1_SRGB_BLOCK,
-        VK_FORMAT_EAC_R11_UNORM_BLOCK,
-        VK_FORMAT_EAC_R11_SNORM_BLOCK,
-        VK_FORMAT_EAC_R11G11_UNORM_BLOCK,
-        VK_FORMAT_EAC_R11G11_SNORM_BLOCK,
     };
     ::Common::unordered_map<VkFormat, VkFormatProperties> format_properties;
     for (const auto format : formats) {
@@ -398,17 +390,6 @@ std::vector<const char*> ExtensionListForVulkan(
     return output;
 }
 
-constexpr std::array<char, 8> STATIC_CACHE_MAGIC_NUMBER{'e', 'd', 'e', 'n', 's', 't', 'p', 'c'};
-constexpr u32 STATIC_CACHE_VERSION = 1;
-
-std::filesystem::path StaticPipelineCacheFilename() {
-    const auto shader_dir = Common::FS::GetEdenPath(Common::FS::EdenPath::ShaderDir);
-    if (!Common::FS::CreateDir(shader_dir)) {
-        return {};
-    }
-    return shader_dir / "vulkan_static_pipelines.bin";
-}
-
 } // Anonymous namespace
 
 void Device::RemoveExtension(bool& extension, const std::string& extension_name) {
@@ -452,6 +433,13 @@ Device::Device(VkInstance instance_, vk::PhysicalDevice physical_, VkSurfaceKHR 
                const vk::InstanceDispatch& dld_)
     : instance{instance_}, dld{dld_}, physical{physical_},
     format_properties(GetFormatProperties(physical)) {
+    const VkPhysicalDeviceMemoryProperties memory_properties =
+        physical.GetMemoryProperties().memoryProperties;
+    is_uma = std::all_of(memory_properties.memoryTypes,
+                         memory_properties.memoryTypes + memory_properties.memoryTypeCount,
+                         [](const VkMemoryType& type) {
+                             return (type.propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != 0;
+                         });
     // Get suitability and device properties.
     const bool is_suitable = GetSuitability(surface != VkSurfaceKHR{});
 
@@ -506,9 +494,6 @@ Device::Device(VkInstance instance_, vk::PhysicalDevice physical_, VkSurfaceKHR 
                                  properties.subgroup_size_control.maxSubgroupSize > GuestWarpSize;
 
     is_integrated = properties.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
-    is_virtual = properties.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU;
-    is_non_gpu = properties.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_OTHER ||
-                 properties.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU;
 
     supports_d24_depth =
         IsFormatSupported(VK_FORMAT_D24_UNORM_S8_UINT,
@@ -586,7 +571,7 @@ Device::Device(VkInstance instance_, vk::PhysicalDevice physical_, VkSurfaceKHR 
         const auto arch = GetNvidiaArch();
         if (arch >= NvidiaArchitecture::Arch_AmpereOrNewer) {
             LOG_WARNING(Render_Vulkan, "Ampere and newer have broken float16 math");
-            features.shader_float16_int8.shaderFloat16 = false;
+            has_broken_float16_math = true;
         }
 
         // Use hardware depth/stencil blits instead when available
@@ -617,13 +602,6 @@ Device::Device(VkInstance instance_, vk::PhysicalDevice physical_, VkSurfaceKHR 
             LOG_WARNING(Render_Vulkan,
                         "AMD GCN4 and earlier have broken VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT");
             has_broken_cube_compatibility = true;
-        }
-
-        // AMD drivers (2026+) have broken float16 math on DKCR
-        if (features.shader_float16_int8.shaderFloat16) {
-            LOG_WARNING(Render_Vulkan,
-                        "AMD drivers (2026+) have broken float16 math");
-            features.shader_float16_int8.shaderFloat16 = false;
         }
     }
 
@@ -760,104 +738,19 @@ Device::Device(VkInstance instance_, vk::PhysicalDevice physical_, VkSurfaceKHR 
             .pHeapSizeLimit = nullptr,
             .pVulkanFunctions = &functions,
             .instance = instance,
-            .vulkanApiVersion = ApiVersion(),
+            .vulkanApiVersion = VK_API_VERSION_1_1,
             .pTypeExternalMemoryHandleTypes = nullptr,
     };
 
     vk::Check(vmaCreateAllocator(&allocator_info, &allocator));
-
-    owns_static_pipeline_cache = surface != VkSurfaceKHR{};
-    LoadStaticPipelineCache();
 
     // Initialize GPU logging if enabled
     InitializeGPULogging();
 }
 
 Device::~Device() {
-    SaveStaticPipelineCache();
     ShutdownGPULogging();
     vmaDestroyAllocator(allocator);
-}
-
-void Device::LoadStaticPipelineCache() {
-    const auto create = [this](size_t size, const void* data) {
-        static_pipeline_cache = logical.CreatePipelineCache({
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO,
-            .pNext = nullptr,
-            .flags = 0,
-            .initialDataSize = size,
-            .pInitialData = data,
-        });
-    };
-    if (!owns_static_pipeline_cache) {
-        create(0, nullptr);
-        return;
-    }
-    const auto filename = StaticPipelineCacheFilename();
-    if (filename.empty()) {
-        create(0, nullptr);
-        return;
-    }
-    std::vector<char> data;
-    try {
-        std::ifstream file(filename, std::ios::binary | std::ios::ate);
-        if (!file.is_open()) {
-            create(0, nullptr);
-            return;
-        }
-        file.exceptions(std::ifstream::failbit | std::ifstream::badbit);
-        const size_t total = static_cast<size_t>(file.tellg());
-        file.seekg(0, std::ios::beg);
-        std::array<char, 8> magic{};
-        u32 version{};
-        if (total < magic.size() + sizeof(version)) {
-            create(0, nullptr);
-            return;
-        }
-        file.read(magic.data(), magic.size())
-            .read(reinterpret_cast<char*>(&version), sizeof(version));
-        if (magic != STATIC_CACHE_MAGIC_NUMBER || version != STATIC_CACHE_VERSION) {
-            create(0, nullptr);
-            return;
-        }
-        data.resize(total - magic.size() - sizeof(version));
-        file.read(data.data(), static_cast<std::streamsize>(data.size()));
-    } catch (const std::ios_base::failure& e) {
-        create(0, nullptr);
-        return;
-    }
-    create(data.size(), data.empty() ? nullptr : data.data());
-}
-
-void Device::SaveStaticPipelineCache() const {
-    if (!owns_static_pipeline_cache || !static_pipeline_cache) {
-        return;
-    }
-    const auto filename = StaticPipelineCacheFilename();
-    if (filename.empty()) {
-        return;
-    }
-    size_t size = 0;
-    std::vector<char> data;
-    static_pipeline_cache.Read(&size, nullptr);
-    if (size == 0) {
-        return;
-    }
-    data.resize(size);
-    static_pipeline_cache.Read(&size, data.data());
-    try {
-        std::ofstream file(filename, std::ios::binary | std::ios::trunc);
-        file.exceptions(std::ofstream::failbit);
-        if (!file.is_open()) {
-            return;
-        }
-        file.write(STATIC_CACHE_MAGIC_NUMBER.data(), STATIC_CACHE_MAGIC_NUMBER.size())
-            .write(reinterpret_cast<const char*>(&STATIC_CACHE_VERSION),
-                   sizeof(STATIC_CACHE_VERSION))
-            .write(data.data(), static_cast<std::streamsize>(size));
-    } catch (const std::ios_base::failure& e) {
-        Common::FS::RemoveFile(filename);
-    }
 }
 
 VkFormat Device::GetSupportedFormat(VkFormat wanted_format, VkFormatFeatureFlags wanted_usage,
@@ -1001,10 +894,6 @@ bool Device::GetSuitability(bool requires_swapchain) {
     bool suitable = true;
 
     // Configure properties.
-    VkPhysicalDeviceVulkan12Features features_1_2{};
-    VkPhysicalDeviceVulkan13Features features_1_3{};
-
-    // Configure properties.
     properties.properties = physical.GetProperties();
 
     // Set instance version.
@@ -1049,6 +938,8 @@ bool Device::GetSuitability(bool requires_swapchain) {
     extensions.depth_stencil_resolve =
         extensions.depth_stencil_resolve &&
         (instance_version >= VK_API_VERSION_1_2 || extensions.create_renderpass2);
+    extensions.draw_indirect_count =
+        extensions.draw_indirect_count || instance_version >= VK_API_VERSION_1_2;
     RemoveExtensionIfUnsuitable(extensions.depth_stencil_resolve,
                                 VK_KHR_DEPTH_STENCIL_RESOLVE_EXTENSION_NAME);
 
@@ -1097,16 +988,6 @@ bool Device::GetSuitability(bool requires_swapchain) {
 
     // Set next pointer.
     void** next = &features2.pNext;
-
-    // Vulkan 1.2 and 1.3 features
-    if (instance_version >= VK_API_VERSION_1_2) {
-        features_1_2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
-        features_1_3.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
-
-        features_1_2.pNext = &features_1_3;
-
-        *next = &features_1_2;
-    }
 
 // Test all features we know about. If the feature is not available in core at our
 // current API version, and was not enabled by an extension, skip testing the feature.
@@ -1214,6 +1095,16 @@ bool Device::GetSuitability(bool requires_swapchain) {
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_PROPERTIES;
         SetNext(next, properties.subgroup_size_control);
     }
+    properties.texel_buffer_alignment.storageTexelBufferOffsetAlignmentBytes =
+        properties.properties.limits.minTexelBufferOffsetAlignment;
+    properties.texel_buffer_alignment.uniformTexelBufferOffsetAlignmentBytes =
+        properties.properties.limits.minTexelBufferOffsetAlignment;
+    if (features.texel_buffer_alignment.texelBufferAlignment == VK_TRUE ||
+        instance_version >= VK_API_VERSION_1_3) {
+        properties.texel_buffer_alignment.sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TEXEL_BUFFER_ALIGNMENT_PROPERTIES_EXT;
+        SetNext(next, properties.texel_buffer_alignment);
+    }
     if (extensions.transform_feedback) {
         properties.transform_feedback.sType =
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TRANSFORM_FEEDBACK_PROPERTIES_EXT;
@@ -1230,11 +1121,22 @@ bool Device::GetSuitability(bool requires_swapchain) {
         SetNext(next, properties.custom_border_color);
     }
 
+    if (extensions.vertex_attribute_divisor) {
+        properties.vertex_attribute_divisor.sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_PROPERTIES_EXT;
+        SetNext(next, properties.vertex_attribute_divisor);
+    }
+
     // Perform the property fetch.
     physical.GetProperties2(properties2);
 
     // Store base properties
     properties.properties = properties2.properties;
+    max_vertex_attrib_divisor =
+        (std::max)(1U, properties.vertex_attribute_divisor.maxVertexAttribDivisor);
+    if (!features.vertex_attribute_divisor.vertexAttributeInstanceRateDivisor) {
+        max_vertex_attrib_divisor = 1;
+    }
 
     // Unload extensions if feature support is insufficient.
     RemoveUnsuitableExtensions();
@@ -1313,6 +1215,11 @@ void Device::RemoveUnsuitableExtensions() {
     RemoveExtensionFeatureIfUnsuitable(extensions.color_write_enable, features.color_write_enable,
                                        VK_EXT_COLOR_WRITE_ENABLE_EXTENSION_NAME);
 
+    extensions.conditional_rendering = features.conditional_rendering.conditionalRendering;
+    RemoveExtensionFeatureIfUnsuitable(extensions.conditional_rendering,
+                                       features.conditional_rendering,
+                                       VK_EXT_CONDITIONAL_RENDERING_EXTENSION_NAME);
+
     // VK_EXT_custom_border_color
     if (extensions.custom_border_color) {
         extensions.custom_border_color =
@@ -1347,6 +1254,12 @@ void Device::RemoveUnsuitableExtensions() {
     extensions.descriptor_buffer = features.descriptor_buffer.descriptorBuffer;
     RemoveExtensionFeatureIfUnsuitable(extensions.descriptor_buffer, features.descriptor_buffer,
                                        VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME);
+
+    extensions.dynamic_rendering_unused_attachments =
+        features.dynamic_rendering_unused_attachments.dynamicRenderingUnusedAttachments;
+    RemoveExtensionFeatureIfUnsuitable(extensions.dynamic_rendering_unused_attachments,
+                                       features.dynamic_rendering_unused_attachments,
+                                       VK_EXT_DYNAMIC_RENDERING_UNUSED_ATTACHMENTS_EXTENSION_NAME);
 
     // VK_EXT_extended_dynamic_state
     extensions.extended_dynamic_state = features.extended_dynamic_state.extendedDynamicState;
@@ -1500,18 +1413,6 @@ void Device::RemoveUnsuitableExtensions() {
                                        features.workgroup_memory_explicit_layout,
                                        VK_KHR_WORKGROUP_MEMORY_EXPLICIT_LAYOUT_EXTENSION_NAME);
 
-    // VK_KHR_maintenance1
-    extensions.maintenance1 = loaded_extensions.contains(VK_KHR_MAINTENANCE_1_EXTENSION_NAME);
-    RemoveExtensionIfUnsuitable(extensions.maintenance1, VK_KHR_MAINTENANCE_1_EXTENSION_NAME);
-
-    // VK_KHR_maintenance2
-    extensions.maintenance2 = loaded_extensions.contains(VK_KHR_MAINTENANCE_2_EXTENSION_NAME);
-    RemoveExtensionIfUnsuitable(extensions.maintenance2, VK_KHR_MAINTENANCE_2_EXTENSION_NAME);
-
-    // VK_KHR_maintenance3
-    extensions.maintenance3 = loaded_extensions.contains(VK_KHR_MAINTENANCE_3_EXTENSION_NAME);
-    RemoveExtensionIfUnsuitable(extensions.maintenance3, VK_KHR_MAINTENANCE_3_EXTENSION_NAME);
-
     // VK_KHR_maintenance4
     extensions.maintenance4 = features.maintenance4.maintenance4;
     RemoveExtensionFeatureIfUnsuitable(extensions.maintenance4, features.maintenance4,
@@ -1522,23 +1423,20 @@ void Device::RemoveUnsuitableExtensions() {
     RemoveExtensionFeatureIfUnsuitable(extensions.maintenance5, features.maintenance5,
                                        VK_KHR_MAINTENANCE_5_EXTENSION_NAME);
 
-    // VK_KHR_maintenance6
-    extensions.maintenance6 = features.maintenance6.maintenance6;
-    RemoveExtensionFeatureIfUnsuitable(extensions.maintenance6, features.maintenance6,
-                                       VK_KHR_MAINTENANCE_6_EXTENSION_NAME);
+    if (!is_uma || instance_version < VK_API_VERSION_1_3 ||
+        !features.host_image_copy.hostImageCopy) {
+        RemoveExtensionFeature(extensions.host_image_copy, features.host_image_copy,
+                               VK_EXT_HOST_IMAGE_COPY_EXTENSION_NAME);
+    }
 
-    // VK_KHR_maintenance7
-    extensions.maintenance7 = loaded_extensions.contains(VK_KHR_MAINTENANCE_7_EXTENSION_NAME);
-    RemoveExtensionIfUnsuitable(extensions.maintenance7, VK_KHR_MAINTENANCE_7_EXTENSION_NAME);
 
-    // VK_KHR_maintenance8
-    extensions.maintenance8 = loaded_extensions.contains(VK_KHR_MAINTENANCE_8_EXTENSION_NAME);
-    RemoveExtensionIfUnsuitable(extensions.maintenance8, VK_KHR_MAINTENANCE_8_EXTENSION_NAME);
-
-    // VK_KHR_synchronization2
     extensions.synchronization2 = features.synchronization2.synchronization2;
-    RemoveExtensionFeatureIfUnsuitable(extensions.synchronization2, features.synchronization2,
-                                       VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
+    extensions.dynamic_rendering = features.dynamic_rendering.dynamicRendering;
+    const bool copy_commands2 =
+        extensions.copy_commands2 || instance_version >= VK_API_VERSION_1_3;
+    if (!extensions.synchronization2 || !extensions.dynamic_rendering || !copy_commands2) {
+        throw vk::Exception(VK_ERROR_FEATURE_NOT_PRESENT);
+    }
 }
 
 void Device::SetupFamilies(VkSurfaceKHR surface) {

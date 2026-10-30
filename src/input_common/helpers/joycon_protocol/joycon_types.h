@@ -13,8 +13,6 @@
 
 #include <array>
 #include <functional>
-#include <vector>
-
 #include <SDL3/SDL_hidapi.h>
 
 #include "common/bit_field.h"

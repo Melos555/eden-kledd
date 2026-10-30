@@ -48,6 +48,11 @@ struct FramebufferTextureInfo {
     u32 scaled_height{};
 };
 
+struct FrameGenSource {
+    VkImageView view{};
+    VkExtent2D extent{};
+};
+
 class BlitScreen {
 public:
     explicit BlitScreen(Tegra::MaxwellDeviceMemoryManager& device_memory, const Device& device,
@@ -62,15 +67,16 @@ public:
 
     void PrepareFrame(const Device& device, Frame* frame, const Layout::FramebufferLayout& layout);
 
-    [[nodiscard]] vk::Framebuffer CreateFramebuffer(const Device& device, const Layout::FramebufferLayout& layout,
-                                                    VkImageView image_view,
-                                                    VkFormat current_view_format);
+    [[nodiscard]] FrameGenSource GenerationSource() const;
+
+    [[nodiscard]] bool IsGenerationFree(size_t generation) const;
+
+    void DrawGenerated(const Device& device, Frame* frame, const Layout::FramebufferLayout& layout,
+                       size_t generation, VkImage image, VkImageView view);
 
 private:
     void WaitIdle(const Device& device);
     void SetWindowAdaptPass(const Device& device);
-    vk::Framebuffer CreateFramebuffer(const Device& device, const VkImageView& image_view, VkExtent2D extent,
-                                      VkRenderPass render_pass);
 
     Tegra::MaxwellDeviceMemoryManager& device_memory;
     MemoryAllocator& memory_allocator;
@@ -79,6 +85,7 @@ private:
     const PresentFilters& filters;
     std::size_t image_count{};
     std::size_t image_index{};
+    std::size_t generation_count{};
     VkFormat swapchain_view_format{};
 
     Settings::ScalingFilter scaling_filter{};

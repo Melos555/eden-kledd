@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <algorithm>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -9,10 +10,12 @@
 #include "common/fs/fs.h"
 #include "common/fs/path_util.h"
 #include "common/settings.h"
+#include "video_core/host_shaders/vulkan_fidelityfx_fsr_vert_spv.h"
+#include "video_core/host_shaders/vulkan_present_frag_spv.h"
 #include "video_core/renderer_vulkan/present/frame_gen.h"
 #include "video_core/renderer_vulkan/present/util.h"
-#include "video_core/renderer_vulkan/vk_present_manager.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
+#include "video_core/renderer_vulkan/vk_shader_util.h"
 #include "video_core/vulkan_common/vulkan_device.h"
 
 namespace Vulkan {
@@ -23,25 +26,11 @@ constexpr size_t COLOR_CHANNELS = 4;
 constexpr u64 LSFG_REQUIRED_FRAMES = 2;
 constexpr u32 LSFG_RECURRENCE_FRAMES = 2;
 
-[[nodiscard]] f32 ManualFlowScale() {
+[[nodiscard]] f32 ConfiguredFlowScale() {
+    if (Settings::values.frame_gen_flow_scale_auto.GetValue()) {
+        return std::clamp(1.0f / Settings::values.resolution_info.up_factor, 0.25f, 1.0f);
+    }
     return static_cast<f32>(Settings::values.frame_gen_flow_scale.GetValue()) / 100.0f;
-}
-
-[[nodiscard]] f32 ConfiguredFlowScale(VkExtent2D guest_extent, VkExtent2D presented_extent) {
-    if (!Settings::values.frame_gen_flow_scale_auto.GetValue()) {
-        return ManualFlowScale();
-    }
-    if (guest_extent.width == 0 || presented_extent.width == 0) {
-        return 1.0f;
-    }
-
-    const f32 rendered_width = static_cast<f32>(guest_extent.width) *
-                               Settings::values.resolution_info.up_factor;
-    const f32 ratio = rendered_width / static_cast<f32>(presented_extent.width);
-
-    constexpr f32 FLOW_SCALE_STEPS = 20.0f;
-    const f32 stepped = std::ceil(ratio * FLOW_SCALE_STEPS) / FLOW_SCALE_STEPS;
-    return std::clamp(stepped, 0.25f, 1.0f);
 }
 
 bool IsBlueFirst(VkFormat format) {
@@ -80,7 +69,7 @@ void WritePortablePixmap(const std::filesystem::path& path, const std::string& m
 void WriteGrayscalePgm(const std::filesystem::path& path, VkExtent2D extent,
                        std::span<const u8> pixels) {
     const size_t expected = static_cast<size_t>(extent.width) * extent.height;
-    WritePortablePixmap(path, "P5", extent, pixels.subspan(0, std::min(expected, pixels.size())));
+    WritePortablePixmap(path, "P5", extent, pixels.subspan(0, (std::min)(expected, pixels.size())));
 }
 
 void WriteRaw(const std::filesystem::path& path, std::span<const u8> pixels) {
@@ -113,13 +102,17 @@ void WriteColorPpm(const std::filesystem::path& path, VkExtent2D extent,
     WritePortablePixmap(path, "P6", extent, rgb);
 }
 
-VkImageMemoryBarrier MakeTransitionBarrier(VkImage image, VkAccessFlags src_access,
-                                           VkAccessFlags dst_access, VkImageLayout old_layout,
-                                           VkImageLayout new_layout) {
-    return VkImageMemoryBarrier{
-        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+VkImageMemoryBarrier2 MakeTransitionBarrier(VkImage image, VkPipelineStageFlags2 src_stage,
+                                            VkAccessFlags2 src_access,
+                                            VkPipelineStageFlags2 dst_stage,
+                                            VkAccessFlags2 dst_access, VkImageLayout old_layout,
+                                            VkImageLayout new_layout) {
+    return VkImageMemoryBarrier2{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
         .pNext = nullptr,
+        .srcStageMask = src_stage,
         .srcAccessMask = src_access,
+        .dstStageMask = dst_stage,
         .dstAccessMask = dst_access,
         .oldLayout = old_layout,
         .newLayout = new_layout,
@@ -136,55 +129,63 @@ VkImageMemoryBarrier MakeTransitionBarrier(VkImage image, VkAccessFlags src_acce
     };
 }
 
-VkImageCopy MakeCopyRegion(VkExtent2D extent) {
-    return VkImageCopy{
-        .srcSubresource{
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .mipLevel = 0,
-            .baseArrayLayer = 0,
-            .layerCount = 1,
-        },
-        .srcOffset = {},
-        .dstSubresource{
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .mipLevel = 0,
-            .baseArrayLayer = 0,
-            .layerCount = 1,
-        },
-        .dstOffset = {},
-        .extent = {.width = extent.width, .height = extent.height, .depth = 1},
+void DrawSourceFrame(vk::CommandBuffer cmdbuf, VkPipeline pipeline, VkPipelineLayout layout,
+                     VkDescriptorSet set, LsfgImage& destination, VkExtent2D extent) {
+    const VkImageMemoryBarrier2 before = MakeTransitionBarrier(
+        destination.Handle(), VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_NONE,
+        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+        destination.Layout(), VK_IMAGE_LAYOUT_GENERAL);
+    cmdbuf.PipelineBarrier(before);
+
+    const VkViewport viewport{
+        .x = 0.0f,
+        .y = 0.0f,
+        .width = static_cast<f32>(extent.width),
+        .height = static_cast<f32>(extent.height),
+        .minDepth = 0.0f,
+        .maxDepth = 1.0f,
     };
-}
-
-void CopyPresentedFrame(vk::CommandBuffer cmdbuf, VkImage source, LsfgImage& destination,
-                        VkExtent2D extent) {
-    const auto make_barrier = MakeTransitionBarrier;
-
-    const std::array before{
-        make_barrier(source, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT,
-                     VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL),
-        make_barrier(destination.Handle(), VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
-                     destination.Layout(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL),
+    const VkRect2D scissor{
+        .offset = {0, 0},
+        .extent = extent,
     };
-    cmdbuf.PipelineBarrier(VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-                               VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                           VK_PIPELINE_STAGE_TRANSFER_BIT, 0, {}, {}, before);
+    BeginRendering(cmdbuf, destination.View(), extent, VK_ATTACHMENT_LOAD_OP_DONT_CARE);
+    cmdbuf.BindPipeline(VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+    cmdbuf.BindDescriptorSets(VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, set, {});
+    cmdbuf.SetViewport(0, viewport);
+    cmdbuf.SetScissor(0, scissor);
+    cmdbuf.Draw(3, 1, 0, 0);
+    cmdbuf.EndRendering();
 
-    cmdbuf.CopyImage(source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, destination.Handle(),
-                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, MakeCopyRegion(extent));
-
-    const std::array after{
-        make_barrier(source, VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-                     VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL),
-        make_barrier(destination.Handle(), VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
-                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL),
-    };
-    cmdbuf.PipelineBarrier(VK_PIPELINE_STAGE_TRANSFER_BIT,
-                           VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-                               VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                           0, {}, {}, after);
+    const VkImageMemoryBarrier2 after = MakeTransitionBarrier(
+        destination.Handle(), VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+        VK_ACCESS_2_SHADER_READ_BIT, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL);
+    cmdbuf.PipelineBarrier(after);
 
     destination.SetLayout(VK_IMAGE_LAYOUT_GENERAL);
+}
+
+void UpdateSourceSet(const Device& device, VkDescriptorSet set, VkSampler sampler,
+                     VkImageView view) {
+    const VkDescriptorImageInfo image_info{
+        .sampler = sampler,
+        .imageView = view,
+        .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+    };
+    const VkWriteDescriptorSet write{
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .pNext = nullptr,
+        .dstSet = set,
+        .dstBinding = 0,
+        .dstArrayElement = 0,
+        .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .pImageInfo = &image_info,
+        .pBufferInfo = nullptr,
+        .pTexelBufferView = nullptr,
+    };
+    device.GetLogical().UpdateDescriptorSets(std::array{write}, {});
 }
 
 } // Anonymous namespace
@@ -194,18 +195,19 @@ FrameGen::FrameGen(MemoryAllocator& memory_allocator_, Scheduler& scheduler_)
 
 FrameGen::~FrameGen() = default;
 
-void FrameGen::Process(const Device& device, Frame* frame, VkFormat format,
-                       VkExtent2D guest_extent) {
+void FrameGen::Process(const Device& device, VkImageView source, VkExtent2D extent) {
     generated = false;
 
     if (!shaders) {
         shaders.emplace(device);
+        CreateInputPass(device);
     }
 
     if (unavailable || !Settings::values.frame_gen.GetValue()) {
         if (chain) {
             scheduler.Finish();
             chain.reset();
+            outputs = {};
         }
         warm_streak = 0;
         return;
@@ -216,37 +218,39 @@ void FrameGen::Process(const Device& device, Frame* frame, VkFormat format,
         return;
     }
 
-    if (!frame->storage_view) {
+    if (source == VK_NULL_HANDLE) {
         warm_streak = 0;
         return;
     }
 
-    peak_guest_extent.width = std::max(peak_guest_extent.width, guest_extent.width);
-    peak_guest_extent.height = std::max(peak_guest_extent.height, guest_extent.height);
-
-    const VkExtent2D extent{.width = frame->width, .height = frame->height};
-    const f32 flow_scale = ConfiguredFlowScale(peak_guest_extent, extent);
+    const f32 flow_scale = ConfiguredFlowScale();
+    const size_t generations = Settings::FrameGenMaxGenerations();
     if (!chain || built_extent.width != extent.width || built_extent.height != extent.height ||
-        built_format != format || built_flow_scale != flow_scale) {
-        Rebuild(device, extent, format, flow_scale);
+        built_flow_scale != flow_scale || built_generations != generations) {
+        Rebuild(device, extent, flow_scale, generations);
     }
 
     const u64 count = frame_count++;
     last_count = count;
-    last_generations = plan.generations;
+    last_generations = (std::min)(plan.generations, built_generations);
 
-    const bool warm = plan.warm && count + 1 >= LSFG_REQUIRED_FRAMES;
+    const size_t input_slot = count % INPUT_SLOTS;
+    const bool warm = plan.warm && count + 1 >= LSFG_REQUIRED_FRAMES &&
+                      scheduler.IsFree(input_ticks[input_slot]);
     warm_streak = warm ? warm_streak + 1 : 0;
     generated = warm && warm_streak >= LSFG_RECURRENCE_FRAMES && plan.generations > 0;
 
-    scheduler.RequestOutsideRenderPassOperationContext();
-    scheduler.Record([this, source = *frame->image, extent, count,
-                      dispatch = warm](vk::CommandBuffer cmdbuf) {
-        CopyPresentedFrame(cmdbuf, source, chain->Input(count), extent);
-        if (dispatch) {
+    if (warm) {
+        const VkDescriptorSet set = input_sets[input_slot];
+        input_ticks[input_slot] = scheduler.CurrentTick();
+        UpdateSourceSet(device, set, *input_sampler, source);
+        scheduler.RequestOutsideRenderPassOperationContext();
+        scheduler.Record([this, set, extent, count](vk::CommandBuffer cmdbuf) {
+            DrawSourceFrame(cmdbuf, *input_pipeline, *input_layout, set, chain->Input(count),
+                            extent);
             chain->DispatchShared(cmdbuf, count);
-        }
-    });
+        });
+    }
 
     const bool dump_requested = generated && Settings::values.frame_gen_dump_flow.GetValue();
     if (!dump_requested) {
@@ -270,30 +274,53 @@ size_t FrameGen::GeneratedFrameCount() const {
     return generated ? last_generations : 0;
 }
 
-void FrameGen::GenerateInto(const Device& device, Frame* destination, size_t generation) {
-    chain->SetTarget(device, last_generations, generation, destination->index,
-                     *destination->storage_view);
+std::chrono::nanoseconds FrameGen::PaceStep() const {
+    const f32 step = plan.interval / static_cast<f32>(last_generations + 1);
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::duration<f32>(step));
+}
 
-    const VkExtent2D extent{.width = destination->width, .height = destination->height};
+const LsfgImage& FrameGen::Generate(const Device& device, size_t generation) {
+    LsfgImage& output = outputs[generation];
+    chain->SetTarget(device, last_generations, generation, output.View());
 
     scheduler.RequestOutsideRenderPassOperationContext();
     scheduler.Record([this, count = last_count, generation_count = last_generations, generation,
-                      target = destination->index, image = *destination->image,
-                      extent](vk::CommandBuffer cmdbuf) {
-        chain->DispatchGeneration(cmdbuf, count, generation_count, generation, target, image,
-                                  extent);
+                      image = output.Handle(), extent = built_extent](vk::CommandBuffer cmdbuf) {
+        chain->DispatchGeneration(cmdbuf, count, generation_count, generation, image, extent);
     });
+    return output;
 }
 
-void FrameGen::Rebuild(const Device& device, VkExtent2D extent, VkFormat format, f32 flow_scale) {
+void FrameGen::CreateInputPass(const Device& device) {
+    input_set_layout =
+        CreateWrappedDescriptorSetLayout(device, {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER});
+    input_layout = CreateWrappedPipelineLayout(device, input_set_layout);
+    input_pool = CreateWrappedDescriptorPool(device, INPUT_SLOTS, INPUT_SLOTS);
+    std::array<VkDescriptorSetLayout, INPUT_SLOTS> layouts;
+    layouts.fill(*input_set_layout);
+    input_sets = CreateWrappedDescriptorSets(input_pool, layouts);
+    input_vertex_shader = BuildShader(device, VULKAN_FIDELITYFX_FSR_VERT_SPV);
+    input_fragment_shader = BuildShader(device, VULKAN_PRESENT_FRAG_SPV);
+    input_pipeline = CreateWrappedPipeline(device, LSFG_DEFAULT_FORMAT, input_layout,
+                                           std::tie(input_vertex_shader, input_fragment_shader));
+    input_sampler = CreateNearestNeighborSampler(device);
+}
+
+void FrameGen::Rebuild(const Device& device, VkExtent2D extent, f32 flow_scale,
+                       size_t generations) {
     scheduler.Finish();
     chain.reset();
 
     built_flow_scale = flow_scale;
 
-    chain.emplace(device, memory_allocator, *shaders, extent, format, built_flow_scale);
+    chain.emplace(device, memory_allocator, *shaders, extent, LSFG_DEFAULT_FORMAT,
+                  built_flow_scale);
+    outputs = {};
+    for (LsfgImage& output : std::span{outputs}.first(generations)) {
+        output = LsfgImage(device, memory_allocator, extent, LSFG_DEFAULT_FORMAT);
+    }
     built_extent = extent;
-    built_format = format;
+    built_generations = generations;
     frame_count = 0;
     warm_streak = 0;
     generated = false;

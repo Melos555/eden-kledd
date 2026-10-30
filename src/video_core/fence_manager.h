@@ -72,7 +72,7 @@ public:
     }
 
     void SignalFence(std::function<void()>&& func) {
-        const bool delay_fence = Settings::IsGPUFenceBehaviorDefault() ? Settings::IsGPULevelHigh() : Settings::IsGPUFenceBehaviorBalanced() || Settings::IsGPUFenceBehaviorAccurate();
+        const bool delay_fence = Settings::IsGPUFenceBehaviorDefault() ? Settings::IsGPULevelHigh() : Settings::IsGPUFenceBehaviorBalanced() || Settings::IsGPUFenceBehaviorAccurate() || Settings::IsGPUFenceBehaviorStrict();
         const bool should_flush = ShouldFlush();
         if constexpr (!can_async_check) {
             TryReleasePendingFences<false>();
@@ -101,9 +101,15 @@ public:
         rasterizer.InvalidateGPUCache();
     }
 
-    void SignalSyncPoint(u32 value) {
-        syncpoint_manager.IncrementGuest(value);
-        std::function<void()> func([this, value] { syncpoint_manager.IncrementHost(value); });
+    void SignalSyncPoint(u32 value, u32 count) {
+        for (u32 i = 0; i < count; ++i) {
+            syncpoint_manager.IncrementGuest(value);
+        }
+        std::function<void()> func([this, value, count] {
+            for (u32 i = 0; i < count; ++i) {
+                syncpoint_manager.IncrementHost(value);
+            }
+        });
         SignalFence(std::move(func));
     }
 

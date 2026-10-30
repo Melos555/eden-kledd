@@ -48,7 +48,6 @@ SWITCHABLE(AnisotropyMode, true);
 SWITCHABLE(AntiAliasing, false);
 SWITCHABLE(AspectRatio, true);
 SWITCHABLE(AstcDecodeMode, true);
-SWITCHABLE(AstcRecompression, true);
 SWITCHABLE(AudioMode, true);
 SWITCHABLE(CpuBackend, true);
 SWITCHABLE(CpuAccuracy, true);
@@ -176,6 +175,10 @@ bool IsGPUFenceBehaviorBalanced() {
 
 bool IsGPUFenceBehaviorAccurate() {
     return values.gpu_fence_behavior.GetValue() == GpuFenceBehavior::Accurate;
+}
+
+bool IsGPUFenceBehaviorStrict() {
+    return values.gpu_fence_behavior.GetValue() == GpuFenceBehavior::Strict;
 }
 
 bool IsFastmemEnabled() {

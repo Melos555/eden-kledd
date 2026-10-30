@@ -6,12 +6,14 @@
 
 #pragma once
 
+#include <bitset>
 #include <span>
 
 #include "video_core/texture_cache/texture_cache_base.h"
 
 #include "shader_recompiler/shader_info.h"
 #include "video_core/renderer_vulkan/vk_compute_pass.h"
+#include "video_core/renderer_vulkan/vk_guest_memory.h"
 #include "video_core/renderer_vulkan/vk_render_pass_cache.h"
 #include "video_core/renderer_vulkan/vk_staging_buffer_pool.h"
 #include "video_core/texture_cache/image_view_base.h"
@@ -36,7 +38,6 @@ class Device;
 class Image;
 class ImageView;
 class Framebuffer;
-class RenderPassCache;
 class StagingBufferPool;
 class Scheduler;
 
@@ -46,21 +47,18 @@ public:
                                  MemoryAllocator& memory_allocator_,
                                  StagingBufferPool& staging_buffer_pool_,
                                  BlitImageHelper& blit_image_helper_,
-                                 RenderPassCache& render_pass_cache_,
                                  DescriptorPool& descriptor_pool,
                                  ComputePassDescriptorQueue& compute_pass_descriptor_queue);
 
     void Finish();
 
-    StagingBufferRef UploadStagingBuffer(size_t size, bool deferred = false);
+    StagingBufferRef UploadStagingBuffer(size_t size);
 
     StagingBufferRef DownloadStagingBuffer(size_t size, bool deferred = false);
 
     void FreeDeferredStagingBuffer(StagingBufferRef& ref);
 
     void TickFrame();
-
-    void FlushDeferredClear();
 
     u64 GetDeviceLocalMemory() const;
 
@@ -89,17 +87,21 @@ public:
 
     void ConvertImage(Framebuffer* dst, ImageView& dst_view, ImageView& src_view);
 
-    bool CanAccelerateImageUpload(Image&) const noexcept {
-        return false;
-    }
-
     bool CanUploadMSAA() const noexcept {
         return true;
     }
 
     void AccelerateImageUpload(Image&, const StagingBufferRef&,
-                               std::span<const VideoCommon::SwizzleParameters>,
-                               u32 z_start, u32 z_count);
+                               std::span<const VideoCommon::SwizzleParameters>);
+
+    void ImportGuestMemory(const Common::HostMemory& host_memory);
+
+    [[nodiscard]] bool HasGuestMemory() const noexcept {
+        return guest_memory.has_value();
+    }
+
+    [[nodiscard]] std::optional<StagingBufferRef> GuestMemorySource(const u8* pointer,
+                                                                    size_t size) const;
 
     void InsertUploadMemoryBarrier() {}
 
@@ -139,6 +141,8 @@ public:
 
     void EraseResolveShadow(VkImage msaa_image);
 
+    bool CopyResolveShadow(VkImage msaa_image, VkImage dst_image, const VkImageCopy2& region);
+
     std::span<const VkFormat> ViewFormats(PixelFormat format) {
         return view_formats[static_cast<std::size_t>(format)];
     }
@@ -155,12 +159,14 @@ public:
     MemoryAllocator& memory_allocator;
     StagingBufferPool& staging_buffer_pool;
     BlitImageHelper& blit_image_helper;
-    RenderPassCache& render_pass_cache;
     std::optional<ASTCDecoderPass> astc_decoder_pass;
-
-    std::optional<BlockLinearUnswizzle3DPass> bl3d_unswizzle_pass;
+    std::optional<BlockLinearUnswizzleImage2DPass> bl_unswizzle_2d_pass;
+    std::optional<BlockLinearUnswizzleImage3DPass> bl_unswizzle_3d_pass;
+    std::optional<PitchUnswizzlePass> pitch_unswizzle_pass;
+    std::optional<GuestMemory> guest_memory;
     const Settings::ResolutionScalingInfo& resolution;
     std::array<std::vector<VkFormat>, VideoCore::Surface::MaxPixelFormat> view_formats;
+    std::bitset<VideoCore::Surface::MaxPixelFormat> host_copy_formats;
 
     static constexpr size_t indexing_slots = 8 * sizeof(size_t);
     std::array<vk::Buffer, indexing_slots> buffers{};
@@ -188,6 +194,7 @@ public:
     std::vector<MsaaScratchImage> msaa_scratch_images;
     ::Common::unordered_map<VkImage, ResolveShadow> resolve_shadows;
     std::vector<std::pair<u64, ResolveShadow>> pending_resolve_shadows;
+    u64 framebuffer_serial{};
 };
 
 class Framebuffer {
@@ -210,21 +217,17 @@ public:
                            std::span<ImageView*, NUM_RT> color_buffers, ImageView* depth_buffer,
                            bool is_rescaled = false);
 
-    [[nodiscard]] VkFramebuffer Handle() const noexcept {
-        return *framebuffer;
+    [[nodiscard]] u64 Id() const noexcept {
+        return id;
     }
 
-    [[nodiscard]] VkRenderPass RenderPass() const noexcept {
-        return renderpass;
+    [[nodiscard]] const RenderingFormats& Formats() const noexcept {
+        return formats;
     }
 
-    [[nodiscard]] const RenderPassKey& RenderPassKeyBase() const noexcept {
-        return render_pass_key;
+    [[nodiscard]] const RenderingAttachments& Attachments() const noexcept {
+        return attachments;
     }
-
-    [[nodiscard]] VkRenderPass RenderPassVariant(u32 color_clear_mask, bool depth_stencil_clear,
-                                                 u32 color_discard_mask,
-                                                 bool depth_stencil_discard) const;
 
     [[nodiscard]] VkExtent2D RenderArea() const noexcept {
         return render_area;
@@ -232,10 +235,6 @@ public:
 
     [[nodiscard]] VkSampleCountFlagBits Samples() const noexcept {
         return samples;
-    }
-
-    [[nodiscard]] u32 NumColorBuffers() const noexcept {
-        return num_color_buffers;
     }
 
     [[nodiscard]] u32 NumImages() const noexcept {
@@ -266,26 +265,16 @@ public:
         return is_rescaled;
     }
 
-    [[nodiscard]] bool DiscardsMsaaColor() const noexcept {
-        return discard_msaa_color;
-    }
-
-    [[nodiscard]] bool DiscardsMsaaDepthStencil() const noexcept {
-        return discard_msaa_depth_stencil;
-    }
-
     /// Records that a render pass has begun, so its resolve attachments will hold valid contents
     /// once it ends.
     void MarkResolveShadowsUpToDate() const;
 
 private:
-    static constexpr size_t NUM_MEMOIZED_RENDER_PASS_VARIANTS = 8;
-
-    vk::Framebuffer framebuffer;
-    VkRenderPass renderpass{};
+    RenderingFormats formats{};
+    RenderingAttachments attachments{};
+    u64 id{};
     VkExtent2D render_area{};
     VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT;
-    u32 num_color_buffers = 0;
     u32 num_images = 0;
     std::array<VkImage, 9> images{};
     std::array<VkImageSubresourceRange, 9> image_ranges{};
@@ -296,13 +285,6 @@ private:
     std::array<VkImage, 9> resolve_shadow_images{};
     u32 num_resolve_shadows = 0;
     TextureCacheRuntime* runtime_ptr{nullptr};
-    RenderPassKey render_pass_key{};
-    RenderPassCache* render_pass_cache{nullptr};
-    bool discard_msaa_color{};
-    bool discard_msaa_depth_stencil{};
-    mutable std::array<u32, NUM_MEMOIZED_RENDER_PASS_VARIANTS> variant_keys{};
-    mutable std::array<VkRenderPass, NUM_MEMOIZED_RENDER_PASS_VARIANTS> variant_render_passes{};
-    mutable u32 num_memoized_variants{};
 };
 
 class Image : public VideoCommon::ImageBase {
@@ -325,6 +307,13 @@ public:
     void UploadMemory(const StagingBufferRef& map,
                       std::span<const VideoCommon::BufferImageCopy> copies);
 
+    void UploadHostMemory(std::span<const u8> memory,
+                          std::span<const VideoCommon::BufferImageCopy> copies);
+
+    [[nodiscard]] bool CanUploadHostMemory() const noexcept {
+        return (original_image.UsageFlags() & VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT) != 0;
+    }
+
     void DownloadMemory(VkBuffer buffer, size_t offset,
                         std::span<const VideoCommon::BufferImageCopy> copies);
 
@@ -334,14 +323,15 @@ public:
     void DownloadMemory(const StagingBufferRef& map,
                         std::span<const VideoCommon::BufferImageCopy> copies);
 
-    /// eden-kledd: true if this image is single-sample D24S8 stored as host D24_UNORM_S8_UINT,
-    /// so depth and stencil can be downloaded to separate buffer regions and merged on the CPU.
-    [[nodiscard]] bool KleddCanSplitDepthStencil() const;
-    /// eden-kledd: when non-zero, depth+stencil downloads write stencil (1 byte/texel) at
-    /// buffer offset + kledd_stencil_split + copy.buffer_offset / 4 instead of overlapping depth.
-    size_t kledd_stencil_split = 0;
-
-    void AllocateComputeUnswizzleImage();
+    /// True for single-sample D24S8 images stored as D24_UNORM_S8_UINT, or as
+    /// D32_SFLOAT_S8_UINT on hosts without D24S8. Depth and stencil can then be downloaded
+    /// into separate buffer regions and repacked on the CPU.
+    [[nodiscard]] bool CanSplitDepthStencil() const;
+    /// True if the host stores this D24S8 image as D32_SFLOAT_S8_UINT
+    [[nodiscard]] bool IsDepthFloat() const;
+    /// When non-zero, depth/stencil downloads place stencil (1 byte per texel) at
+    /// buffer offset + stencil_split_offset + copy.buffer_offset / 4 instead of over the depth.
+    size_t stencil_split_offset = 0;
 
     [[nodiscard]] VkImage Handle() const noexcept {
         return *(this->*current_image);
@@ -368,10 +358,6 @@ public:
 
     bool ScaleDown(bool ignore = false);
 
-    u64 allocation_tick;
-
-    friend class BlockLinearUnswizzle3DPass;
-
 private:
     bool BlitScaleHelper(bool scale_up);
 
@@ -382,12 +368,6 @@ private:
 
     vk::Image original_image;
     vk::Image scaled_image;
-
-    vk::Buffer compute_unswizzle_buffer;
-    VkDeviceSize compute_unswizzle_buffer_size = 0;
-    bool has_compute_unswizzle_buffer = false;
-
-    void AllocateComputeUnswizzleBuffer(u32 max_slices);
 
     // Use a pointer to field because it is relative, so that the object can be
     // moved without breaking the reference.
@@ -447,10 +427,6 @@ public:
         return samples;
     }
 
-    [[nodiscard]] bool SupportsDepthComparison() const noexcept {
-        return supports_depth_comparison;
-    }
-
     [[nodiscard]] bool RequiresBorderColorFormat() const noexcept {
         return requires_border_color_format;
     }
@@ -501,7 +477,6 @@ private:
 
     VkComponentMapping swizzle_mapping{};
 
-    bool supports_depth_comparison = false;
     bool requires_border_color_format = false;
     bool supports_minmax_filter = false;
     bool has_identity_swizzle = true;
@@ -578,7 +553,6 @@ private:
 
     bool has_added_anisotropy{};
     bool has_linear_filtering{};
-    bool has_depth_comparison{};
     bool has_minmax_reduction{};
     bool has_custom_border_colors{};
     bool has_srgb_border_color{};
@@ -586,7 +560,6 @@ private:
 };
 
 struct TextureCacheParams {
-    static constexpr bool ENABLE_VALIDATION = true;
     static constexpr bool FRAMEBUFFER_BLITS = false;
     static constexpr bool HAS_EMULATED_COPIES = false;
     static constexpr bool HAS_DEVICE_MEMORY_INFO = true;

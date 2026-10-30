@@ -244,8 +244,7 @@ WallClock::WallClock(bool invariant_, u64 rdtsc_frequency_) noexcept
     , ns_rdtsc_factor{invariant_ ? GetFixedPoint64Factor(NsRatio::den, rdtsc_frequency_) : 0}
     , us_rdtsc_factor{invariant_ ? GetFixedPoint64Factor(UsRatio::den, rdtsc_frequency_) : 0}
     , ms_rdtsc_factor{invariant_ ? GetFixedPoint64Factor(MsRatio::den, rdtsc_frequency_) : 0}
-    , rdtsc_ns_integer{invariant_ ? rdtsc_frequency_ / NsRatio::den : 1}
-    , rdtsc_ns_factor{invariant_ ? GetFixedPoint64Factor(rdtsc_frequency_ % NsRatio::den, NsRatio::den) : 0}
+    , rdtsc_ns_factor{invariant_ ? GetFixedPoint64Factor(rdtsc_frequency_, NsRatio::den) : 1}
     , cntpct_rdtsc_factor{invariant_ ? GetFixedPoint64Factor(CNTFRQ, rdtsc_frequency_) : 0}
     , gputick_rdtsc_factor{invariant_ ? GetFixedPoint64Factor(GPUTickFreq, rdtsc_frequency_) : 0}
     , invariant{invariant_}
@@ -292,7 +291,7 @@ bool WallClock::IsNative() const {
 }
 
 u64 WallClock::NsToTicks(std::chrono::nanoseconds ns) const {
-    return ns.count() * rdtsc_ns_integer + MultiplyHigh(ns.count(), rdtsc_ns_factor);
+    return invariant ? MultiplyHigh(ns.count(), rdtsc_ns_factor) : ns.count();
 }
 #elif defined(HAS_NCE)
 namespace {
@@ -417,7 +416,7 @@ u64 WallClock::NsToTicks(std::chrono::nanoseconds ns) const {
 const WallClock g_wall_clock = [] {
 #if defined(ARCHITECTURE_x86_64)
     auto const& caps = Common::g_cpu_caps;
-    return WallClock(caps.invariant_tsc && caps.tsc_frequency > std::nano::den, caps.tsc_frequency);
+    return WallClock(caps.invariant_tsc && caps.tsc_frequency >= std::nano::den, caps.tsc_frequency);
 #elif defined(HAS_NCE)
     return WallClock(false, 1);
 #else

@@ -33,7 +33,6 @@ import org.yuzu.yuzu_emu.utils.LosslessScalingHelper
 import org.yuzu.yuzu_emu.utils.NativeConfig
 import org.yuzu.yuzu_emu.utils.NativePostProcessing
 import org.yuzu.yuzu_emu.utils.DirectoryInitialization
-import org.yuzu.yuzu_emu.utils.FullscreenHelper
 import androidx.core.content.edit
 import androidx.fragment.app.FragmentActivity
 import org.yuzu.yuzu_emu.fragments.MessageDialogFragment
@@ -545,22 +544,24 @@ class SettingsFragmentPresenter(
             add(IntSetting.RENDERER_NVDEC_EMULATION.key)
 
             add(BooleanSetting.SYNC_MEMORY_OPERATIONS.key)
+            add(BooleanSetting.STALL_ON_GPU_FENCE_WAIT.key)
             add(BooleanSetting.RENDERER_USE_DISK_SHADER_CACHE.key)
             add(BooleanSetting.RENDERER_FORCE_MAX_CLOCK.key)
             add(BooleanSetting.RENDERER_REACTIVE_FLUSHING.key)
+            add(BooleanSetting.RENDERER_BARRIER_FEEDBACK_LOOPS.key)
             add(BooleanSetting.ENABLE_BUFFER_HISTORY.key)
+            add(BooleanSetting.ENABLE_GPU_BUFFER_READBACK.key)
+            add(BooleanSetting.USE_UNIFIED_MEMORY.key)
             add(BooleanSetting.USE_OPTIMIZED_VERTEX_BUFFERS.key)
 
             add(HeaderSetting(R.string.hacks))
 
             add(BooleanSetting.SKIP_CPU_INNER_INVALIDATION.key)
-            add(BooleanSetting.NCE_INVALIDATION_GPU_READBACK.key)
             add(BooleanSetting.FIX_BLOOM_EFFECTS.key)
             add(BooleanSetting.EMULATE_BGR565.key)
             add(BooleanSetting.RENDERER_ASYNCHRONOUS_SHADERS.key)
             add(IntSetting.ANDROID_PIPELINE_WORKERS.key)
             add(BooleanSetting.RENDERER_ASYNCHRONOUS_GPU_EMULATION.key)
-            add(SettingsItem.GPU_UNSWIZZLE_COMBINED)
 
             add(HeaderSetting(R.string.extensions))
 
@@ -1472,39 +1473,6 @@ class SettingsFragmentPresenter(
                 )
             )
 
-            val fullscreenSetting: AbstractBooleanSetting = object : AbstractBooleanSetting {
-                override fun getBoolean(needsGlobal: Boolean): Boolean =
-                    FullscreenHelper.isFullscreenEnabled(context)
-
-                override fun setBoolean(value: Boolean) {
-                    FullscreenHelper.setFullscreenEnabled(context, value)
-                    settingsViewModel.setShouldRecreate(true)
-                }
-
-                override val key: String = Settings.PREF_APP_FULLSCREEN
-                override val isRuntimeModifiable: Boolean = true
-                override val pairedSettingKey: String = ""
-                override val isSwitchable: Boolean = false
-                override var global: Boolean = true
-                override val isSaveable: Boolean = true
-                override val defaultValue: Boolean = Settings.APP_FULLSCREEN_DEFAULT
-
-                override fun getValueAsString(needsGlobal: Boolean): String =
-                    getBoolean(needsGlobal).toString()
-
-                override fun reset() {
-                    setBoolean(defaultValue)
-                }
-            }
-
-            add(
-                SwitchSetting(
-                    fullscreenSetting,
-                    titleId = R.string.fullscreen_mode,
-                    descriptionId = R.string.fullscreen_mode_description
-                )
-            )
-
             add(HeaderSetting(R.string.buttons))
             add(BooleanSetting.ENABLE_FOLDER_BUTTON.key)
             add(BooleanSetting.ENABLE_QLAUNCH_BUTTON.key)
@@ -1526,6 +1494,7 @@ class SettingsFragmentPresenter(
             add(HeaderSetting(R.string.cpu))
 
             add(IntSetting.CPU_BACKEND.key)
+            add(BooleanSetting.RELOCATE_36BIT_ADDRESS_SPACE.key)
             add(IntSetting.CPU_ACCURACY.key)
             add(BooleanSetting.USE_AUTO_STUB.key)
             add(SettingsItem.FASTMEM_COMBINED)

@@ -9,6 +9,7 @@
 #include <condition_variable>
 #include <cstddef>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <thread>
 #include <utility>
@@ -35,11 +36,16 @@ class GraphicsPipeline;
 class StateTracker;
 
 struct QueryCacheParams;
+struct RenderingAttachments;
 
 /// The scheduler abstracts command buffer and fence management with an interface that's able to do
 /// OpenGL-like operations on Vulkan command buffers.
 class Scheduler {
 public:
+    static constexpr u32 DEPTH_ATTACHMENT_BIT = 1u << 8;
+    static constexpr u32 STENCIL_ATTACHMENT_BIT = 1u << 9;
+    static constexpr u32 ALL_ATTACHMENTS = 0x3FF;
+
     explicit Scheduler(const Device& device, StateTracker& state_tracker);
     ~Scheduler();
 
@@ -57,24 +63,50 @@ public:
     void DispatchWork();
 
     /// Requests to begin a renderpass.
-    void RequestRenderpass(const Framebuffer* framebuffer);
+    void RequestRenderpass(const Framebuffer* framebuffer, u32 touched = ALL_ATTACHMENTS,
+                           u32 written = ALL_ATTACHMENTS);
 
-    /// Defers a full-attachment color clear so it becomes the next render pass.
-    bool DeferColorClear(const Framebuffer* framebuffer, u32 rt_slot, const VkClearValue& value);
+    bool OverrideLoadOps(const Framebuffer* framebuffer, u32 attachments,
+                         VkAttachmentLoadOp load_op, const VkClearValue& value);
 
-    /// Defers a full depth/stencil clear so it becomes the next render pass.
-    bool DeferDepthStencilClear(const Framebuffer* framebuffer, const VkClearValue& value);
+    void DiscardResolvedAttachments(VkImageView resolve_view);
 
-    /// Realizes any pending deferred clear before its framebuffer can be moved or freed.
-    void FlushDeferredClear();
+    bool CanAliasRenderPass(const Framebuffer* framebuffer) const;
+
+    bool IsRenderPassImage(VkImage image) const;
 
     /// Requests the current execution context to be able to execute operations only allowed outside
     /// of a renderpass.
     void RequestOutsideRenderPassOperationContext();
 
+    void RequestComputeDispatchContext();
+
     /// Returns true when a render pass is currently active in the scheduler state.
     bool IsRenderPassActive() const {
-        return state.renderpass != VK_NULL_HANDLE;
+        return state.framebuffer_id != 0;
+    }
+
+    u64 ActiveRenderPassSerial() const noexcept {
+        if (state.framebuffer_id != 0) {
+            return renderpass_serial;
+        }
+        return (std::numeric_limits<u64>::max)();
+    }
+
+    u64 WaitForIdleSerial() const noexcept {
+        return wfi_serial;
+    }
+
+    void NotifyWaitForIdle() noexcept {
+        ++wfi_serial;
+    }
+
+    void MarkRenderPassWrites() noexcept {
+        renderpass_writes = true;
+    }
+
+    bool HasDepthWrites() const noexcept {
+        return (attachments_written & DEPTH_ATTACHMENT_BIT) != 0;
     }
 
     /// Update the pipeline to the current execution context.
@@ -129,39 +161,12 @@ public:
         return master_semaphore->IsFree(tick);
     }
 
-    /// Waits for the given GPU tick, optionally pacing frames.
-    void Wait(u64 tick, double target_fps = 0.0) {
-        if (tick > 0) {
-            if (tick >= master_semaphore->CurrentTick()) {
-                Flush();
-            }
-            master_semaphore->Wait(tick);
+    /// Waits for the given tick to trigger on the GPU.
+    void Wait(u64 tick) {
+        if (tick >= master_semaphore->CurrentTick()) {
+            Flush();
         }
-        if (Settings::values.use_speed_limit.GetValue() && target_fps > 0.0) {
-            auto now = std::chrono::steady_clock::now();
-            if (last_target_fps != target_fps) {
-                frame_interval = std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<double>(1.0 / target_fps));
-                max_frame_count = static_cast<int>(0.1 * target_fps);
-                last_target_fps = target_fps;
-                frame_counter = 0;
-                start_time = now;
-            }
-            frame_counter++;
-            auto target_time = start_time + frame_interval * frame_counter;
-            if (target_time >= now) {
-                constexpr auto spin_tail = std::chrono::milliseconds(1);
-                auto sleep_time = target_time - now;
-                if (sleep_time > spin_tail * 2) {
-                    std::this_thread::sleep_for(sleep_time - spin_tail);
-                }
-                while (std::chrono::steady_clock::now() < target_time) {
-                    std::this_thread::yield();
-                }
-            } else if (frame_counter > max_frame_count) {
-                frame_counter = 0;
-                start_time = now;
-            }
-        }
+        master_semaphore->Wait(tick);
     }
 
     /// Returns the master timeline semaphore.
@@ -204,6 +209,10 @@ private:
             command(cmdbuf, upload_cmdbuf);
         }
 
+        T& Get() noexcept {
+            return command;
+        }
+
     private:
         T command;
     };
@@ -213,16 +222,18 @@ private:
         void ExecuteAll(vk::CommandBuffer cmdbuf, vk::CommandBuffer upload_cmdbuf);
 
         template <typename T>
-        bool Record(T& command) {
+        T* Record(T& command) {
             using FuncType = TypedCommand<T>;
             static_assert(sizeof(FuncType) < sizeof(data), "Lambda is too large");
 
             command_offset = Common::AlignUp(command_offset, alignof(FuncType));
             if (command_offset > sizeof(data) - sizeof(FuncType)) {
-                return false;
+                return nullptr;
             }
             Command* const current_last = last;
-            last = new (data.data() + command_offset) FuncType(std::move(command));
+            FuncType* const recorded =
+                new (data.data() + command_offset) FuncType(std::move(command));
+            last = recorded;
 
             if (current_last) {
                 current_last->SetNext(last);
@@ -230,7 +241,7 @@ private:
                 first = last;
             }
             command_offset += sizeof(FuncType);
-            return true;
+            return &recorded->Get();
         }
 
         void MarkSubmit() {
@@ -251,13 +262,11 @@ private:
 
         size_t command_offset = 0;
         bool submit = false;
-        alignas(std::max_align_t) std::array<u8, 0x8000> data{};
+        alignas(std::max_align_t) std::array<u8, 0x8000> data;
     };
 
     struct State {
-        VkRenderPass renderpass{};
-        VkFramebuffer framebuffer{};
-        VkExtent2D render_area = {0, 0};
+        u64 framebuffer_id = 0;
         GraphicsPipeline* graphics_pipeline = nullptr;
         bool is_rescaling = false;
         bool rescaling_defined = false;
@@ -266,20 +275,9 @@ private:
         bool descriptor_buffer_bound = false;
     };
 
-    struct DeferredClear {
-        const Framebuffer* framebuffer = nullptr;
-        u32 color_clear_mask = 0;
-        std::array<VkClearValue, 8> color_values{};
-        bool depth_stencil = false;
-        VkClearValue depth_stencil_value{};
-    };
+    void BeginRenderPassImpl(const Framebuffer* framebuffer);
 
-    /// Begins a render pass for the given framebuffer, optionally with clear values.
-    void BeginRenderPassImpl(const Framebuffer* framebuffer, VkRenderPass renderpass,
-                             const VkClearValue* clear_values, u32 clear_value_count);
-
-    /// If a deferred clear is pending.
-    void RealizeDeferredClear();
+    void BindFramebuffer(const Framebuffer* framebuffer);
 
     void WorkerThread(std::stop_token stop_token);
 
@@ -287,11 +285,16 @@ private:
 
     u64 SubmitExecution(VkSemaphore signal_semaphore, VkSemaphore wait_semaphore);
 
-    void AllocateNewContext();
-
     void EndPendingOperations();
 
     void EndRenderPass();
+
+    void PublishComputeWrites();
+
+    void RelaxAttachmentOps(RenderingAttachments& attachments) const;
+
+    u32 RefineImageAccesses(const RenderingAttachments& attachments,
+                            std::array<VkAccessFlags2, 9>& accesses) const;
 
     void AcquireNewChunk();
 
@@ -306,16 +309,30 @@ private:
     vk::CommandBuffer current_cmdbuf;
     vk::CommandBuffer current_upload_cmdbuf;
 
-    DeferredClear deferred_clear;
-
     std::unique_ptr<CommandChunk> chunk;
     std::function<void()> on_submit;
 
     State state;
 
+    u64 renderpass_serial = 0;
+    u64 alias_framebuffer_id = 0;
+    u64 wfi_serial = 0;
+    bool renderpass_writes = false;
+    bool renderpass_pristine = false;
+    bool compute_writes = false;
+    u32 attachments_touched = 0;
+    u32 attachments_written = 0;
+    RenderingAttachments* recorded_attachments = nullptr;
+    RenderingAttachments* ended_attachments = nullptr;
+    VkMemoryBarrier2 renderpass_write_barrier{};
+    VkMemoryBarrier2 compute_write_barrier{};
+    VkMemoryBarrier2 upload_write_barrier{};
     u32 num_renderpass_images = 0;
     std::array<VkImage, 9> renderpass_images{};
     std::array<VkImageSubresourceRange, 9> renderpass_image_ranges{};
+    std::array<VkImageView, 9> renderpass_views{};
+    VkExtent2D renderpass_extent{};
+    u32 renderpass_layers = 0;
 
     std::queue<std::unique_ptr<CommandChunk>> work_queue;
     std::vector<std::unique_ptr<CommandChunk>> chunk_reserve;
@@ -324,12 +341,6 @@ private:
     std::mutex queue_mutex;
     std::condition_variable_any event_cv;
     std::jthread worker_thread;
-
-    std::chrono::steady_clock::duration frame_interval{};
-    std::chrono::steady_clock::time_point start_time{};
-    double last_target_fps{};
-    u64 max_frame_count{};
-    u64 frame_counter{};
 };
 
 } // namespace Vulkan

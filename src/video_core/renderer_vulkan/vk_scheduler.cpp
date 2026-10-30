@@ -4,8 +4,10 @@
 // SPDX-FileCopyrightText: Copyright 2019 yuzu Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
 #include <memory>
 #include <mutex>
+#include <span>
 #include <thread>
 #include <utility>
 
@@ -13,6 +15,7 @@
 
 #include "video_core/renderer_vulkan/vk_query_cache.h"
 
+#include "common/make_unique_for_overwrite.h"
 #include "common/settings.h"
 #include "common/thread.h"
 #include "video_core/gpu_logging/gpu_logging.h"
@@ -26,6 +29,35 @@
 #include "video_core/vulkan_common/vulkan_wrapper.h"
 
 namespace Vulkan {
+namespace {
+constexpr size_t DEPTH_VIEW = 8;
+
+struct BeginRenderingCommand {
+    void operator()(vk::CommandBuffer cmdbuf, vk::CommandBuffer) const {
+        BeginRendering(cmdbuf, attachments);
+    }
+
+    RenderingAttachments attachments;
+};
+
+VkImageView DepthStencilView(const RenderingAttachments& attachments) {
+    if (attachments.depth.imageView != VK_NULL_HANDLE) {
+        return attachments.depth.imageView;
+    }
+    return attachments.stencil.imageView;
+}
+
+VkAccessFlags2 AttachmentWriteAccess(VkImageAspectFlags aspect_mask) {
+    if ((aspect_mask & VK_IMAGE_ASPECT_COLOR_BIT) != 0) {
+        return VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+    }
+    if ((aspect_mask & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) != 0) {
+        return VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    }
+    return VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT |
+           VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+}
+} // Anonymous namespace
 
 void Scheduler::CommandChunk::ExecuteAll(vk::CommandBuffer cmdbuf,
                                          vk::CommandBuffer upload_cmdbuf) {
@@ -46,6 +78,25 @@ Scheduler::Scheduler(const Device& device_, StateTracker& state_tracker_)
     : device{device_}, state_tracker{state_tracker_},
       master_semaphore{std::make_unique<MasterSemaphore>(device)},
       command_pool{std::make_unique<CommandPool>(*master_semaphore, device)} {
+    compute_write_barrier = VkMemoryBarrier2{
+        .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+        .pNext = nullptr,
+        .srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+        .srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT,
+        .dstStageMask = device.GetBufferConsumerStages() | vk::PIPELINE_STAGE_ATTACHMENTS,
+        .dstAccessMask = device.GetBufferConsumerAccess() | vk::ACCESS_ATTACHMENTS,
+    };
+    renderpass_write_barrier = compute_write_barrier;
+    renderpass_write_barrier.srcStageMask = vk::PIPELINE_STAGE_GRAPHICS_SHADERS;
+    upload_write_barrier = compute_write_barrier;
+    upload_write_barrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+    upload_write_barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+    if (device.IsExtTransformFeedbackSupported()) {
+        renderpass_write_barrier.srcStageMask |= VK_PIPELINE_STAGE_2_TRANSFORM_FEEDBACK_BIT_EXT;
+        renderpass_write_barrier.srcAccessMask |=
+            VK_ACCESS_2_TRANSFORM_FEEDBACK_WRITE_BIT_EXT |
+            VK_ACCESS_2_TRANSFORM_FEEDBACK_COUNTER_WRITE_BIT_EXT;
+    }
 
     AcquireNewChunk();
     AllocateWorkerCommandBuffer();
@@ -56,9 +107,7 @@ Scheduler::~Scheduler() = default;
 
 u64 Scheduler::Flush(VkSemaphore signal_semaphore, VkSemaphore wait_semaphore) {
     // When flushing, we only send data to the worker thread; no waiting is necessary.
-    const u64 signal_value = SubmitExecution(signal_semaphore, wait_semaphore);
-    AllocateNewContext();
-    return signal_value;
+    return SubmitExecution(signal_semaphore, wait_semaphore);
 }
 
 void Scheduler::Finish(VkSemaphore signal_semaphore, VkSemaphore wait_semaphore) {
@@ -66,7 +115,6 @@ void Scheduler::Finish(VkSemaphore signal_semaphore, VkSemaphore wait_semaphore)
     const u64 presubmit_tick = CurrentTick();
     SubmitExecution(signal_semaphore, wait_semaphore);
     Wait(presubmit_tick);
-    AllocateNewContext();
 }
 
 void Scheduler::WaitWorker() {
@@ -89,138 +137,219 @@ void Scheduler::DispatchWork() {
             work_queue.push(std::move(chunk));
         }
         event_cv.notify_all();
+        recorded_attachments = nullptr;
+        ended_attachments = nullptr;
         AcquireNewChunk();
     }
 }
 
-void Scheduler::BeginRenderPassImpl(const Framebuffer* framebuffer, VkRenderPass renderpass,
-                                    const VkClearValue* clear_values, u32 clear_value_count) {
-    const VkFramebuffer framebuffer_handle = framebuffer->Handle();
-    const VkExtent2D render_area = framebuffer->RenderArea();
-    state.renderpass = renderpass;
-    state.framebuffer = framebuffer_handle;
-    state.render_area = render_area;
+void Scheduler::BeginRenderPassImpl(const Framebuffer* framebuffer) {
+    const RenderingAttachments& attachments = framebuffer->Attachments();
+    PublishComputeWrites();
+    state.framebuffer_id = framebuffer->Id();
+    ++renderpass_serial;
+    renderpass_pristine = true;
+    alias_framebuffer_id = 0;
+    std::ranges::transform(attachments.colors, renderpass_views.begin(),
+                           &VkRenderingAttachmentInfo::imageView);
+    renderpass_views[DEPTH_VIEW] = DepthStencilView(attachments);
+    renderpass_extent = attachments.render_area.extent;
+    renderpass_layers = attachments.layers;
+    attachments_touched = 0;
+    attachments_written = 0;
 
     if (GPU::Logging::IsActive() && Settings::values.gpu_log_vulkan_calls.GetValue()) {
+        const VkExtent2D render_area = attachments.render_area.extent;
         const std::string render_pass_info =
             fmt::format("renderArea={}x{}, numImages={}", render_area.width, render_area.height,
                         framebuffer->NumImages());
         GPU::Logging::GPULogger::GetInstance().LogRenderPassBegin(render_pass_info);
     }
 
-    std::array<VkClearValue, 9> values{};
-    for (u32 i = 0; i < clear_value_count && i < values.size(); ++i) {
-        values[i] = clear_values[i];
+    BeginRenderingCommand command{attachments};
+    BeginRenderingCommand* recorded = chunk->Record(command);
+    if (recorded == nullptr) {
+        DispatchWork();
+        recorded = chunk->Record(command);
     }
-    Record([renderpass, framebuffer_handle, render_area, values, clear_value_count](
-               vk::CommandBuffer cmdbuf) {
-        const VkRenderPassBeginInfo renderpass_bi{
-            .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-            .pNext = nullptr,
-            .renderPass = renderpass,
-            .framebuffer = framebuffer_handle,
-            .renderArea =
-                {
-                    .offset = {.x = 0, .y = 0},
-                    .extent = render_area,
-                },
-            .clearValueCount = clear_value_count,
-            .pClearValues = clear_value_count != 0 ? values.data() : nullptr,
-        };
-        cmdbuf.BeginRenderPass(renderpass_bi, VK_SUBPASS_CONTENTS_INLINE);
-    });
+    recorded_attachments = &recorded->attachments;
     num_renderpass_images = framebuffer->NumImages();
     renderpass_images = framebuffer->Images();
     renderpass_image_ranges = framebuffer->ImageRanges();
     framebuffer->MarkResolveShadowsUpToDate();
 }
 
-void Scheduler::RealizeDeferredClear() {
-    if (deferred_clear.framebuffer == nullptr) {
+void Scheduler::BindFramebuffer(const Framebuffer* framebuffer) {
+    if (framebuffer->Id() == state.framebuffer_id) {
         return;
     }
-    const DeferredClear dc = deferred_clear;
-    deferred_clear = {};
+    if (CanAliasRenderPass(framebuffer)) {
+        alias_framebuffer_id = framebuffer->Id();
+        return;
+    }
+    EndRenderPass();
+    BeginRenderPassImpl(framebuffer);
+}
 
-    std::array<VkClearValue, 9> clear_values{};
-    u32 count = 0;
-    const RenderPassKey& base = dc.framebuffer->RenderPassKeyBase();
-    for (u32 slot = 0; slot < 8; ++slot) {
-        if (base.color_formats[slot] == VideoCore::Surface::PixelFormat::Invalid) {
-            continue;
+bool Scheduler::CanAliasRenderPass(const Framebuffer* framebuffer) const {
+    const u64 id = framebuffer->Id();
+    if (id == alias_framebuffer_id) {
+        return true;
+    }
+    if (id == state.framebuffer_id || state.framebuffer_id == 0 ||
+        !device.IsExtDynamicRenderingUnusedAttachmentsSupported()) {
+        return false;
+    }
+    const RenderingAttachments& attachments = framebuffer->Attachments();
+    if (attachments.layers != renderpass_layers ||
+        attachments.render_area.extent.width != renderpass_extent.width ||
+        attachments.render_area.extent.height != renderpass_extent.height) {
+        return false;
+    }
+    for (u32 slot = 0; slot < attachments.num_colors; ++slot) {
+        if (attachments.colors[slot].imageView != renderpass_views[slot]) {
+            return false;
         }
-        clear_values[count++] = dc.color_values[slot];
     }
-    if (base.depth_format != VideoCore::Surface::PixelFormat::Invalid) {
-        clear_values[count++] = dc.depth_stencil_value;
-    }
-    const u32 color_discard_mask =
-        dc.framebuffer->DiscardsMsaaColor() ? dc.color_clear_mask : 0u;
-    const bool depth_stencil_discard =
-        dc.depth_stencil && dc.framebuffer->DiscardsMsaaDepthStencil();
-    const VkRenderPass renderpass = dc.framebuffer->RenderPassVariant(
-        dc.color_clear_mask, dc.depth_stencil, color_discard_mask, depth_stencil_discard);
-    EndRenderPass();
-    BeginRenderPassImpl(dc.framebuffer, renderpass, clear_values.data(), count);
+    const VkImageView depth_stencil = DepthStencilView(attachments);
+    return depth_stencil == VK_NULL_HANDLE || depth_stencil == renderpass_views[DEPTH_VIEW];
 }
 
-bool Scheduler::DeferColorClear(const Framebuffer* framebuffer, u32 rt_slot,
-                                const VkClearValue& value) {
-    if (IsRenderPassActive()) {
+bool Scheduler::IsRenderPassImage(VkImage image) const {
+    const auto images = std::span(renderpass_images).first(num_renderpass_images);
+    return std::ranges::find(images, image) != images.end();
+}
+
+void Scheduler::RequestRenderpass(const Framebuffer* framebuffer, u32 touched, u32 written) {
+    BindFramebuffer(framebuffer);
+    renderpass_pristine = false;
+    attachments_touched |= touched;
+    attachments_written |= written;
+}
+
+bool Scheduler::OverrideLoadOps(const Framebuffer* framebuffer, u32 attachments,
+                                VkAttachmentLoadOp load_op, const VkClearValue& value) {
+    BindFramebuffer(framebuffer);
+    if (!renderpass_pristine || recorded_attachments == nullptr) {
         return false;
     }
-    if (deferred_clear.framebuffer != nullptr && deferred_clear.framebuffer != framebuffer) {
-        RealizeDeferredClear();
-        EndRenderPass();
+    const auto set_load_op = [&](VkRenderingAttachmentInfo& attachment) {
+        attachment.loadOp = load_op;
+        attachment.clearValue = value;
+    };
+    for (u32 slot = 0; slot < recorded_attachments->num_colors; ++slot) {
+        if ((attachments & (1u << slot)) != 0) {
+            set_load_op(recorded_attachments->colors[slot]);
+        }
     }
-    deferred_clear.framebuffer = framebuffer;
-    deferred_clear.color_clear_mask |= 1u << rt_slot;
-    deferred_clear.color_values[rt_slot] = value;
+    if ((attachments & DEPTH_ATTACHMENT_BIT) != 0) {
+        set_load_op(recorded_attachments->depth);
+    }
+    if ((attachments & STENCIL_ATTACHMENT_BIT) != 0) {
+        set_load_op(recorded_attachments->stencil);
+    }
+    attachments_touched |= attachments;
+    attachments_written |= attachments;
     return true;
 }
 
-bool Scheduler::DeferDepthStencilClear(const Framebuffer* framebuffer, const VkClearValue& value) {
-    if (IsRenderPassActive()) {
-        return false;
-    }
-    if (deferred_clear.framebuffer != nullptr && deferred_clear.framebuffer != framebuffer) {
-        RealizeDeferredClear();
-        EndRenderPass();
-    }
-    deferred_clear.framebuffer = framebuffer;
-    deferred_clear.depth_stencil = true;
-    deferred_clear.depth_stencil_value = value;
-    return true;
-}
-
-void Scheduler::FlushDeferredClear() {
-    if (deferred_clear.framebuffer == nullptr) {
+void Scheduler::DiscardResolvedAttachments(VkImageView resolve_view) {
+    if (ended_attachments == nullptr) {
         return;
     }
-    RealizeDeferredClear();
-    EndRenderPass();
-}
-
-void Scheduler::RequestRenderpass(const Framebuffer* framebuffer) {
-    if (deferred_clear.framebuffer == framebuffer) {
-        RealizeDeferredClear();
-        return;
-    }
-    const VkRenderPass renderpass = framebuffer->RenderPass();
-    const VkFramebuffer framebuffer_handle = framebuffer->Handle();
-    const VkExtent2D render_area = framebuffer->RenderArea();
-    if (renderpass == state.renderpass && framebuffer_handle == state.framebuffer &&
-        render_area.width == state.render_area.width &&
-        render_area.height == state.render_area.height) {
-        return;
-    }
-    // Ends any active pass and realizes a deferred clear
-    EndRenderPass();
-    BeginRenderPassImpl(framebuffer, renderpass, nullptr, 0);
+    const auto discard = [resolve_view](VkRenderingAttachmentInfo& attachment) {
+        if (attachment.resolveImageView == resolve_view) {
+            attachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        }
+    };
+    std::ranges::for_each(std::span(ended_attachments->colors).first(ended_attachments->num_colors),
+                          discard);
+    discard(ended_attachments->depth);
+    discard(ended_attachments->stencil);
 }
 
 void Scheduler::RequestOutsideRenderPassOperationContext() {
     EndRenderPass();
+    PublishComputeWrites();
+}
+
+void Scheduler::RequestComputeDispatchContext() {
+    EndRenderPass();
+    compute_writes = true;
+}
+
+void Scheduler::RelaxAttachmentOps(RenderingAttachments& attachments) const {
+    const bool load_op_none = device.IsLoadOpNoneSupported();
+    const bool drop_unused = device.IsExtDynamicRenderingUnusedAttachmentsSupported();
+    const auto relax = [&](VkRenderingAttachmentInfo& attachment, u32 bit) {
+        if (attachment.imageView == VK_NULL_HANDLE) {
+            return true;
+        }
+        if (attachment.resolveMode != VK_RESOLVE_MODE_NONE ||
+            attachment.loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR ||
+            attachment.storeOp != VK_ATTACHMENT_STORE_OP_STORE ||
+            (attachments_written & bit) != 0) {
+            return false;
+        }
+        attachment.storeOp = VK_ATTACHMENT_STORE_OP_NONE;
+        return (attachments_touched & bit) == 0;
+    };
+    for (u32 slot = 0; slot < attachments.num_colors; ++slot) {
+        VkRenderingAttachmentInfo& color = attachments.colors[slot];
+        if (!relax(color, 1u << slot)) {
+            continue;
+        }
+        if (drop_unused) {
+            color.imageView = VK_NULL_HANDLE;
+        } else if (load_op_none) {
+            color.loadOp = VK_ATTACHMENT_LOAD_OP_NONE;
+        }
+    }
+    const bool depth_unused = relax(attachments.depth, DEPTH_ATTACHMENT_BIT);
+    const bool stencil_unused = relax(attachments.stencil, STENCIL_ATTACHMENT_BIT);
+    if (drop_unused && depth_unused && stencil_unused) {
+        attachments.depth.imageView = VK_NULL_HANDLE;
+        attachments.stencil.imageView = VK_NULL_HANDLE;
+    }
+}
+
+u32 Scheduler::RefineImageAccesses(const RenderingAttachments& attachments,
+                                   std::array<VkAccessFlags2, 9>& accesses) const {
+    const auto stores = [](const VkRenderingAttachmentInfo& attachment) {
+        return attachment.imageView != VK_NULL_HANDLE &&
+               attachment.storeOp != VK_ATTACHMENT_STORE_OP_NONE;
+    };
+    u32 unused_images = 0;
+    u32 image = 0;
+    const auto refine = [&](bool used, bool stored) {
+        if (!used) {
+            unused_images |= 1u << image;
+        }
+        if (!stored) {
+            accesses[image] = 0;
+        }
+        ++image;
+    };
+    for (u32 slot = 0; slot < attachments.num_colors; ++slot) {
+        if (renderpass_views[slot] != VK_NULL_HANDLE) {
+            const VkRenderingAttachmentInfo& color = attachments.colors[slot];
+            refine(color.imageView != VK_NULL_HANDLE, stores(color));
+        }
+    }
+    if (renderpass_views[DEPTH_VIEW] != VK_NULL_HANDLE) {
+        refine(DepthStencilView(attachments) != VK_NULL_HANDLE,
+               stores(attachments.depth) || stores(attachments.stencil));
+    }
+    return unused_images;
+}
+
+void Scheduler::PublishComputeWrites() {
+    if (!std::exchange(compute_writes, false)) {
+        return;
+    }
+    Record([barrier = &compute_write_barrier](vk::CommandBuffer cmdbuf) {
+        cmdbuf.PipelineBarrier(*barrier);
+    });
 }
 
 bool Scheduler::UpdateGraphicsPipeline(GraphicsPipeline* pipeline) {
@@ -340,19 +469,14 @@ void Scheduler::AllocateWorkerCommandBuffer() {
 }
 
 u64 Scheduler::SubmitExecution(VkSemaphore signal_semaphore, VkSemaphore wait_semaphore) {
+    master_semaphore->Refresh();
     EndPendingOperations();
     InvalidateState();
 
     const u64 signal_value = master_semaphore->NextTick();
     RecordWithUploadBuffer([signal_semaphore, wait_semaphore, signal_value,
                             this](vk::CommandBuffer cmdbuf, vk::CommandBuffer upload_cmdbuf) {
-        static constexpr VkMemoryBarrier WRITE_BARRIER{
-            .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
-            .pNext = nullptr,
-            .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-            .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
-        };
-        upload_cmdbuf.PipelineBarrier(VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, WRITE_BARRIER);
+        upload_cmdbuf.PipelineBarrier(upload_write_barrier);
         upload_cmdbuf.End();
         cmdbuf.End();
 
@@ -368,7 +492,7 @@ u64 Scheduler::SubmitExecution(VkSemaphore signal_semaphore, VkSemaphore wait_se
             if (GPU::Logging::IsActive() &&
                 Settings::values.gpu_log_vulkan_calls.GetValue()) {
                 GPU::Logging::GPULogger::GetInstance().LogVulkanCall(
-                    "vkQueueSubmit", "", VK_SUCCESS);
+                    "vkQueueSubmit2", "", VK_SUCCESS);
             }
             break;
         case VK_ERROR_DEVICE_LOST:
@@ -384,10 +508,6 @@ u64 Scheduler::SubmitExecution(VkSemaphore signal_semaphore, VkSemaphore wait_se
     return signal_value;
 }
 
-void Scheduler::AllocateNewContext() {
-    // Enable counters once again. These are disabled when a command buffer is finished.
-}
-
 void Scheduler::InvalidateState() {
     state.graphics_pipeline = nullptr;
     state.rescaling_defined = false;
@@ -400,92 +520,75 @@ void Scheduler::EndPendingOperations() {
     EndRenderPass();
 }
 
-void Scheduler::EndRenderPass()
-    {
-        RealizeDeferredClear();
-        if (!state.renderpass) {
-            return;
-        }
+void Scheduler::EndRenderPass() {
+    if (state.framebuffer_id == 0) {
+        return;
+    }
+    std::array<VkAccessFlags2, 9> accesses{};
+    for (u32 index = 0; index < num_renderpass_images; ++index) {
+        accesses[index] = AttachmentWriteAccess(renderpass_image_ranges[index].aspectMask);
+    }
+    u32 unused_images = 0;
+    if (recorded_attachments != nullptr) {
+        RelaxAttachmentOps(*recorded_attachments);
+        unused_images = RefineImageAccesses(*recorded_attachments, accesses);
+    }
+    ended_attachments = std::exchange(recorded_attachments, nullptr);
 
-        query_cache->CounterClose(VideoCommon::QueryType::StreamingByteCount);
+    query_cache->CounterClose(VideoCommon::QueryType::StreamingByteCount);
 
-        // Log render pass end
-        if (GPU::Logging::IsActive() &&
-            Settings::values.gpu_log_vulkan_calls.GetValue()) {
-            GPU::Logging::GPULogger::GetInstance().LogRenderPassEnd();
-        }
-
-        query_cache->CounterEnable(VideoCommon::QueryType::ZPassPixelCount64, false);
-        query_cache->NotifySegment(false);
-
-        Record([num_images = num_renderpass_images,
-                       images = renderpass_images,
-                       ranges = renderpass_image_ranges,
-                       has_transform_feedback = device.IsExtTransformFeedbackSupported()](
-                          vk::CommandBuffer cmdbuf) {
-            std::array<VkImageMemoryBarrier, 9> barriers;
-            for (size_t i = 0; i < num_images; ++i) {
-                const VkImageSubresourceRange& range = ranges[i];
-                const bool is_color = (range.aspectMask & VK_IMAGE_ASPECT_COLOR_BIT) != 0;
-                const bool is_depth_stencil = (range.aspectMask
-                                              & (VK_IMAGE_ASPECT_DEPTH_BIT
-                                                 | VK_IMAGE_ASPECT_STENCIL_BIT)) !=0;
-
-                VkAccessFlags src_access = 0;
-
-                if (is_color)
-                    src_access |= VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-                else if (is_depth_stencil)
-                    src_access |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-                else
-                    src_access |= VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
-                                  | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-
-                barriers[i] = VkImageMemoryBarrier{
-                        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-                        .pNext = nullptr,
-                        .srcAccessMask = src_access,
-                        .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT
-                                         | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT
-                                         | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
-                                         | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT
-                                         | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-                        .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
-                        .newLayout = VK_IMAGE_LAYOUT_GENERAL,
-                        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                        .image = images[i],
-                        .subresourceRange = range,
-                };
-            }
-            cmdbuf.EndRenderPass();
-            cmdbuf.PipelineBarrier(VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT |
-                                   VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, vk::PIPELINE_STAGE_GRAPHICS_COMPUTE,
-                                   0, nullptr, nullptr, vk::Span(barriers.data(), num_images));
-            if (has_transform_feedback) {
-                static constexpr VkMemoryBarrier XFB_OUTPUT_BARRIER{
-                    .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
-                    .pNext = nullptr,
-                    .srcAccessMask = VK_ACCESS_TRANSFORM_FEEDBACK_WRITE_BIT_EXT,
-                    .dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT,
-                };
-                cmdbuf.PipelineBarrier(VK_PIPELINE_STAGE_TRANSFORM_FEEDBACK_BIT_EXT,
-                                       VK_PIPELINE_STAGE_VERTEX_INPUT_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
-                                       0, XFB_OUTPUT_BARRIER);
-            }
-        });
-
-        state.renderpass = VkRenderPass{};
-        num_renderpass_images = 0;
+    // Log render pass end
+    if (GPU::Logging::IsActive() && Settings::values.gpu_log_vulkan_calls.GetValue()) {
+        GPU::Logging::GPULogger::GetInstance().LogRenderPassEnd();
     }
 
+    query_cache->CounterEnable(VideoCommon::QueryType::ZPassPixelCount64, false);
+    query_cache->NotifySegment(false);
+
+    Record([num_images = num_renderpass_images, images = renderpass_images,
+            ranges = renderpass_image_ranges, accesses, unused_images,
+            write_barrier = &renderpass_write_barrier,
+            num_memory_barriers = static_cast<size_t>(std::exchange(renderpass_writes, false))](
+               vk::CommandBuffer cmdbuf) {
+        std::array<VkImageMemoryBarrier2, 9> barriers;
+        size_t num_barriers = 0;
+        for (size_t i = 0; i < num_images; ++i) {
+            if (((unused_images >> i) & 1) != 0) {
+                continue;
+            }
+            barriers[num_barriers++] = VkImageMemoryBarrier2{
+                .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+                .pNext = nullptr,
+                .srcStageMask = vk::PIPELINE_STAGE_ATTACHMENTS,
+                .srcAccessMask = accesses[i],
+                .dstStageMask = vk::PIPELINE_STAGE_IMAGE_USERS,
+                .dstAccessMask = vk::ACCESS_IMAGE_USERS,
+                .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+                .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .image = images[i],
+                .subresourceRange = ranges[i],
+            };
+        }
+        cmdbuf.EndRendering();
+        if (num_barriers + num_memory_barriers != 0) {
+            cmdbuf.PipelineBarrier(0, vk::Span(write_barrier, num_memory_barriers), {},
+                                   vk::Span(barriers.data(), num_barriers));
+        }
+    });
+
+    state.framebuffer_id = 0;
+    alias_framebuffer_id = 0;
+    num_renderpass_images = 0;
+}
 
 void Scheduler::AcquireNewChunk() {
     std::scoped_lock rl{reserve_mutex};
 
     if (chunk_reserve.empty()) {
         // If we don't have anything reserved, we need to make a new chunk.
-        chunk = std::make_unique<CommandChunk>();
+        chunk = Common::make_unique_for_overwrite<CommandChunk>();
     } else {
         // Otherwise, we can just take from the reserve.
         chunk = std::move(chunk_reserve.back());

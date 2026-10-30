@@ -22,7 +22,6 @@
 #include "video_core/renderer_vulkan/vk_fence_manager.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
 #include "video_core/renderer_vulkan/vk_query_cache.h"
-#include "video_core/renderer_vulkan/vk_render_pass_cache.h"
 #include "video_core/renderer_vulkan/vk_staging_buffer_pool.h"
 #include "video_core/renderer_vulkan/vk_texture_cache.h"
 #include "video_core/renderer_vulkan/vk_update_descriptor.h"
@@ -112,7 +111,7 @@ public:
     void ModifyGPUMemory(size_t as_id, GPUVAddr addr, u64 size) override;
     void SignalFence(std::function<void()>&& func) override;
     void SyncOperation(std::function<void()>&& func) override;
-    void SignalSyncPoint(u32 value) override;
+    void SignalSyncPoint(u32 value, u32 count) override;
     void SignalReference() override;
     void ReleaseFences(bool force = true) override;
     void FlushAndInvalidateRegion(
@@ -155,11 +154,11 @@ private:
     static constexpr VkDeviceSize DEFAULT_BUFFER_SIZE = 4 * sizeof(float);
 
     template <typename Func>
-    void PrepareDraw(bool is_indexed, Func&&);
+    void PrepareDraw(bool is_indexed, bool skip_empty, Func&&);
 
     void FlushWork();
 
-    void UpdateDynamicStates();
+    void UpdateDynamicStates(const GraphicsPipeline& pipeline);
 
     void HandleTransformFeedback();
 
@@ -180,13 +179,14 @@ private:
     void UpdateRasterizerDiscardEnable(Tegra::Engines::Maxwell3D::Regs& regs);
     void UpdateConservativeRasterizationMode(Tegra::Engines::Maxwell3D::Regs& regs);
     void UpdateLineStippleEnable(Tegra::Engines::Maxwell3D::Regs& regs);
-    void UpdateLineStipple(Tegra::Engines::Maxwell3D::Regs& regs);
     void UpdateLineRasterizationMode(Tegra::Engines::Maxwell3D::Regs& regs);
     void UpdateDepthBiasEnable(Tegra::Engines::Maxwell3D::Regs& regs);
     void UpdateLogicOpEnable(Tegra::Engines::Maxwell3D::Regs& regs);
     void UpdateDepthClampEnable(Tegra::Engines::Maxwell3D::Regs& regs);
-    void UpdateAlphaToCoverageEnable(Tegra::Engines::Maxwell3D::Regs& regs);
-    void UpdateAlphaToOneEnable(Tegra::Engines::Maxwell3D::Regs& regs);
+    void UpdateAlphaToCoverageEnable(Tegra::Engines::Maxwell3D::Regs& regs,
+                                     const GraphicsPipeline& pipeline);
+    void UpdateAlphaToOneEnable(Tegra::Engines::Maxwell3D::Regs& regs,
+                                const GraphicsPipeline& pipeline);
     void UpdateFrontFace(Tegra::Engines::Maxwell3D::Regs& regs);
     void UpdateStencilOp(Tegra::Engines::Maxwell3D::Regs& regs);
     void UpdateStencilTestEnable(Tegra::Engines::Maxwell3D::Regs& regs);
@@ -194,7 +194,7 @@ private:
     void UpdateBlending(Tegra::Engines::Maxwell3D::Regs& regs);
     void UpdateColorWriteEnable(Tegra::Engines::Maxwell3D::Regs& regs);
 
-    void UpdateVertexInput(Tegra::Engines::Maxwell3D::Regs& regs);
+    void UpdateVertexInput(Tegra::Engines::Maxwell3D::Regs& regs, u32 attribute_mask);
 
     Tegra::GPU& gpu;
     Tegra::MaxwellDeviceMemoryManager& device_memory;
@@ -210,7 +210,6 @@ private:
     ComputePassDescriptorQueue compute_pass_descriptor_queue;
     DescriptorBufferRing descriptor_buffer_ring;
     BlitImageHelper blit_image;
-    RenderPassCache render_pass_cache;
 
     TextureCacheRuntime texture_cache_runtime;
     TextureCache texture_cache;
@@ -222,13 +221,19 @@ private:
     AccelerateDMA accelerate_dma;
     FenceManager fence_manager;
 
-    vk::Event wfi_event;
 
     boost::container::static_vector<u32, MAX_IMAGE_VIEWS> image_view_indices;
     std::array<VideoCommon::ImageViewId, MAX_IMAGE_VIEWS> image_view_ids;
     boost::container::static_vector<VkSampler, MAX_TEXTURES> sampler_handles;
 
     u32 draw_counter = 0;
+    u64 draw_tick = 0;
+    Tegra::DepthFormat depth_bias_zeta_format{};
+    std::array<u32, Tegra::Engines::Maxwell3D::Regs::NumVertexArrays> vertex_input_strides{};
+    u32 vertex_input_attributes{};
+    u8 blend_integer_targets{};
+    bool alpha_to_coverage_enabled{};
+    bool alpha_to_one_enabled{};
 };
 
 } // namespace Vulkan

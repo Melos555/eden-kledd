@@ -65,7 +65,6 @@ SWITCHABLE(AnisotropyMode, true);
 SWITCHABLE(AntiAliasing, false);
 SWITCHABLE(AspectRatio, true);
 SWITCHABLE(AstcDecodeMode, true);
-SWITCHABLE(AstcRecompression, true);
 SWITCHABLE(AudioMode, true);
 SWITCHABLE(CpuBackend, true);
 SWITCHABLE(CpuAccuracy, true);
@@ -171,13 +170,8 @@ struct Values {
     SwitchableSetting<bool> enable_overlay{linkage, false, "enable_overlay", Category::LibraryApplet};
 
     // Audio
-    SwitchableSetting<AudioEngine> sink_id{linkage,
-#ifdef __ANDROID__
-                                           AudioEngine::Sdl3,
-#else
-                                           AudioEngine::Auto,
-#endif
-                                           "output_engine", Category::Audio, Specialization::RuntimeList};
+    SwitchableSetting<AudioEngine> sink_id{linkage, AudioEngine::Auto, "output_engine",
+                                           Category::Audio, Specialization::RuntimeList};
     SwitchableSetting<std::string> audio_output_device_id{
                                                           linkage, "auto", "output_device", Category::Audio, Specialization::RuntimeList};
     SwitchableSetting<std::string> audio_input_device_id{
@@ -265,6 +259,8 @@ struct Values {
                                                     Category::Cpu};
     SwitchableSetting<CpuAccuracy, true> cpu_accuracy{linkage, CpuAccuracy::Auto,
                                                       "cpu_accuracy", Category::Cpu};
+    SwitchableSetting<bool> relocate_36bit_address_space{
+        linkage, false, "relocate_36bit_address_space", Category::Cpu};
     SwitchableSetting<CpuClock> cpu_clock{linkage,
                                               CpuClock::Normal,
                                               "fast_cpu_time",
@@ -477,8 +473,13 @@ struct Values {
     SwitchableSetting<bool> frame_gen_dump_flow{linkage, false, "frame_gen_dump_flow",
                                                 Category::Renderer};
 
-    SwitchableSetting<bool> use_asynchronous_gpu_emulation{linkage, true, "use_asynchronous_gpu_emulation",
-                                                           Category::Renderer};
+    SwitchableSetting<bool> use_asynchronous_gpu_emulation{linkage,
+#ifdef __ANDROID__
+        false,
+#else
+        true,
+#endif
+        "use_asynchronous_gpu_emulation", Category::Renderer};
     // *nix platforms may have issues with the borderless windowed fullscreen mode.
     // Default to exclusive fullscreen on these platforms for now.
     SwitchableSetting<FullscreenMode, true> fullscreen_mode{linkage,
@@ -525,7 +526,7 @@ struct Values {
     SwitchableSetting<GpuFenceBehavior, true> gpu_fence_behavior{linkage,
                                                                  GpuFenceBehavior::Default,
                                                                  GpuFenceBehavior::Default,
-                                                                 GpuFenceBehavior::Accurate,
+                                                                 GpuFenceBehavior::Strict,
                                                                  "gpu_fence_behavior",
                                                                  Category::RendererAdvanced,
                                                                  Specialization::Default,
@@ -537,7 +538,7 @@ struct Values {
                                                            "vram_usage_mode",
                                                            Category::RendererAdvanced};
 
-    SwitchableSetting<NvdecEmulation> nvdec_emulation{linkage, NvdecEmulation::Cpu,
+    SwitchableSetting<NvdecEmulation> nvdec_emulation{linkage, NvdecEmulation::Gpu,
                                                       "nvdec_emulation", Category::RendererAdvanced};
 
     SwitchableSetting<AnisotropyMode, true> max_anisotropy{linkage,
@@ -553,22 +554,6 @@ struct Values {
                                                             "accelerate_astc",
                                                             Category::RendererAdvanced};
 
-    SwitchableSetting<FramePacingMode, true> frame_pacing_mode{linkage,
-                                                               FramePacingMode::Target_Auto,
-                                                               FramePacingMode::Target_Auto,
-                                                               FramePacingMode::Target_120,
-                                                               "frame_pacing_mode",
-                                                               Category::RendererAdvanced,
-                                                               Specialization::Default,
-                                                               true,
-                                                               true};
-
-    SwitchableSetting<AstcRecompression, true> astc_recompression{linkage,
-                                                                  AstcRecompression::Uncompressed,
-                                                                  "astc_recompression",
-                                                                  Category::RendererAdvanced};
-
-
     SwitchableSetting<bool> sync_memory_operations{linkage,
                                                    false,
                                                    "sync_memory_operations",
@@ -576,6 +561,8 @@ struct Values {
                                                    Specialization::Default,
                                                    true,
                                                    true};
+    SwitchableSetting<bool> stall_on_gpu_fence_wait{linkage, true, "stall_on_gpu_fence_wait",
+                                                    Category::RendererAdvanced};
 
     SwitchableSetting<bool> renderer_force_max_clock{linkage, false, "force_max_clock",
                                                      Category::RendererAdvanced};
@@ -602,8 +589,13 @@ struct Values {
                                                   "use_reactive_flushing",
                                                   Category::RendererAdvanced};
 
-    SwitchableSetting<bool> barrier_feedback_loops{linkage, true, "barrier_feedback_loops",
-                                                   Category::RendererAdvanced};
+    SwitchableSetting<bool> barrier_feedback_loops{linkage,
+                                                   true,
+                                                   "barrier_feedback_loops",
+                                                   Category::RendererAdvanced,
+                                                   Specialization::Default,
+                                                   true,
+                                                   true};
 
     SwitchableSetting<bool> enable_buffer_history{linkage,
                                                   false,
@@ -639,8 +631,6 @@ struct Values {
                                                         Specialization::Default,
                                                         true,
                                                         true};
-    SwitchableSetting<bool> nce_invalidation_gpu_readback{
-        linkage, false, "nce_invalidation_gpu_readback", Category::RendererHacks};
     SwitchableSetting<bool> async_presentation{linkage,
 #ifdef __ANDROID__
                                                true,
@@ -652,39 +642,24 @@ struct Values {
     SwitchableSetting<bool> fix_bloom_effects{linkage, false, "fix_bloom_effects",
                                                      Category::RendererHacks};
 
-    // eden-kledd: keep GPU->CPU image readbacks (DMA image-to-buffer) on the GPU path
-    SwitchableSetting<bool> kledd_dma_readback_fix{linkage, false, "kledd_dma_readback_fix",
-                                                   Category::RendererHacks};
-    // eden-kledd: log small DMA image-to-buffer readbacks (scan visor investigation)
-    SwitchableSetting<bool> kledd_dma_readback_log{linkage, false, "kledd_dma_readback_log",
-                                                   Category::RendererHacks};
-
     SwitchableSetting<bool> emulate_bgr565{linkage, false, "emulate_bgr565",
                                             Category::RendererHacks};
+
+    SwitchableSetting<bool> rescale_hack{linkage, false, "rescale_hack",
+                                         Category::RendererHacks};
+    SwitchableSetting<bool> enable_gpu_buffer_readback{linkage,
+                                                       false,
+                                                       "enable_gpu_buffer_readback",
+                                                       Category::RendererAdvanced,
+                                                       Specialization::Default,
+                                                       true,
+                                                       true};
 
     SwitchableSetting<bool> use_asynchronous_shaders{linkage, false, "use_asynchronous_shaders",
                                                      Category::RendererHacks};
 
-    SwitchableSetting<GpuUnswizzleSize> gpu_unswizzle_texture_size{linkage,
-                                                  GpuUnswizzleSize::Large,
-                                                  "gpu_unswizzle_texture_size",
-                                                  Category::RendererHacks,
-                                                  Specialization::Default};
-
-    SwitchableSetting<GpuUnswizzle> gpu_unswizzle_stream_size{linkage,
-                                                  GpuUnswizzle::Medium,
-                                                  "gpu_unswizzle_stream_size",
-                                                  Category::RendererHacks,
-                                                  Specialization::Default};
-
-    SwitchableSetting<GpuUnswizzleChunk> gpu_unswizzle_chunk_size{linkage,
-                                                  GpuUnswizzleChunk::Medium,
-                                                  "gpu_unswizzle_chunk_size",
-                                                  Category::RendererHacks,
-                                                  Specialization::Default};
-
-    SwitchableSetting<bool> gpu_unswizzle_enabled{linkage, false, "gpu_unswizzle_enabled",
-                                                  Category::RendererHacks};
+    SwitchableSetting<bool> use_unified_memory{linkage, false, "use_unified_memory",
+                                               Category::RendererHacks};
 
     SwitchableSetting<ExtendedDynamicState> dyna_state{linkage,
 #if defined(__ANDROID__)
@@ -938,7 +913,7 @@ struct Values {
     // Network
     Setting<std::string> network_interface{linkage, std::string(), "network_interface",
                                            Category::Network};
-    SwitchableSetting<bool> airplane_mode{linkage, true, "airplane_mode", Category::Network};
+    SwitchableSetting<bool> airplane_mode{linkage, false, "airplane_mode", Category::Network};
 
     // WebService
     Setting<std::string> web_api_url{linkage, "api.ynet-fun.xyz", "web_api_url",
@@ -978,6 +953,7 @@ bool IsDMALevelSafe();
 bool IsGPUFenceBehaviorDefault();
 bool IsGPUFenceBehaviorBalanced();
 bool IsGPUFenceBehaviorAccurate();
+bool IsGPUFenceBehaviorStrict();
 
 bool IsFastmemEnabled();
 void SetNceEnabled(bool is_64bit);

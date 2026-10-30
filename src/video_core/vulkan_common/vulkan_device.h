@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <atomic>
 #include <optional>
 #include <set>
@@ -42,6 +43,7 @@ VK_DEFINE_HANDLE(VmaAllocator)
     FEATURE(KHR, VulkanMemoryModel, VULKAN_MEMORY_MODEL, vulkan_memory_model)
 
 #define FOR_EACH_VK_FEATURE_1_3(FEATURE)                                                           \
+    FEATURE(KHR, DynamicRendering, DYNAMIC_RENDERING, dynamic_rendering)                           \
     FEATURE(EXT, ImageRobustness, IMAGE_ROBUSTNESS, robust_image_access)                           \
     FEATURE(EXT, ShaderDemoteToHelperInvocation, SHADER_DEMOTE_TO_HELPER_INVOCATION,               \
             shader_demote_to_helper_invocation)                                                    \
@@ -55,24 +57,29 @@ VK_DEFINE_HANDLE(VmaAllocator)
 #define FOR_EACH_VK_FEATURE_EXT(FEATURE)                                                           \
     FEATURE(EXT, BorderColorSwizzle, BORDER_COLOR_SWIZZLE, border_color_swizzle)                   \
     FEATURE(EXT, ColorWriteEnable, COLOR_WRITE_ENABLE, color_write_enable)                         \
+    FEATURE(EXT, ConditionalRendering, CONDITIONAL_RENDERING, conditional_rendering)               \
     FEATURE(EXT, CustomBorderColor, CUSTOM_BORDER_COLOR, custom_border_color)                      \
     FEATURE(EXT, DepthBiasControl, DEPTH_BIAS_CONTROL, depth_bias_control)                         \
     FEATURE(EXT, DepthClipControl, DEPTH_CLIP_CONTROL, depth_clip_control)                         \
     FEATURE(EXT, DescriptorBuffer, DESCRIPTOR_BUFFER, descriptor_buffer)                           \
+    FEATURE(EXT, DynamicRenderingUnusedAttachments, DYNAMIC_RENDERING_UNUSED_ATTACHMENTS,          \
+            dynamic_rendering_unused_attachments)                                                  \
     FEATURE(EXT, ExtendedDynamicState, EXTENDED_DYNAMIC_STATE, extended_dynamic_state)             \
     FEATURE(EXT, ExtendedDynamicState2, EXTENDED_DYNAMIC_STATE_2, extended_dynamic_state2)         \
     FEATURE(EXT, ExtendedDynamicState3, EXTENDED_DYNAMIC_STATE_3, extended_dynamic_state3)         \
     FEATURE(EXT, 4444Formats, 4444_FORMATS, format_a4b4g4r4)                                       \
+    FEATURE(EXT, HostImageCopy, HOST_IMAGE_COPY, host_image_copy)                                  \
     FEATURE(EXT, IndexTypeUint8, INDEX_TYPE_UINT8, index_type_uint8)                               \
     FEATURE(EXT, LineRasterization, LINE_RASTERIZATION, line_rasterization)                        \
     FEATURE(EXT, PrimitiveTopologyListRestart, PRIMITIVE_TOPOLOGY_LIST_RESTART,                    \
             primitive_topology_list_restart)                                                       \
     FEATURE(EXT, ProvokingVertex, PROVOKING_VERTEX, provoking_vertex)                              \
     FEATURE(EXT, Robustness2, ROBUSTNESS_2, robustness2)                                           \
+    FEATURE(EXT, TexelBufferAlignment, TEXEL_BUFFER_ALIGNMENT, texel_buffer_alignment)             \
     FEATURE(EXT, TransformFeedback, TRANSFORM_FEEDBACK, transform_feedback)                        \
+    FEATURE(EXT, VertexAttributeDivisor, VERTEX_ATTRIBUTE_DIVISOR, vertex_attribute_divisor)       \
     FEATURE(EXT, VertexInputDynamicState, VERTEX_INPUT_DYNAMIC_STATE, vertex_input_dynamic_state)  \
     FEATURE(KHR, Maintenance5, MAINTENANCE_5, maintenance5)                                        \
-    FEATURE(KHR, Maintenance6, MAINTENANCE_6, maintenance6)                                        \
     FEATURE(KHR, PipelineExecutableProperties, PIPELINE_EXECUTABLE_PROPERTIES,                     \
             pipeline_executable_properties)                                                        \
     FEATURE(KHR, ShaderQuadControl, SHADER_QUAD_CONTROL, shader_quad_control)                      \
@@ -83,7 +90,6 @@ VK_DEFINE_HANDLE(VmaAllocator)
 // Define miscellaneous extensions which may be used by the implementation here.
 #define FOR_EACH_VK_EXTENSION(EXTENSION)                                                           \
     EXTENSION(EXT, ASTC_DECODE_MODE, astc_decode_mode)                                             \
-    EXTENSION(EXT, CONDITIONAL_RENDERING, conditional_rendering)                                   \
     EXTENSION(EXT, CONSERVATIVE_RASTERIZATION, conservative_rasterization)                         \
     EXTENSION(EXT, DEPTH_RANGE_UNRESTRICTED, depth_range_unrestricted)                             \
     EXTENSION(EXT, MEMORY_BUDGET, memory_budget)                                                   \
@@ -92,7 +98,7 @@ VK_DEFINE_HANDLE(VmaAllocator)
     EXTENSION(EXT, SHADER_STENCIL_EXPORT, shader_stencil_export)                                   \
     EXTENSION(EXT, SHADER_VIEWPORT_INDEX_LAYER, shader_viewport_index_layer)                       \
     EXTENSION(EXT, TOOLING_INFO, tooling_info)                                                     \
-    EXTENSION(EXT, VERTEX_ATTRIBUTE_DIVISOR, vertex_attribute_divisor)                             \
+    EXTENSION(KHR, COPY_COMMANDS_2, copy_commands2)                                                \
     EXTENSION(KHR, CREATE_RENDERPASS_2, create_renderpass2)                                        \
     EXTENSION(KHR, DEPTH_STENCIL_RESOLVE, depth_stencil_resolve)                                   \
     EXTENSION(KHR, DRAW_INDIRECT_COUNT, draw_indirect_count)                                       \
@@ -104,17 +110,13 @@ VK_DEFINE_HANDLE(VmaAllocator)
     EXTENSION(KHR, SWAPCHAIN, swapchain)                                                           \
     EXTENSION(KHR, SWAPCHAIN_MUTABLE_FORMAT, swapchain_mutable_format)                             \
     EXTENSION(KHR, IMAGE_FORMAT_LIST, image_format_list)                                           \
-    EXTENSION(KHR, MAINTENANCE_1, maintenance1)                                                    \
-    EXTENSION(KHR, MAINTENANCE_2, maintenance2)                                                    \
-    EXTENSION(KHR, MAINTENANCE_3, maintenance3)                                                    \
-    EXTENSION(KHR, MAINTENANCE_7, maintenance7)                                                    \
-    EXTENSION(KHR, MAINTENANCE_8, maintenance8)                                                    \
+    EXTENSION(KHR, LOAD_STORE_OP_NONE, load_store_op_none)                                         \
+    EXTENSION(EXT, LOAD_STORE_OP_NONE, load_store_op_none_ext)                                     \
     EXTENSION(NV, DEVICE_DIAGNOSTICS_CONFIG, device_diagnostics_config)                            \
     EXTENSION(NV, GEOMETRY_SHADER_PASSTHROUGH, geometry_shader_passthrough)                        \
     EXTENSION(NV, VIEWPORT_ARRAY2, viewport_array2)                                                \
     EXTENSION(NV, VIEWPORT_SWIZZLE, viewport_swizzle)                                              \
     EXTENSION(EXT, FILTER_CUBIC, filter_cubic)                                                     \
-    EXTENSION(IMG, FILTER_CUBIC, filter_cubic_img)                                                 \
     EXTENSION(QCOM, FILTER_CUBIC_WEIGHTS, filter_cubic_weights)
 
 // Define extensions which must be supported.
@@ -133,7 +135,6 @@ VK_DEFINE_HANDLE(VmaAllocator)
     EXTENSION_NAME(VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME)                                   \
     EXTENSION_NAME(VK_EXT_EXTENDED_DYNAMIC_STATE_2_EXTENSION_NAME)                                 \
     EXTENSION_NAME(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME)                                 \
-    EXTENSION_NAME(VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME)                                     \
     EXTENSION_NAME(VK_EXT_4444_FORMATS_EXTENSION_NAME)                                             \
     EXTENSION_NAME(VK_EXT_LINE_RASTERIZATION_EXTENSION_NAME)                                       \
     EXTENSION_NAME(VK_EXT_ROBUSTNESS_2_EXTENSION_NAME)                                             \
@@ -273,10 +274,6 @@ public:
         return physical;
     }
 
-    VkPipelineCache StaticPipelineCache() const noexcept {
-        return *static_pipeline_cache;
-    }
-
     /// Returns the main graphics queue.
     vk::Queue GetGraphicsQueue() const {
         return graphics_queue;
@@ -300,6 +297,23 @@ public:
     /// Returns the current Vulkan API version provided in Vulkan-formatted version numbers.
     u32 ApiVersion() const {
         return properties.properties.apiVersion;
+    }
+
+    VkDeviceSize TexelBufferAlignment(u32 texel_size) const {
+        VkDeviceSize texel = texel_size;
+        if (texel % 3 == 0) {
+            texel /= 3;
+        }
+        const auto& limits = properties.texel_buffer_alignment;
+        VkDeviceSize storage = limits.storageTexelBufferOffsetAlignmentBytes;
+        if (limits.storageTexelBufferOffsetSingleTexelAlignment != VK_FALSE) {
+            storage = (std::min)(storage, texel);
+        }
+        VkDeviceSize uniform = limits.uniformTexelBufferOffsetAlignmentBytes;
+        if (limits.uniformTexelBufferOffsetSingleTexelAlignment != VK_FALSE) {
+            uniform = (std::min)(uniform, texel);
+        }
+        return (std::max)((std::max)(storage, uniform), VkDeviceSize{1});
     }
 
     /// Returns the current driver version provided in Vulkan-formatted version numbers.
@@ -354,11 +368,6 @@ public:
     std::array<u32, 3> GetMaxComputeWorkGroupCount() const {
         const auto& count = properties.properties.limits.maxComputeWorkGroupCount;
         return {count[0], count[1], count[2]};
-    }
-
-    /// Returns the maximum size for push constants.
-    VkDeviceSize GetMaxPushConstantsSize() const {
-        return properties.properties.limits.maxPushConstantsSize;
     }
 
 #define FN_MAX_LIMIT_LIST \
@@ -426,6 +435,10 @@ FN_MAX_LIMIT_LIST
 
     /// Returns true if the device supports float16 natively.
     bool IsFloat16Supported() const {
+        return features.shader_float16_int8.shaderFloat16 && !has_broken_float16_math;
+    }
+
+    bool IsNativeFloat16Enabled() const {
         return features.shader_float16_int8.shaderFloat16;
     }
 
@@ -558,11 +571,6 @@ FN_MAX_LIMIT_LIST
         return extensions.geometry_shader_passthrough;
     }
 
-    /// Returns true if the device supports VK_KHR_uniform_buffer_standard_layout.
-    bool IsKhrUniformBufferStandardLayoutSupported() const {
-        return extensions.uniform_buffer_standard_layout;
-    }
-
     /// Returns true if the device supports VK_KHR_push_descriptor.
     bool IsKhrPushDescriptorSupported() const {
         return extensions.push_descriptor;
@@ -635,15 +643,9 @@ FN_MAX_LIMIT_LIST
         return extensions.shader_stencil_export;
     }
 
-    /// Returns true if the device supports VK_KHR_create_renderpass2.
-    bool IsKhrCreateRenderPass2Supported() const {
-        return extensions.create_renderpass2 || instance_version >= VK_API_VERSION_1_2;
-    }
-
     /// Returns true if the device supports VK_KHR_depth_stencil_resolve.
     bool IsKhrDepthStencilResolveSupported() const {
-        return (extensions.depth_stencil_resolve || instance_version >= VK_API_VERSION_1_2) &&
-               IsKhrCreateRenderPass2Supported();
+        return extensions.depth_stencil_resolve || instance_version >= VK_API_VERSION_1_2;
     }
 
     /// Returns the supported resolve modes for the depth aspect.
@@ -661,13 +663,6 @@ FN_MAX_LIMIT_LIST
         return properties.depth_stencil_resolve.independentResolveNone == VK_TRUE;
     }
 
-    /// Returns true if depth/stencil operations can be performed efficiently.
-    /// Either through shader export or hardware blits.
-    bool CanPerformDepthStencilOperations() const {
-        return extensions.shader_stencil_export || is_blit_depth24_stencil8_supported ||
-               is_blit_depth32_stencil8_supported;
-    }
-
     /// Returns true if the device supports VK_EXT_depth_range_unrestricted.
     bool IsExtDepthRangeUnrestrictedSupported() const {
         return extensions.depth_range_unrestricted;
@@ -676,6 +671,14 @@ FN_MAX_LIMIT_LIST
     /// Returns true if the device supports VK_EXT_depth_clip_control.
     bool IsExtDepthClipControlSupported() const {
         return extensions.depth_clip_control;
+    }
+
+    bool IsLoadOpNoneSupported() const {
+        return extensions.load_store_op_none || extensions.load_store_op_none_ext;
+    }
+
+    bool IsExtDynamicRenderingUnusedAttachmentsSupported() const {
+        return extensions.dynamic_rendering_unused_attachments;
     }
 
     /// Returns true if the device supports VK_EXT_depth_bias_control.
@@ -706,12 +709,6 @@ FN_MAX_LIMIT_LIST
     /// Returns true if transform feedback draw commands are supported.
     bool IsTransformFeedbackDrawSupported() const {
         return extensions.transform_feedback && properties.transform_feedback.transformFeedbackDraw;
-    }
-
-    /// Returns true if transform feedback query types are supported.
-    bool IsTransformFeedbackQueriesSupported() const {
-        return extensions.transform_feedback &&
-               properties.transform_feedback.transformFeedbackQueries;
     }
 
     /// Returns true if the device supports VK_EXT_transform_feedback properly.
@@ -748,11 +745,6 @@ FN_MAX_LIMIT_LIST
                !features.border_color_swizzle.borderColorSwizzleFromImage;
     }
 
-    /// Returns true if borderColorSwizzleFromImage is available.
-    bool IsBorderColorSwizzleFromImageSupported() const {
-        return features.border_color_swizzle.borderColorSwizzleFromImage;
-    }
-
     /// Returns true if the device supports VK_EXT_extended_dynamic_state.
     bool IsExtExtendedDynamicStateSupported() const {
         return extensions.extended_dynamic_state;
@@ -765,11 +757,6 @@ FN_MAX_LIMIT_LIST
 
     bool IsExtExtendedDynamicState2ExtrasSupported() const {
         return features.extended_dynamic_state2.extendedDynamicState2LogicOp;
-    }
-
-    /// Returns true if the device supports VK_EXT_extended_dynamic_state3.
-    bool IsExtExtendedDynamicState3Supported() const {
-        return extensions.extended_dynamic_state3;
     }
 
     /// Returns true if the device supports VK_EXT_4444_formats.
@@ -896,6 +883,34 @@ FN_MAX_LIMIT_LIST
         return extensions.conditional_rendering;
     }
 
+    VkPipelineStageFlags2 GetBufferUserStages() const {
+        VkPipelineStageFlags2 stages = vk::PIPELINE_STAGE_BUFFER_USERS;
+        if (IsExtConditionalRendering()) {
+            stages |= VK_PIPELINE_STAGE_2_CONDITIONAL_RENDERING_BIT_EXT;
+        }
+        if (IsExtTransformFeedbackSupported()) {
+            stages |= VK_PIPELINE_STAGE_2_TRANSFORM_FEEDBACK_BIT_EXT;
+        }
+        return stages;
+    }
+
+    VkPipelineStageFlags2 GetBufferConsumerStages() const {
+        return GetBufferUserStages() | VK_PIPELINE_STAGE_2_HOST_BIT;
+    }
+
+    VkAccessFlags2 GetBufferConsumerAccess() const {
+        VkAccessFlags2 access = vk::ACCESS_BUFFER_CONSUMERS;
+        if (IsExtConditionalRendering()) {
+            access |= VK_ACCESS_2_CONDITIONAL_RENDERING_READ_BIT_EXT;
+        }
+        if (IsExtTransformFeedbackSupported()) {
+            access |= VK_ACCESS_2_TRANSFORM_FEEDBACK_WRITE_BIT_EXT |
+                      VK_ACCESS_2_TRANSFORM_FEEDBACK_COUNTER_READ_BIT_EXT |
+                      VK_ACCESS_2_TRANSFORM_FEEDBACK_COUNTER_WRITE_BIT_EXT;
+        }
+        return access;
+    }
+
     bool IsExtAstcDecodeModeSupported() const {
         return extensions.astc_decode_mode;
     }
@@ -906,11 +921,6 @@ FN_MAX_LIMIT_LIST
     }
 
     bool HasTimelineSemaphore() const;
-
-    /// Returns true if the device supports VK_KHR_synchronization2.
-    bool HasSynchronization2() const {
-        return extensions.synchronization2;
-    }
 
     /// Returns the minimum supported version of SPIR-V.
     u32 SupportedSpirvVersion() const {
@@ -975,15 +985,19 @@ FN_MAX_LIMIT_LIST
         return must_emulate_scaled_formats;
     }
 
+    bool IsUMA() const {
+        return is_uma;
+    }
+
+    bool IsHostImageCopySupported() const {
+        return extensions.host_image_copy;
+    }
+
     bool HasNullDescriptor() const {
         return features.robustness2.nullDescriptor;
     }
 
     bool MustEmulateBGR565() const;
-
-    bool HasExactDepthBiasControl() const {
-        return features.depth_bias_control.depthBiasExact;
-    }
 
     u32 GetMaxVertexInputAttributes() const {
         return properties.properties.limits.maxVertexInputAttributes;
@@ -991,6 +1005,10 @@ FN_MAX_LIMIT_LIST
 
     u32 GetMaxVertexInputBindings() const {
         return properties.properties.limits.maxVertexInputBindings;
+    }
+
+    u32 GetMaxVertexAttribDivisor() const {
+        return max_vertex_attrib_divisor;
     }
 
     u32 GetMaxViewports() const {
@@ -1009,61 +1027,33 @@ FN_MAX_LIMIT_LIST
         return features2.features.multiViewport;
     }
 
-    /// Returns true if the device supports VK_KHR_maintenance1.
-    bool IsKhrMaintenance1Supported() const {
-        return extensions.maintenance1;
-    }
-
-    /// Returns true if the device supports VK_KHR_maintenance2.
-    bool IsKhrMaintenance2Supported() const {
-        return extensions.maintenance2;
-    }
-
-    /// Returns true if the device supports VK_KHR_maintenance3.
-    bool IsKhrMaintenance3Supported() const {
-        return extensions.maintenance3;
-    }
-
     /// Returns true if the device supports VK_KHR_maintenance4.
     bool IsKhrMaintenance4Supported() const {
         return extensions.maintenance4;
     }
 
-    /// Returns true if the device supports VK_KHR_maintenance5.
-    bool IsKhrMaintenance5Supported() const {
-        return extensions.maintenance5;
+    /// Returns true if the device can read the draw count from a buffer.
+    bool IsDrawIndirectCountSupported() const {
+        return extensions.draw_indirect_count;
     }
 
-    /// Returns true if polygon mode POINT supports gl_PointSize.
-    bool SupportsPolygonModePointSize() const {
-        return extensions.maintenance5 && properties.maintenance5.polygonModePointSize;
+    /// Returns true if the device supports VK_EXT_vertex_attribute_divisor.
+    bool IsExtVertexAttributeDivisorSupported() const {
+        return extensions.vertex_attribute_divisor;
+    }
+
+    /// Returns true if the device supports VK_KHR_sampler_mirror_clamp_to_edge.
+    bool IsKhrSamplerMirrorClampToEdgeSupported() const {
+        return extensions.sampler_mirror_clamp_to_edge;
+    }
+
+    bool IsKhrMaintenance5Supported() const {
+        return extensions.maintenance5;
     }
 
     /// Returns true if depth/stencil swizzle ONE is supported.
     bool SupportsDepthStencilSwizzleOne() const {
         return extensions.maintenance5 && properties.maintenance5.depthStencilSwizzleOneSupport;
-    }
-
-    /// Returns true if early fragment tests optimizations are available.
-    bool SupportsEarlyFragmentTests() const {
-        return extensions.maintenance5 &&
-               properties.maintenance5.earlyFragmentMultisampleCoverageAfterSampleCounting &&
-               properties.maintenance5.earlyFragmentSampleMaskTestBeforeSampleCounting;
-    }
-
-    /// Returns true if the device supports VK_KHR_maintenance6.
-    bool IsKhrMaintenance6Supported() const {
-        return extensions.maintenance6;
-    }
-
-    /// Returns true if the device supports VK_KHR_maintenance7.
-    bool IsKhrMaintenance7Supported() const {
-        return extensions.maintenance7;
-    }
-
-    /// Returns true if the device supports VK_KHR_maintenance8.
-    bool IsKhrMaintenance8Supported() const {
-        return extensions.maintenance8;
     }
 
     /// Returns true if the device supports UINT8 index buffer conversion via compute shader.
@@ -1140,9 +1130,6 @@ private:
     /// Returns true if the device natively supports blitting depth stencil images.
     bool TestDepthStencilBlits(VkFormat format) const;
 
-    void LoadStaticPipelineCache();
-    void SaveStaticPipelineCache() const;
-
 private:
     VkInstance instance;         ///< Vulkan instance.
     VmaAllocator allocator;      ///< VMA allocator.
@@ -1151,8 +1138,6 @@ private:
     vk::Device logical;          ///< Logical device.
     vk::Queue graphics_queue;    ///< Main graphics queue.
     vk::Queue present_queue;     ///< Main present queue.
-    vk::PipelineCache static_pipeline_cache;
-    bool owns_static_pipeline_cache{};
     u32 instance_version{};      ///< Vulkan instance version.
     u32 graphics_family{};       ///< Main graphics queue family index.
     u32 present_family{};        ///< Main present queue family index.
@@ -1198,10 +1183,12 @@ private:
         VkPhysicalDevicePushDescriptorPropertiesKHR push_descriptor{};
         VkPhysicalDeviceDescriptorBufferPropertiesEXT descriptor_buffer{};
         VkPhysicalDeviceSubgroupSizeControlProperties subgroup_size_control{};
+        VkPhysicalDeviceTexelBufferAlignmentProperties texel_buffer_alignment{};
         VkPhysicalDeviceTransformFeedbackPropertiesEXT transform_feedback{};
         VkPhysicalDeviceMaintenance5PropertiesKHR maintenance5{};
         VkPhysicalDeviceDepthStencilResolveProperties depth_stencil_resolve{};
         VkPhysicalDeviceCustomBorderColorPropertiesEXT custom_border_color{};
+        VkPhysicalDeviceVertexAttributeDivisorPropertiesEXT vertex_attribute_divisor{};
 
         VkPhysicalDeviceProperties properties{};
     };
@@ -1209,6 +1196,7 @@ private:
     Extensions extensions{};
     Features features{};
     Properties properties{};
+    u32 max_vertex_attrib_divisor{1};
 
     VkPhysicalDeviceFeatures2 features2{};
     VkPhysicalDeviceProperties2 properties2{};
@@ -1219,10 +1207,10 @@ private:
     bool is_blit_depth32_stencil8_supported{}; ///< Support for blitting from and to D32S8.
     bool is_warp_potentially_bigger{};         ///< Host warp size can be bigger than guest.
     bool is_integrated{};                      ///< Is GPU an iGPU.
-    bool is_virtual{};                         ///< Is GPU a virtual GPU.
-    bool is_non_gpu{};                         ///< Is SoftwareRasterizer, FPGA, non-GPU device.
+    bool is_uma{};
     bool has_broken_compute{};                 ///< Compute shaders can cause crashes
     bool has_broken_cube_compatibility{};      ///< Has broken cube compatibility bit
+    bool has_broken_float16_math{};
     bool has_broken_descriptor_aliasing{};     ///< Miscompiles descriptors aliased on one binding
     bool has_broken_parallel_compiling{};      ///< Has broken parallel shader compiling.
     bool has_renderdoc{};                      ///< Has RenderDoc attached

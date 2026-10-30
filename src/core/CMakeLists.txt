@@ -23,8 +23,6 @@ add_library(core STATIC
     core_timing.h
     cpu_manager.cpp
     cpu_manager.h
-    launch_params.cpp
-    launch_params.h
     crypto/aes_util.cpp
     crypto/aes_util.h
     crypto/ctr_encryption_layer.cpp
@@ -798,8 +796,6 @@ add_library(core STATIC
     hle/service/ns/application_manager_interface.h
     hle/service/ns/application_version_interface.cpp
     hle/service/ns/application_version_interface.h
-    hle/service/ns/async_result.cpp
-    hle/service/ns/async_result.h
     hle/service/ns/content_management_interface.cpp
     hle/service/ns/content_management_interface.h
     hle/service/ns/develop_interface.cpp
@@ -814,6 +810,8 @@ add_library(core STATIC
     hle/service/ns/ecommerce_interface.h
     hle/service/ns/factory_reset_interface.cpp
     hle/service/ns/factory_reset_interface.h
+    hle/service/ns/i_async_result.cpp
+    hle/service/ns/i_async_result.h
     hle/service/ns/language.cpp
     hle/service/ns/language.h
     hle/service/ns/ns.cpp
@@ -1205,9 +1203,6 @@ endif()
 
 target_include_directories(core PRIVATE ${OPUS_INCLUDE_DIRS})
 target_link_libraries(core PUBLIC common PRIVATE audio_core hid_core network video_core nx_tzdb tz)
-if (MSVC)
-    target_link_libraries(core PRIVATE getopt)
-endif()
 
 if (BOOST_NO_HEADERS)
     target_link_libraries(core PUBLIC Boost::container Boost::heap Boost::asio Boost::process Boost::crc)
@@ -1243,8 +1238,7 @@ if (HAS_NCE)
         arm/nce/interpreter_visitor.cpp
         arm/nce/interpreter_visitor.h
         arm/nce/patcher.cpp
-        arm/nce/patcher.h
-        arm/nce/visitor_base.h)
+        arm/nce/patcher.h)
     target_link_libraries(core PRIVATE merry::oaknut)
 endif()
 

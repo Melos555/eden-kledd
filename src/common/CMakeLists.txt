@@ -76,6 +76,7 @@ add_library(
     logging.h
     lz4_compression.cpp
     lz4_compression.h
+    make_unique_for_overwrite.h
     math_util.h
     memory_detect.cpp
     memory_detect.h
@@ -107,8 +108,7 @@ add_library(
     settings_setting.h
     slot_vector.h
     socket_types.h
-    sparse_large_vector.cpp
-    sparse_large_vector.h
+    spin_lock.h
     stb.cpp
     stb.h
     steady_clock.cpp
@@ -137,8 +137,8 @@ add_library(
     uuid.cpp
     uuid.h
     vector_math.h
-    zbic_compression.cpp
-    zbic_compression.h
+    virtual_buffer.cpp
+    virtual_buffer.h
     zstd_compression.cpp
     zstd_compression.h
     fs/ryujinx_compat.h fs/ryujinx_compat.cpp
@@ -148,10 +148,6 @@ add_library(
     httplib.h
     net/net.h net/net.cpp
     container/unordered_map.h container/unordered_set.h)
-
-set_source_files_properties(zbic_compression.cpp PROPERTIES
-    INCLUDE_DIRECTORIES "${ZBIC_INCLUDE_DIR}"
-    COMPILE_OPTIONS "$<$<CXX_COMPILER_ID:Clang,GNU>:-Wno-unused-function;-Wno-missing-declarations;-Wno-shadow>")
 
 if(WIN32)
     target_sources(common PRIVATE windows/timer_resolution.cpp

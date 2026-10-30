@@ -37,6 +37,12 @@ using Tegra::Engines::Maxwell3D;
 using VideoCommon::QueryType;
 
 namespace {
+bool LacksQueryWriteBack(const Device& device) {
+    const VkDriverId driver_id = device.GetDriverID();
+    return driver_id == VK_DRIVER_ID_QUALCOMM_PROPRIETARY ||
+           driver_id == VK_DRIVER_ID_ARM_PROPRIETARY || driver_id == VK_DRIVER_ID_MESA_TURNIP;
+}
+
 class SamplesQueryBank : public VideoCommon::BankBase {
 public:
     static constexpr size_t BANK_SIZE = 256;
@@ -235,9 +241,7 @@ public:
             return;
         }
         PauseCounter();
-        const auto driver_id = device.GetDriverID();
-        if (driver_id == VK_DRIVER_ID_QUALCOMM_PROPRIETARY ||
-            driver_id == VK_DRIVER_ID_ARM_PROPRIETARY || driver_id == VK_DRIVER_ID_MESA_TURNIP) {
+        if (LacksQueryWriteBack(device)) {
             pending_sync.clear();
             sync_values_stash.clear();
             return;
@@ -260,11 +264,13 @@ public:
             scheduler.RequestOutsideRenderPassOperationContext();
             scheduler.Record([start, amount, base_offset, query_pool,
                               buffer = *resolve_buffer](vk::CommandBuffer cmdbuf) {
-                const VkBufferMemoryBarrier copy_query_pool_barrier{
-                    .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+                const VkBufferMemoryBarrier2 copy_query_pool_barrier{
+                    .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
                     .pNext = nullptr,
-                    .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-                    .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+                    .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                    .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                    .dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                    .dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT,
                     .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                     .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                     .buffer = buffer,
@@ -276,8 +282,7 @@ public:
                     query_pool, static_cast<u32>(start), static_cast<u32>(amount), buffer,
                     static_cast<u32>(base_offset), SamplesQueryBank::QUERY_SIZE,
                     VK_QUERY_RESULT_WAIT_BIT | VK_QUERY_RESULT_64_BIT);
-                cmdbuf.PipelineBarrier(VK_PIPELINE_STAGE_TRANSFER_BIT,
-                                       VK_PIPELINE_STAGE_TRANSFER_BIT, 0, copy_query_pool_barrier);
+                cmdbuf.PipelineBarrier(copy_query_pool_barrier);
             });
             offsets[bank_id] = {start, base_offset};
             base_offset += amount * SamplesQueryBank::QUERY_SIZE;
@@ -652,11 +657,13 @@ public:
         scheduler.RequestOutsideRenderPassOperationContext();
         scheduler.Record([this, dst_buffer = stagging_buffer.buffer, extra_offset, start,
                           size](vk::CommandBuffer cmdbuf) {
-            std::array<VkBufferCopy, 1> copy{VkBufferCopy{
+            const VkBufferCopy2 copy{
+                .sType = VK_STRUCTURE_TYPE_BUFFER_COPY_2,
+                .pNext = nullptr,
                 .srcOffset = start * QUERY_SIZE,
                 .dstOffset = extra_offset,
                 .size = size * QUERY_SIZE,
-            }};
+            };
             cmdbuf.CopyBuffer(*buffer, dst_buffer, copy);
         });
     }
@@ -814,7 +821,7 @@ public:
             new_query->flags |= VideoCommon::QueryFlagBits::IsFinalValueSynced;
             return index;
         }
-
+        
         scheduler.RequestOutsideRenderPassOperationContext();
         CloseCounter();
         auto [bank_slot, data_slot] = ProduceCounterBuffer(slot);
@@ -862,16 +869,17 @@ public:
             offset_base += TFBQueryBank::QUERY_SIZE;
             bank.CloseReference();
         }
-        static constexpr VkMemoryBarrier WRITE_BARRIER{
-            .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+        static constexpr VkMemoryBarrier2 WRITE_BARRIER{
+            .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
             .pNext = nullptr,
-            .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-            .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+            .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+            .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+            .dstStageMask = vk::PIPELINE_STAGE_HOST,
+            .dstAccessMask = VK_ACCESS_2_HOST_READ_BIT,
         };
         scheduler.RequestOutsideRenderPassOperationContext();
         scheduler.Record([](vk::CommandBuffer cmdbuf) {
-            cmdbuf.PipelineBarrier(VK_PIPELINE_STAGE_TRANSFER_BIT,
-                                   vk::PIPELINE_STAGE_HOST, 0, WRITE_BARRIER);
+            cmdbuf.PipelineBarrier(WRITE_BARRIER);
         });
 
         std::scoped_lock lk(flush_guard);
@@ -928,16 +936,7 @@ private:
             });
             return;
         }
-        static constexpr VkMemoryBarrier COUNTER_RESUME_BARRIER{
-            .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
-            .pNext = nullptr,
-            .srcAccessMask = VK_ACCESS_TRANSFORM_FEEDBACK_COUNTER_WRITE_BIT_EXT,
-            .dstAccessMask = VK_ACCESS_TRANSFORM_FEEDBACK_COUNTER_READ_BIT_EXT,
-        };
         scheduler.Record([this, total = static_cast<u32>(buffers_count)](vk::CommandBuffer cmdbuf) {
-            cmdbuf.PipelineBarrier(VK_PIPELINE_STAGE_TRANSFORM_FEEDBACK_BIT_EXT,
-                                   VK_PIPELINE_STAGE_TRANSFORM_FEEDBACK_BIT_EXT, 0,
-                                   COUNTER_RESUME_BARRIER);
             cmdbuf.BeginTransformFeedbackEXT(0, total, counter_buffers.data(), offsets.data());
         });
     }
@@ -952,6 +951,8 @@ private:
         }
         has_flushed_end_pending = false;
 
+        // Refresh buffer state before ending transform feedback to ensure counters_count is up-to-date.
+        UpdateBuffers();
         if (buffers_count == 0) {
             LOG_DEBUG(Render_Vulkan, "EndTransformFeedbackEXT called with no counters (buffers_count=0)");
             scheduler.Record([](vk::CommandBuffer cmdbuf) {
@@ -959,6 +960,7 @@ private:
             });
         } else {
             LOG_DEBUG(Render_Vulkan, "EndTransformFeedbackEXT called with counters (buffers_count={})", buffers_count);
+            scheduler.MarkRenderPassWrites();
             scheduler.Record([this,
                               total = static_cast<u32>(buffers_count)](vk::CommandBuffer cmdbuf) {
                 cmdbuf.EndTransformFeedbackEXT(0, total, counter_buffers.data(), offsets.data());
@@ -1022,33 +1024,37 @@ private:
         const size_t slot = other; // workaround to compile bug.
         current_bank->AddReference();
 
-        static constexpr VkMemoryBarrier READ_BARRIER{
-            .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+        static constexpr VkMemoryBarrier2 READ_BARRIER{
+            .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
             .pNext = nullptr,
-            .srcAccessMask = VK_ACCESS_TRANSFORM_FEEDBACK_COUNTER_WRITE_BIT_EXT,
-            .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+            .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFORM_FEEDBACK_BIT_EXT,
+            .srcAccessMask = VK_ACCESS_2_TRANSFORM_FEEDBACK_COUNTER_WRITE_BIT_EXT,
+            .dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+            .dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT,
         };
-        static constexpr VkMemoryBarrier WRITE_BARRIER{
-            .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+        static constexpr VkMemoryBarrier2 WRITE_BARRIER{
+            .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
             .pNext = nullptr,
-            .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-            .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT,
+            .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+            .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+            .dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+            .dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT,
         };
         scheduler.RequestOutsideRenderPassOperationContext();
         scheduler.Record([dst_buffer = current_bank->GetBuffer(),
                           src_buffer = counter_buffers[slot_index],
                           src_offset = offsets[slot_index],
                           slot](vk::CommandBuffer cmdbuf) {
-            cmdbuf.PipelineBarrier(VK_PIPELINE_STAGE_TRANSFORM_FEEDBACK_BIT_EXT,
-                                   VK_PIPELINE_STAGE_TRANSFER_BIT, 0, READ_BARRIER);
-            std::array<VkBufferCopy, 1> copy{VkBufferCopy{
+            cmdbuf.PipelineBarrier(READ_BARRIER);
+            const VkBufferCopy2 copy{
+                .sType = VK_STRUCTURE_TYPE_BUFFER_COPY_2,
+                .pNext = nullptr,
                 .srcOffset = src_offset,
                 .dstOffset = slot * TFBQueryBank::QUERY_SIZE,
                 .size = TFBQueryBank::QUERY_SIZE,
-            }};
+            };
             cmdbuf.CopyBuffer(src_buffer, dst_buffer, copy);
-            cmdbuf.PipelineBarrier(VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                                   0, WRITE_BARRIER);
+            cmdbuf.PipelineBarrier(WRITE_BARRIER);
         });
         return {current_bank_id, slot};
     }
@@ -1341,7 +1347,7 @@ struct QueryCacheRuntimeImpl {
     std::vector<std::pair<DAddr, DAddr>> little_cache;
     std::vector<std::pair<VkBuffer, VkDeviceSize>> buffers_to_upload_to;
     std::vector<size_t> redirect_cache;
-    std::vector<std::vector<VkBufferCopy>> copies_setup;
+    std::vector<std::vector<VkBufferCopy2>> copies_setup;
 
     // Host conditional rendering data
     std::optional<ConditionalRenderingResolvePass> conditional_resolve_pass;
@@ -1404,6 +1410,10 @@ void QueryCacheRuntime::ResumeHostConditionalRendering() {
     impl->is_hcr_running = true;
 }
 
+bool QueryCacheRuntime::IsHostConditionalRenderingSet() const noexcept {
+    return impl->hcr_is_set;
+}
+
 void QueryCacheRuntime::HostConditionalRenderingCompareValueImpl(VideoCommon::LookupData object,
                                                                  bool is_equal) {
     {
@@ -1415,24 +1425,19 @@ void QueryCacheRuntime::HostConditionalRenderingCompareValueImpl(VideoCommon::Lo
         impl->hcr_buffer = buffer->Handle();
         impl->hcr_offset = offset;
     }
-    if (impl->hcr_is_set) {
-        if (impl->hcr_setup.buffer == impl->hcr_buffer &&
-            impl->hcr_setup.offset == impl->hcr_offset) {
-            return;
-        }
+    VkConditionalRenderingFlagsEXT flags = 0;
+    if (is_equal) {
+        flags = VK_CONDITIONAL_RENDERING_INVERTED_BIT_EXT;
     }
-    bool was_running = impl->is_hcr_running;
-    if (was_running) {
-        PauseHostConditionalRendering();
+    if (impl->hcr_is_set && impl->hcr_setup.buffer == impl->hcr_buffer &&
+        impl->hcr_setup.offset == impl->hcr_offset && impl->hcr_setup.flags == flags) {
+        return;
     }
+    PauseHostConditionalRendering();
     impl->hcr_setup.buffer = impl->hcr_buffer;
     impl->hcr_setup.offset = impl->hcr_offset;
-    impl->hcr_setup.flags = is_equal ? VK_CONDITIONAL_RENDERING_INVERTED_BIT_EXT : 0;
+    impl->hcr_setup.flags = flags;
     impl->hcr_is_set = true;
-    impl->is_hcr_running = false;
-    if (was_running) {
-        ResumeHostConditionalRendering();
-    }
 }
 
 void QueryCacheRuntime::HostConditionalRenderingCompareBCImpl(DAddr address, bool is_equal,
@@ -1449,26 +1454,26 @@ void QueryCacheRuntime::HostConditionalRenderingCompareBCImpl(DAddr address, boo
         to_resolve = buffer->Handle();
         to_resolve_offset = static_cast<u32>(offset);
     }
-    bool was_running = impl->is_hcr_running;
-    if (was_running) {
-        PauseHostConditionalRendering();
-    }
+    PauseHostConditionalRendering();
     impl->conditional_resolve_pass->Resolve(*impl->hcr_resolve_buffer, to_resolve,
                                             to_resolve_offset, compare_to_zero);
     impl->hcr_setup.buffer = *impl->hcr_resolve_buffer;
     impl->hcr_setup.offset = 0;
-    impl->hcr_setup.flags = is_equal ? 0 : VK_CONDITIONAL_RENDERING_INVERTED_BIT_EXT;
-    impl->hcr_is_set = true;
-    impl->is_hcr_running = false;
-    if (was_running) {
-        ResumeHostConditionalRendering();
+    impl->hcr_setup.flags = 0;
+    if (!is_equal) {
+        impl->hcr_setup.flags = VK_CONDITIONAL_RENDERING_INVERTED_BIT_EXT;
     }
+    impl->hcr_is_set = true;
 }
 
 bool QueryCacheRuntime::HostConditionalRenderingCompareValue(VideoCommon::LookupData object_1,
                                                              [[maybe_unused]] bool qc_dirty) {
     if (!impl->device.IsExtConditionalRendering()) {
         return false;
+    }
+    if (LacksQueryWriteBack(impl->device)) {
+        EndHostConditionalRendering();
+        return true;
     }
     HostConditionalRenderingCompareBCImpl(object_1.address, true, true);
     return true;
@@ -1519,7 +1524,8 @@ bool QueryCacheRuntime::HostConditionalRenderingCompareValues(VideoCommon::Looku
     auto driver_id = impl->device.GetDriverID();
     const bool is_gpu_high = Settings::IsGPULevelHigh();
 
-    if ((!is_gpu_high && driver_id == VK_DRIVER_ID_INTEL_PROPRIETARY_WINDOWS) || driver_id == VK_DRIVER_ID_QUALCOMM_PROPRIETARY || driver_id == VK_DRIVER_ID_ARM_PROPRIETARY || driver_id == VK_DRIVER_ID_MESA_TURNIP) {
+    if ((!is_gpu_high && driver_id == VK_DRIVER_ID_INTEL_PROPRIETARY_WINDOWS) ||
+        LacksQueryWriteBack(impl->device)) {
         EndHostConditionalRendering();
         return true;
     }
@@ -1571,30 +1577,24 @@ VideoCommon::StreamerInterface* QueryCacheRuntime::GetStreamerInterface(QueryTyp
 }
 
 void QueryCacheRuntime::Barriers(bool is_prebarrier) {
-    static constexpr VkMemoryBarrier READ_BARRIER{
-        .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+    VkMemoryBarrier2 barrier{
+        .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
         .pNext = nullptr,
-        .srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT,
-        .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
+        .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+        .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+        .dstStageMask = impl->device.GetBufferConsumerStages(),
+        .dstAccessMask = impl->device.GetBufferConsumerAccess(),
     };
-    static constexpr VkMemoryBarrier WRITE_BARRIER{
-        .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
-        .pNext = nullptr,
-        .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-        .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
-    };
-    impl->scheduler.RequestOutsideRenderPassOperationContext();
     if (is_prebarrier) {
-        impl->scheduler.Record([](vk::CommandBuffer cmdbuf) {
-            cmdbuf.PipelineBarrier(vk::PIPELINE_STAGE_GRAPHICS_COMPUTE_TRANSFER,
-                                   VK_PIPELINE_STAGE_TRANSFER_BIT, 0, READ_BARRIER);
-        });
-    } else {
-        impl->scheduler.Record([](vk::CommandBuffer cmdbuf) {
-            cmdbuf.PipelineBarrier(VK_PIPELINE_STAGE_TRANSFER_BIT,
-                                   vk::PIPELINE_STAGE_GRAPHICS_COMPUTE_TRANSFER_HOST, 0, WRITE_BARRIER);
-        });
+        barrier.srcStageMask = impl->device.GetBufferUserStages();
+        barrier.srcAccessMask = vk::ACCESS_BUFFER_WRITES;
+        barrier.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+        barrier.dstAccessMask = vk::ACCESS_TRANSFER;
     }
+    impl->scheduler.RequestOutsideRenderPassOperationContext();
+    impl->scheduler.Record([barrier](vk::CommandBuffer cmdbuf) {
+        cmdbuf.PipelineBarrier(barrier);
+    });
 }
 
 template <typename SyncValuesType>
@@ -1646,6 +1646,7 @@ void QueryCacheRuntime::SyncValues(std::span<SyncValuesType> values, VkBuffer ba
             const auto post_op = VideoCommon::ObtainBufferOperation::DoNothing;
             const auto [buffer, offset] = impl->buffer_cache.ObtainCPUBuffer(
                 pair.first, static_cast<u32>(pair.second - pair.first), sync_info, post_op);
+            buffer->MarkContentModified();
             impl->buffers_to_upload_to.emplace_back(buffer->Handle(), offset);
         }
     });
@@ -1660,7 +1661,9 @@ void QueryCacheRuntime::SyncValues(std::span<SyncValuesType> values, VkBuffer ba
         size_t accumulated_size = 0;
         for (size_t i = 0; i < values.size(); i++) {
             size_t which_copy = impl->redirect_cache[i];
-            impl->copies_setup[which_copy].emplace_back(VkBufferCopy{
+            impl->copies_setup[which_copy].emplace_back(VkBufferCopy2{
+                .sType = VK_STRUCTURE_TYPE_BUFFER_COPY_2,
+                .pNext = nullptr,
                 .srcOffset = current_offset + accumulated_size,
                 .dstOffset = impl->buffers_to_upload_to[which_copy].second + values[i].address -
                              impl->little_cache[which_copy].first,
@@ -1674,7 +1677,9 @@ void QueryCacheRuntime::SyncValues(std::span<SyncValuesType> values, VkBuffer ba
     } else {
         for (size_t i = 0; i < values.size(); i++) {
             size_t which_copy = impl->redirect_cache[i];
-            impl->copies_setup[which_copy].emplace_back(VkBufferCopy{
+            impl->copies_setup[which_copy].emplace_back(VkBufferCopy2{
+                .sType = VK_STRUCTURE_TYPE_BUFFER_COPY_2,
+                .pNext = nullptr,
                 .srcOffset = values[i].offset,
                 .dstOffset = impl->buffers_to_upload_to[which_copy].second + values[i].address -
                              impl->little_cache[which_copy].first,

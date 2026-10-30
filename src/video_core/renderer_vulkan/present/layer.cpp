@@ -60,25 +60,34 @@ VkFormat GetFormat(const Tegra::FramebufferConfig& framebuffer) {
 
 } // Anonymous namespace
 
-Layer::Layer(const Device& device, MemoryAllocator& memory_allocator_, Scheduler& scheduler_, Tegra::MaxwellDeviceMemoryManager& device_memory_, size_t image_count_, VkExtent2D output_size, VkDescriptorSetLayout layout, const PresentFilters& filters_)
+Layer::Layer(const Device& device, MemoryAllocator& memory_allocator_, Scheduler& scheduler_,
+             Tegra::MaxwellDeviceMemoryManager& device_memory_, size_t image_count_,
+             size_t generation_count_, VkExtent2D output_size, VkDescriptorSetLayout layout,
+             const PresentFilters& filters_)
     : memory_allocator(memory_allocator_)
     , scheduler(scheduler_)
     , device_memory(device_memory_)
     , filters(filters_)
     , image_count(image_count_)
+    , generation_count(generation_count_)
+    , generation_ticks(generation_count_)
 {
     CreateDescriptorPool(device);
     CreateDescriptorSets(device, layout);
+    const size_t slot_count = image_count + generation_count;
     if (filters.get_scaling_filter() == Settings::ScalingFilter::Fsr) {
-        sr_filter.emplace<FSR>(device, memory_allocator, image_count, output_size);
+        sr_filter.emplace<FSR>(device, memory_allocator, slot_count, output_size);
     } else if (filters.get_scaling_filter() == Settings::ScalingFilter::Sgsr) {
-        sr_filter.emplace<SGSR>(device, memory_allocator, image_count, output_size, false);
+        sr_filter.emplace<SGSR>(device, memory_allocator, slot_count, output_size, false);
     } else if (filters.get_scaling_filter() == Settings::ScalingFilter::SgsrEdge) {
-        sr_filter.emplace<SGSR>(device, memory_allocator, image_count, output_size, true);
+        sr_filter.emplace<SGSR>(device, memory_allocator, slot_count, output_size, true);
     }
 }
 
 Layer::~Layer() {
+    for (const u64 tick : generation_ticks) {
+        scheduler.Wait(tick);
+    }
     ReleaseRawImages();
 }
 
@@ -94,14 +103,11 @@ void Layer::ConfigureDraw(const Device& device, PresentPushConstants* out_push_c
     const u32 scaled_width = texture_info ? texture_info->scaled_width : texture_width;
     const u32 scaled_height = texture_info ? texture_info->scaled_height : texture_height;
     const bool use_accelerated = texture_info.has_value();
-    const bool is_applet =
-        (framebuffer.layer_stack_mask & Service::Nvnflinger::LayerStackBit(
-                                            Service::Nvnflinger::LayerStackId::Recording)) == 0;
 
     RefreshResources(device, framebuffer);
     SetAntiAliasPass(device);
 #ifdef HAS_RESHADE
-    SetPostProcessPass(device, is_applet);
+    SetPostProcessPass(device);
 #endif
 
     // Finish any pending renderpass
@@ -118,34 +124,43 @@ void Layer::ConfigureDraw(const Device& device, PresentPushConstants* out_push_c
     VkImage source_image = texture_info ? texture_info->image : *raw_images[image_index];
     VkImageView source_image_view =
         texture_info ? texture_info->image_view : *raw_image_views[image_index];
+    const VkExtent2D render_extent{
+        .width = scaled_width,
+        .height = scaled_height,
+    };
+    const VkExtent2D processed_extent{
+        .width = Settings::values.resolution_info.ScaleUp(raw_width),
+        .height = Settings::values.resolution_info.ScaleUp(raw_height),
+    };
+    VkExtent2D source_extent = render_extent;
 
     if (auto* fxaa = std::get_if<FXAA>(&anti_alias)) {
         fxaa->Draw(device, scheduler, image_index, &source_image, &source_image_view);
+        source_extent = processed_extent;
     } else if (auto* smaa = std::get_if<SMAA>(&anti_alias)) {
         smaa->Draw(device, scheduler, image_index, &source_image, &source_image_view);
+        source_extent = processed_extent;
     }
 
 #ifdef HAS_RESHADE
     if (post_process.has_value()) {
         post_process->Draw(device, scheduler, image_index, &source_image, &source_image_view);
+        source_extent = processed_extent;
     }
 #endif
 
     auto crop_rect = Tegra::NormalizeCrop(framebuffer, texture_width, texture_height);
-    const VkExtent2D render_extent{
-        .width = scaled_width,
-        .height = scaled_height,
-    };
+    generation_source = source_image_view;
+    generation_extent = source_extent;
+    generation_render_extent = render_extent;
+    generation_crop = crop_rect;
 
     if (auto* fsr = std::get_if<FSR>(&sr_filter)) {
         source_image_view = fsr->Draw(device, scheduler, image_index, source_image, source_image_view, render_extent, crop_rect);
         crop_rect = {0, 0, 1, 1};
     } else if (auto* sgsr = std::get_if<SGSR>(&sr_filter)) {
-        if (!is_applet) {
-            source_image_view = sgsr->Draw(device, scheduler, image_index, source_image,
-                                           source_image_view, render_extent, crop_rect);
-            crop_rect = {0, 0, 1, 1};
-        }
+        source_image_view = sgsr->Draw(device, scheduler, image_index, source_image, source_image_view, render_extent, crop_rect);
+        crop_rect = {0, 0, 1, 1};
     }
 
     SetMatrixData(device, *out_push_constants, layout);
@@ -155,12 +170,43 @@ void Layer::ConfigureDraw(const Device& device, PresentPushConstants* out_push_c
     *out_descriptor_set = descriptor_sets[image_index];
 }
 
+void Layer::ConfigureGenerated(const Device& device, PresentPushConstants* out_push_constants,
+                               VkDescriptorSet* out_descriptor_set, VkSampler sampler,
+                               size_t generation, VkImage image, VkImageView view,
+                               const Layout::FramebufferLayout& layout) {
+    const size_t slot = image_count + generation;
+    generation_ticks[generation] = scheduler.CurrentTick();
+
+    VkImageView source_image_view = view;
+    Common::Rectangle<f32> crop_rect = generation_crop;
+    if (auto* fsr = std::get_if<FSR>(&sr_filter)) {
+        source_image_view =
+            fsr->Draw(device, scheduler, slot, image, view, generation_render_extent, crop_rect);
+        crop_rect = {0, 0, 1, 1};
+    } else if (auto* sgsr = std::get_if<SGSR>(&sr_filter)) {
+        source_image_view =
+            sgsr->Draw(device, scheduler, slot, image, view, generation_render_extent, crop_rect);
+        crop_rect = {0, 0, 1, 1};
+    }
+
+    SetMatrixData(device, *out_push_constants, layout);
+    SetVertexData(device, *out_push_constants, layout, crop_rect);
+
+    UpdateDescriptorSet(device, source_image_view, sampler, slot);
+    *out_descriptor_set = descriptor_sets[slot];
+}
+
+bool Layer::IsGenerationFree(size_t generation) const {
+    return generation < generation_count && scheduler.IsFree(generation_ticks[generation]);
+}
+
 void Layer::CreateDescriptorPool(const Device& device) {
-    descriptor_pool = CreateWrappedDescriptorPool(device, image_count, image_count);
+    const size_t slot_count = image_count + generation_count;
+    descriptor_pool = CreateWrappedDescriptorPool(device, slot_count, slot_count);
 }
 
 void Layer::CreateDescriptorSets(const Device& device, VkDescriptorSetLayout layout) {
-    const std::vector layouts(image_count, layout);
+    const std::vector layouts(image_count + generation_count, layout);
     descriptor_sets = CreateWrappedDescriptorSets(descriptor_pool, layouts);
 }
 
@@ -234,11 +280,7 @@ void Layer::SetAntiAliasPass(const Device& device) {
 }
 
 #ifdef HAS_RESHADE
-void Layer::SetPostProcessPass(const Device& device, bool is_applet) {
-    if (is_applet) {
-        post_process.reset();
-        return;
-    }
+void Layer::SetPostProcessPass(const Device& device) {
     const VkExtent2D render_area{
         .width = Settings::values.resolution_info.ScaleUp(raw_width),
         .height = Settings::values.resolution_info.ScaleUp(raw_height),
@@ -353,7 +395,9 @@ void Layer::UpdateRawImage(const Tegra::FramebufferConfig& framebuffer, size_t i
         buffer.Flush();  // Ensure host writes are visible before the GPU copy.
     }
 
-    const VkBufferImageCopy copy{
+    const VkBufferImageCopy2 copy{
+        .sType = VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2,
+        .pNext = nullptr,
         .bufferOffset = image_offset,
         .bufferRowLength = 0,
         .bufferImageHeight = 0,
@@ -374,11 +418,13 @@ void Layer::UpdateRawImage(const Tegra::FramebufferConfig& framebuffer, size_t i
     };
     scheduler.Record([this, copy, index = image_index](vk::CommandBuffer cmdbuf) {
         const VkImage image = *raw_images[index];
-        const VkImageMemoryBarrier base_barrier{
-            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        const VkImageMemoryBarrier2 base_barrier{
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
             .pNext = nullptr,
-            .srcAccessMask = 0,
-            .dstAccessMask = 0,
+            .srcStageMask = VK_PIPELINE_STAGE_2_NONE,
+            .srcAccessMask = VK_ACCESS_2_NONE,
+            .dstStageMask = VK_PIPELINE_STAGE_2_NONE,
+            .dstAccessMask = VK_ACCESS_2_NONE,
             .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
             .newLayout = VK_IMAGE_LAYOUT_GENERAL,
             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
@@ -392,23 +438,24 @@ void Layer::UpdateRawImage(const Tegra::FramebufferConfig& framebuffer, size_t i
                 .layerCount = 1,
             },
         };
-        VkImageMemoryBarrier read_barrier = base_barrier;
-        read_barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        VkImageMemoryBarrier2 read_barrier = base_barrier;
+        read_barrier.srcStageMask = VK_PIPELINE_STAGE_2_HOST_BIT;
+        read_barrier.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+        read_barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
         read_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         read_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 
-        VkImageMemoryBarrier write_barrier = base_barrier;
-        write_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        write_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        VkImageMemoryBarrier2 write_barrier = base_barrier;
+        write_barrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+        write_barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        write_barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT |
+                                     VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        write_barrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
         write_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 
-        cmdbuf.PipelineBarrier(VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
-                               read_barrier);
+        cmdbuf.PipelineBarrier(read_barrier);
         cmdbuf.CopyBufferToImage(*buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, copy);
-        cmdbuf.PipelineBarrier(VK_PIPELINE_STAGE_TRANSFER_BIT,
-                               VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
-                                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                               0, write_barrier);
+        cmdbuf.PipelineBarrier(write_barrier);
     });
 }
 

@@ -1,254 +1,305 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-FileCopyrightText: Copyright 2026 Eden Emulator Project -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!--
+    Console-style Home (portrait and landscape).
+    Every ID used by GamesFragment (header, search_*, view/filter/settings buttons, swipe_refresh,
+    notice_text, grid_games, add_directory, launch_qlaunch) is preserved. The console_* views are
+    driven by org.yuzu.yuzu_emu.ui.home.ConsoleHomeController.
+    View/filter buttons stay hidden: they are reached from the gear menu.
+-->
 <androidx.constraintlayout.widget.ConstraintLayout
-
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="?attr/colorSurface"
-    android:clipChildren="false"
-    >
+    android:background="@drawable/console_home_base_background"
+    android:clipChildren="false">
 
+    <!-- Animated "liquid glass" backdrop tinted with the selected game's colors -->
+    <org.yuzu.yuzu_emu.views.ConsoleLiquidBackgroundView
+        android:id="@+id/console_background"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:importantForAccessibility="no"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <!-- Top bar: gear (menu) | search (on demand) | clock, Wi-Fi/battery, profile -->
     <LinearLayout
         android:id="@+id/header"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginHorizontal="@dimen/console_home_header_margin"
+        android:layout_marginTop="@dimen/console_home_header_margin_top"
+        android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:layout_marginHorizontal="20dp"
-        app:layout_constraintTop_toTopOf="parent"
-        >
+        app:layout_constraintTop_toTopOf="parent">
+
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/settings_button"
+            style="@style/ConsoleHeaderButton.Glass"
+            android:contentDescription="@string/home_console_menu">
+
+            <ImageView
+                style="@style/ConsoleHeaderIcon"
+                android:src="@drawable/ic_settings"
+                app:tint="@color/console_home_text_primary" />
+
+        </com.google.android.material.card.MaterialCardView>
 
         <com.google.android.material.textview.MaterialTextView
             android:id="@+id/title"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/app_name"
-            style="@style/SynthwaveText.Title"
-            android:textSize="27sp"
-            />
+            android:visibility="gone" />
 
         <Space
+            android:id="@+id/console_header_space"
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <FrameLayout
+            android:id="@+id/frame_search"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:layout_marginHorizontal="16dp"
             android:layout_weight="1"
-            />
+            android:visibility="gone">
 
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/search_background"
+                android:layout_width="match_parent"
+                android:layout_height="@dimen/console_home_search_height"
+                app:cardBackgroundColor="@color/console_home_surface"
+                app:cardCornerRadius="24dp"
+                app:cardElevation="0dp"
+                app:strokeColor="@color/console_home_outline_dim"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:id="@+id/search_container"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:layout_marginStart="18dp"
+                    android:layout_marginEnd="42dp"
+                    android:orientation="horizontal">
+
+                    <ImageView
+                        android:layout_width="18dp"
+                        android:layout_height="18dp"
+                        android:layout_gravity="center_vertical"
+                        android:layout_marginEnd="12dp"
+                        android:importantForAccessibility="no"
+                        android:src="@drawable/ic_search"
+                        app:tint="@color/console_home_text_secondary" />
+
+                    <EditText
+                        android:id="@+id/search_text"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:background="@android:color/transparent"
+                        android:hint="@string/home_search_games"
+                        android:imeOptions="flagNoFullscreen|actionDone"
+                        android:inputType="text"
+                        android:maxLines="1"
+                        android:textColor="@color/console_home_text_primary"
+                        android:textColorHint="@color/console_home_text_dim"
+                        android:textSize="15sp" />
+
+                </LinearLayout>
+
+                <ImageView
+                    android:id="@+id/clear_button"
+                    android:layout_width="18dp"
+                    android:layout_height="18dp"
+                    android:layout_gravity="center_vertical|end"
+                    android:layout_marginEnd="16dp"
+                    android:background="?attr/selectableItemBackground"
+                    android:importantForAccessibility="no"
+                    android:src="@drawable/ic_clear"
+                    android:visibility="invisible"
+                    app:tint="@color/console_home_text_secondary" />
+
+            </com.google.android.material.card.MaterialCardView>
+
+        </FrameLayout>
+
+        <!-- Kept for GamesFragment (view / sort menus); opened from the gear menu. -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/view_button"
-            style="@style/EdenCard"
-            android:layout_width="42dp"
-            android:layout_height="42dp"
-            android:background="@android:color/transparent"
-            app:cardCornerRadius="21dp"
-            app:cardBackgroundColor="@android:color/transparent"
-            app:cardElevation="0dp"
-            app:strokeColor="?attr/colorOutline"
-            app:strokeWidth="1dp"
-            android:padding="8dp"
-            >
-
-            <ImageView
-                android:layout_width="18dp"
-                android:layout_height="18dp"
-                android:layout_gravity="center"
-                android:src="@drawable/ic_eye"
-                app:tint="?attr/colorSecondary"
-                />
-
-        </com.google.android.material.card.MaterialCardView>
-
-        <Space
-            android:layout_width="15dp"
-            android:layout_height="wrap_content"
-            />
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:visibility="gone" />
 
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/filter_button"
-            style="@style/EdenCard"
-            android:layout_width="42dp"
-            android:layout_height="42dp"
-            android:background="@android:color/transparent"
-            app:cardCornerRadius="21dp"
-            app:cardBackgroundColor="@android:color/transparent"
-            app:cardElevation="0dp"
-            app:strokeColor="?attr/colorOutline"
-            app:strokeWidth="1dp"
-            android:padding="8dp"
-            >
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:visibility="gone" />
 
-            <ImageView
-                android:layout_width="18dp"
-                android:layout_height="18dp"
-                android:layout_gravity="center"
-                android:src="@drawable/ic_filter"
-                app:tint="?attr/colorOnSurfaceVariant"
-                />
-
-        </com.google.android.material.card.MaterialCardView>
-
-        <Space
-            android:layout_width="15dp"
+        <TextClock
+            android:id="@+id/console_clock"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            />
+            android:textColor="@color/console_home_text_primary"
+            android:textSize="18sp" />
+
+        <org.yuzu.yuzu_emu.views.ConsoleStatusView
+            android:id="@+id/console_status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="18dp" />
 
         <com.google.android.material.card.MaterialCardView
-            android:id="@+id/settings_button"
-            style="@style/EdenCard"
-            android:layout_width="42dp"
-            android:layout_height="42dp"
-            android:background="@android:color/transparent"
-            app:cardCornerRadius="21dp"
-            app:cardBackgroundColor="@android:color/transparent"
-            app:cardElevation="0dp"
-            app:strokeColor="?attr/colorOutline"
-            app:strokeWidth="1dp"
-            android:padding="8dp"
-            >
+            android:id="@+id/console_profile_button"
+            style="@style/ConsoleHeaderButton.Avatar"
+            android:contentDescription="@string/profile_manager">
 
-            <ImageView
-                android:layout_width="18dp"
-                android:layout_height="18dp"
-                android:layout_gravity="center"
-                android:src="@drawable/ic_settings"
-                app:tint="?attr/colorTertiary"
-                />
+            <!-- Replaced by the current user's avatar by ConsoleHomeController. -->
+            <com.google.android.material.imageview.ShapeableImageView
+                android:id="@+id/console_profile_image"
+                style="@style/ConsoleHeaderIcon"
+                android:src="@drawable/ic_account_circle"
+                app:shapeAppearanceOverlay="@style/ShapeAppearance.Console.Circle" />
 
         </com.google.android.material.card.MaterialCardView>
 
     </LinearLayout>
 
-    <FrameLayout
-        android:id="@+id/frame_search"
+    <!-- Selected game details -->
+    <LinearLayout
+        android:id="@+id/console_details"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:layout_marginHorizontal="15dp"
-        app:layout_constraintStart_toStartOf="parent"
+        android:layout_marginHorizontal="@dimen/console_home_side_margin"
+        android:layout_marginTop="@dimen/console_home_details_margin_top"
+        android:clipChildren="false"
+        android:clipToPadding="false"
+        android:orientation="vertical"
+        android:visibility="invisible"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/header"
-        >
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/header">
 
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/search_background"
-            style="@style/EdenCard"
-            android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:background="@android:color/transparent"
-            app:cardCornerRadius="24dp"
-            app:cardBackgroundColor="@android:color/transparent"
-            app:cardElevation="0dp"
-            app:strokeColor="?attr/colorOutline"
-            app:strokeWidth="1dp"
-            android:padding="4dp"
-            >
+        <com.google.android.material.textview.MaterialTextView
+            android:id="@+id/console_game_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="-14dp"
+            android:layout_marginTop="-10dp"
+            android:layout_marginBottom="-10dp"
+            android:paddingHorizontal="14dp"
+            android:paddingVertical="10dp"
+            android:ellipsize="end"
+            android:maxWidth="640dp"
+            android:singleLine="true"
+            android:textColor="@color/console_home_text_primary"
+            android:textSize="@dimen/console_home_title_size" />
 
-            <LinearLayout
-                android:id="@+id/search_container"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:layout_marginStart="18dp"
-                android:layout_marginEnd="42dp"
-                android:orientation="horizontal"
-                >
+    </LinearLayout>
 
-                <ImageView
-                    android:layout_width="21dp"
-                    android:layout_height="21dp"
-                    android:layout_gravity="center_vertical"
-                    android:layout_marginEnd="18dp"
-                    android:src="@drawable/ic_search"
-                    app:tint="?attr/colorSecondary"
-                    />
-
-                <EditText
-                    android:id="@+id/search_text"
-                    android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:background="@android:color/transparent"
-                    android:hint="@string/home_search_games"
-                    android:inputType="text"
-                    android:maxLines="1"
-                    android:imeOptions="flagNoFullscreen"
-                    android:textColor="?attr/colorOnBackground"
-                    android:textColorHint="?attr/colorOnSurfaceVariant"
-                    android:fontFamily="monospace"
-                    />
-
-            </LinearLayout>
-
-            <ImageView
-                android:id="@+id/clear_button"
-                android:layout_width="18dp"
-                android:layout_height="18dp"
-                android:layout_gravity="center_vertical|end"
-                android:layout_marginEnd="18dp"
-                android:background="?attr/selectableItemBackground"
-                android:src="@drawable/ic_clear"
-                android:visibility="invisible"
-                app:tint="?attr/colorOnSurfaceVariant"
-                />
-
-        </com.google.android.material.card.MaterialCardView>
-
-    </FrameLayout>
-
-    <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+    <!-- Game carousel (main element) -->
+    <org.yuzu.yuzu_emu.ui.MidScreenSwipeRefreshLayout
         android:id="@+id/swipe_refresh"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_marginTop="8dp"
-        app:layout_constraintTop_toBottomOf="@id/frame_search"
+        android:layout_marginTop="12dp"
+        android:layout_marginBottom="@dimen/console_home_carousel_margin_bottom"
         app:layout_constraintBottom_toBottomOf="parent"
-        >
+        app:layout_constraintTop_toBottomOf="@id/console_details">
 
         <RelativeLayout
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            >
+            android:clipChildren="false">
 
             <com.google.android.material.textview.MaterialTextView
                 android:id="@+id/notice_text"
-                style="@style/TextAppearance.Material3.BodyLarge"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:gravity="center"
                 android:padding="@dimen/spacing_large"
                 android:text="@string/empty_gamelist"
-                android:textColor="?attr/colorOnBackground"
-                android:visibility="gone"
-                />
+                android:textColor="@color/console_home_text_secondary"
+                android:visibility="gone" />
 
-            <androidx.recyclerview.widget.RecyclerView
+            <org.yuzu.yuzu_emu.ui.CarouselRecyclerView
                 android:id="@+id/grid_games"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
+                android:clipChildren="false"
                 android:clipToPadding="false"
-                android:scrollbarStyle="outsideOverlay"
-                android:scrollbars="vertical"
                 android:fadeScrollbars="true"
-                android:paddingHorizontal="4dp"
-                android:paddingVertical="4dp"
-                />
-
+                android:scrollbarStyle="outsideOverlay"
+                android:scrollbars="vertical" />
 
         </RelativeLayout>
 
-    </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+    </org.yuzu.yuzu_emu.ui.MidScreenSwipeRefreshLayout>
 
-    <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
-        android:id="@+id/launch_qlaunch"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_margin="16dp"
-        android:contentDescription="Launch QLaunch"
-        android:text="@string/qlaunch_applet"
-        app:icon="@drawable/ic_home"
+    <!-- Full-screen console panel for subscreens opened from Home (profile manager). Home's
+         content is hidden while it is open, so it sits on the animated background. -->
+    <LinearLayout
+        android:id="@+id/console_overlay"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:background="@android:color/transparent"
+        android:elevation="24dp"
+        android:clickable="true"
+        android:focusable="false"
+        android:orientation="vertical"
+        android:paddingHorizontal="@dimen/console_home_side_margin"
+        android:paddingBottom="12dp"
+        android:visibility="gone"
         app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        android:textColor="?attr/colorOnPrimary"
-        app:backgroundTint="?attr/colorPrimary"
-        app:iconTint="?attr/colorOnPrimary"
-        app:rippleColor="#99FFFFFF"
-        />
+        app:layout_constraintTop_toTopOf="parent">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/console_overlay_back"
+                style="?attr/materialIconButtonStyle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:contentDescription="@string/back"
+                app:icon="@drawable/ic_back"
+                app:iconSize="22dp"
+                app:iconTint="@color/console_home_text_primary" />
+
+            <TextView
+                android:id="@+id/console_overlay_title"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:singleLine="true"
+                android:textColor="@color/console_home_text_primary"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+
+        </LinearLayout>
+
+        <androidx.fragment.app.FragmentContainerView
+            android:id="@+id/console_overlay_container"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_marginTop="4dp"
+            android:layout_weight="1" />
+
+    </LinearLayout>
 
     <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
         android:id="@+id/add_directory"
@@ -257,13 +308,27 @@
         android:layout_margin="16dp"
         android:contentDescription="Select_game_folder"
         android:text="@string/folder"
-        app:icon="@drawable/ic_cartridge_outline"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
         android:textColor="?attr/colorOnPrimary"
         app:backgroundTint="?attr/colorPrimary"
+        app:icon="@drawable/ic_cartridge_outline"
         app:iconTint="?attr/colorOnPrimary"
-        app:rippleColor="#99FFFFFF"
-        />
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:rippleColor="#99FFFFFF" />
+
+    <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+        android:id="@+id/launch_qlaunch"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_margin="16dp"
+        android:contentDescription="Launch QLaunch"
+        android:text="@string/qlaunch_applet"
+        android:textColor="?attr/colorOnPrimary"
+        app:backgroundTint="?attr/colorPrimary"
+        app:icon="@drawable/ic_home"
+        app:iconTint="?attr/colorOnPrimary"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:rippleColor="#99FFFFFF" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

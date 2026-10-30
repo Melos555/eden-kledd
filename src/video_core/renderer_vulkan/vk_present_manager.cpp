@@ -7,9 +7,6 @@
 #include "common/settings.h"
 #include "common/thread.h"
 #include "core/frontend/emu_window.h"
-#ifdef HAS_LSFG
-#include "video_core/renderer_vulkan/present/lsfg_common.h"
-#endif
 #include "video_core/renderer_vulkan/vk_present_manager.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_swapchain.h"
@@ -24,18 +21,6 @@ namespace {
 
 constexpr size_t MAX_FRAMES_IN_FLIGHT = 7;
 constexpr u32 MAX_PRESENT_ATTEMPTS = 3;
-#ifdef HAS_LSFG
-static_assert(MAX_FRAMES_IN_FLIGHT <= LSFG_MAX_TARGETS);
-#endif
-
-bool CanStoreToFrame(const vk::PhysicalDevice& physical_device, VkFormat format) {
-#ifdef HAS_LSFG
-    const VkFormatProperties props{physical_device.GetFormatProperties(format)};
-    return (props.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) != 0;
-#else
-    return false;
-#endif
-}
 
 bool CanBlitToSwapchain(const vk::PhysicalDevice& physical_device, VkFormat format) {
     const VkFormatProperties props{physical_device.GetFormatProperties(format)};
@@ -51,9 +36,11 @@ bool CanBlitToSwapchain(const vk::PhysicalDevice& physical_device, VkFormat form
     };
 }
 
-[[nodiscard]] VkImageBlit MakeImageBlit(s32 frame_width, s32 frame_height, s32 swapchain_width,
-                                        s32 swapchain_height) {
-    return VkImageBlit{
+[[nodiscard]] VkImageBlit2 MakeImageBlit(s32 frame_width, s32 frame_height, s32 swapchain_width,
+                                         s32 swapchain_height) {
+    return VkImageBlit2{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2,
+        .pNext = nullptr,
         .srcSubresource = MakeImageSubresourceLayers(),
         .srcOffsets =
             {
@@ -85,9 +72,11 @@ bool CanBlitToSwapchain(const vk::PhysicalDevice& physical_device, VkFormat form
     };
 }
 
-[[nodiscard]] VkImageCopy MakeImageCopy(u32 frame_width, u32 frame_height, u32 swapchain_width,
-                                        u32 swapchain_height) {
-    return VkImageCopy{
+[[nodiscard]] VkImageCopy2 MakeImageCopy(u32 frame_width, u32 frame_height, u32 swapchain_width,
+                                         u32 swapchain_height) {
+    return VkImageCopy2{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_COPY_2,
+        .pNext = nullptr,
         .srcSubresource = MakeImageSubresourceLayers(),
         .srcOffset =
             {
@@ -128,8 +117,8 @@ PresentManager::PresentManager(const vk::Instance& instance_,
     , swapchain{swapchain_}
     , surface{surface_}
     , blit_supported{CanBlitToSwapchain(device.GetPhysical(), swapchain.GetImageViewFormat())}
-    , storage_supported{CanStoreToFrame(device.GetPhysical(), swapchain.GetImageFormat())}
-    , use_present_thread{Settings::values.async_presentation.GetValue()}
+    , use_present_thread{Settings::values.async_presentation.GetValue() ||
+                         Settings::values.frame_gen.GetValue()}
 {
     SetImageCount();
 
@@ -158,7 +147,6 @@ PresentManager::PresentManager(const vk::Instance& instance_,
             .pNext = nullptr,
             .flags = VK_FENCE_CREATE_SIGNALED_BIT,
         });
-        frame.storage_capable = storage_supported;
         free_queue.push_back(&frame);
     }
 
@@ -186,7 +174,20 @@ Frame* PresentManager::GetRenderFrame() {
     return frame;
 }
 
-void PresentManager::Present(Frame* frame) {
+Frame* PresentManager::TryGetRenderFrame() {
+    std::scoped_lock lock{free_mutex};
+    if (free_queue.size() < 2 || free_queue.front()->present_done.GetStatus() != VK_SUCCESS) {
+        return nullptr;
+    }
+    Frame* const frame = free_queue.front();
+    free_queue.pop_front();
+    frame->present_done.Reset();
+    return frame;
+}
+
+void PresentManager::Present(Frame* frame, u32 pace_index, std::chrono::nanoseconds pace_step) {
+    frame->pace_index = pace_index;
+    frame->pace_step = pace_step;
     if (use_present_thread) {
         scheduler.Record([this, frame](vk::CommandBuffer) {
             std::unique_lock lock{queue_mutex};
@@ -204,22 +205,12 @@ size_t PresentManager::MaxExtraFrames() const {
     return image_count - 1;
 }
 
-bool PresentManager::NeedsStorage(const Frame* frame, bool required) const {
-    return required && frame->storage_capable && !frame->storage_view;
-}
-
-void PresentManager::RecreateFrame(Frame* frame, u32 width, u32 height, VkFormat image_view_format,
-                                   VkRenderPass rd, bool storage) {
+void PresentManager::RecreateFrame(Frame* frame, u32 width, u32 height,
+                                   VkFormat image_view_format) {
     auto& dld = device.GetLogical();
 
     frame->width = width;
     frame->height = height;
-
-    const bool with_storage = storage && frame->storage_capable;
-    VkImageUsageFlags storage_usage = 0;
-    if (with_storage) {
-        storage_usage = VK_IMAGE_USAGE_STORAGE_BIT;
-    }
 
     frame->image = memory_allocator.CreateImage({
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
@@ -238,7 +229,7 @@ void PresentManager::RecreateFrame(Frame* frame, u32 width, u32 height, VkFormat
         .samples = VK_SAMPLE_COUNT_1_BIT,
         .tiling = VK_IMAGE_TILING_OPTIMAL,
         .usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-                 VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | storage_usage,
+                 VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
         .queueFamilyIndexCount = 0,
         .pQueueFamilyIndices = nullptr,
@@ -268,46 +259,6 @@ void PresentManager::RecreateFrame(Frame* frame, u32 width, u32 height, VkFormat
                 .layerCount = 1,
             },
     });
-
-    frame->storage_view = vk::ImageView{};
-    if (with_storage) {
-        frame->storage_view = dld.CreateImageView({
-            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-            .pNext = nullptr,
-            .flags = 0,
-            .image = *frame->image,
-            .viewType = VK_IMAGE_VIEW_TYPE_2D,
-            .format = swapchain.GetImageFormat(),
-            .components =
-                {
-                    .r = VK_COMPONENT_SWIZZLE_IDENTITY,
-                    .g = VK_COMPONENT_SWIZZLE_IDENTITY,
-                    .b = VK_COMPONENT_SWIZZLE_IDENTITY,
-                    .a = VK_COMPONENT_SWIZZLE_IDENTITY,
-                },
-            .subresourceRange =
-                {
-                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                    .baseMipLevel = 0,
-                    .levelCount = 1,
-                    .baseArrayLayer = 0,
-                    .layerCount = 1,
-                },
-        });
-    }
-
-    const VkImageView image_view{*frame->image_view};
-    frame->framebuffer = dld.CreateFramebuffer({
-        .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .renderPass = rd,
-        .attachmentCount = 1,
-        .pAttachments = &image_view,
-        .width = width,
-        .height = height,
-        .layers = 1,
-    });
 }
 
 void PresentManager::WaitPresent() {
@@ -331,21 +282,33 @@ void PresentManager::PresentThread(std::stop_token token) {
     Common::SetCurrentThreadName("VulkanPresent");
     Common::SetCurrentThreadPriority(Common::ThreadPriority::High);
     Common::SetCurrentThreadToPerformanceCores();
+    std::chrono::steady_clock::time_point pace_anchor{};
     while (!token.stop_requested()) {
         std::unique_lock lock{queue_mutex};
         // Wait for presentation frames
         frame_cv.wait(lock, token, [this] { return !present_queue.empty(); });
+        if (!present_queue.empty() && present_queue.front()->pace_index != 0) {
+            const Frame* const held = present_queue.front();
+            const auto next_anchor = [this] {
+                return std::any_of(present_queue.begin() + 1, present_queue.end(),
+                                   [](const Frame* next) { return next->pace_index == 0; });
+            };
+            void(frame_cv.wait_until(lock, token,
+                                     pace_anchor + held->pace_step * held->pace_index,
+                                     next_anchor));
+        }
         if (!token.stop_requested()) {
             // Take the frame and notify anyone waiting
             Frame* frame = present_queue.front();
             present_queue.pop_front();
             frame_cv.notify_one();
 
-            // By exchanging the lock ownership we take the swapchain lock
-            // before the queue lock goes out of scope. This way the swapchain
-            // lock in WaitPresent is guaranteed to occur after here.
             void(std::exchange(lock, std::unique_lock{swapchain_mutex}));
             CopyToSwapchain(frame);
+            if (frame->pace_index == 0 && frame->pace_step.count() != 0) {
+                frame->present_done.Wait(static_cast<u64>(frame->pace_step.count()));
+                pace_anchor = std::chrono::steady_clock::now();
+            }
 
             // Free the frame for reuse
             std::scoped_lock fl{free_mutex};
@@ -367,9 +330,9 @@ void PresentManager::SetImageCount() {
 #ifdef HAS_LSFG
     const size_t generations = Settings::FrameGenMaxGenerations();
     const size_t queued_composites = Settings::values.frame_gen_queue_target.GetValue() + 1;
-    image_count =
-        std::clamp<size_t>((generations + 1) * queued_composites, swapchain.GetImageCount(),
-                           MAX_FRAMES_IN_FLIGHT);
+    const size_t baseline = swapchain.GetImageCount() + generations;
+    image_count = std::min<size_t>((std::max)((generations + 1) * queued_composites, baseline),
+                                   MAX_FRAMES_IN_FLIGHT);
 #else
     image_count = std::min<size_t>(swapchain.GetImageCount(), MAX_FRAMES_IN_FLIGHT);
 #endif
@@ -378,18 +341,24 @@ void PresentManager::SetImageCount() {
 }
 
 void PresentManager::DiscardFrame(Frame* frame) {
-    static constexpr VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-    const VkSemaphore render_ready = *frame->render_ready;
-    const VkSubmitInfo submit_info{
-        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+    const VkSemaphoreSubmitInfo wait_info{
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
         .pNext = nullptr,
-        .waitSemaphoreCount = 1U,
-        .pWaitSemaphores = &render_ready,
-        .pWaitDstStageMask = &wait_stage,
-        .commandBufferCount = 0U,
-        .pCommandBuffers = nullptr,
-        .signalSemaphoreCount = 0U,
-        .pSignalSemaphores = nullptr,
+        .semaphore = *frame->render_ready,
+        .value = 0,
+        .stageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
+        .deviceIndex = 0,
+    };
+    const VkSubmitInfo2 submit_info{
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+        .pNext = nullptr,
+        .flags = 0,
+        .waitSemaphoreInfoCount = 1U,
+        .pWaitSemaphoreInfos = &wait_info,
+        .commandBufferInfoCount = 0U,
+        .pCommandBufferInfos = nullptr,
+        .signalSemaphoreInfoCount = 0U,
+        .pSignalSemaphoreInfos = nullptr,
     };
 
     std::scoped_lock submit_lock{scheduler.submit_mutex};
@@ -449,11 +418,13 @@ void PresentManager::CopyToSwapchainImpl(Frame* frame) {
     const VkImage image{swapchain.CurrentImage()};
     const VkExtent2D extent = swapchain.GetExtent();
     const std::array pre_barriers{
-        VkImageMemoryBarrier{
-            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        VkImageMemoryBarrier2{
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
             .pNext = nullptr,
-            .srcAccessMask = 0,
-            .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+            .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+            .srcAccessMask = VK_ACCESS_2_NONE,
+            .dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+            .dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
             .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
             .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
@@ -467,11 +438,13 @@ void PresentManager::CopyToSwapchainImpl(Frame* frame) {
                 .layerCount = VK_REMAINING_ARRAY_LAYERS,
             },
         },
-        VkImageMemoryBarrier{
-            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        VkImageMemoryBarrier2{
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
             .pNext = nullptr,
-            .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-            .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+            .srcStageMask = vk::PIPELINE_STAGE_IMAGE_USERS,
+            .srcAccessMask = vk::ACCESS_IMAGE_WRITES,
+            .dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+            .dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT,
             .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
             .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
@@ -487,11 +460,13 @@ void PresentManager::CopyToSwapchainImpl(Frame* frame) {
         },
     };
     const std::array post_barriers{
-        VkImageMemoryBarrier{
-            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        VkImageMemoryBarrier2{
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
             .pNext = nullptr,
-            .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-            .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT,
+            .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+            .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+            .dstStageMask = VK_PIPELINE_STAGE_2_NONE,
+            .dstAccessMask = VK_ACCESS_2_NONE,
             .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
             .newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
@@ -505,11 +480,13 @@ void PresentManager::CopyToSwapchainImpl(Frame* frame) {
                 .layerCount = VK_REMAINING_ARRAY_LAYERS,
             },
         },
-        VkImageMemoryBarrier{
-            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        VkImageMemoryBarrier2{
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
             .pNext = nullptr,
-            .srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-            .dstAccessMask = VK_ACCESS_MEMORY_WRITE_BIT,
+            .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+            .srcAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT,
+            .dstStageMask = vk::PIPELINE_STAGE_IMAGE_USERS,
+            .dstAccessMask = vk::ACCESS_IMAGE_USERS,
             .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
             .newLayout = VK_IMAGE_LAYOUT_GENERAL,
             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
@@ -525,8 +502,7 @@ void PresentManager::CopyToSwapchainImpl(Frame* frame) {
         },
     };
 
-    cmdbuf.PipelineBarrier(vk::PIPELINE_STAGE_GRAPHICS_COMPUTE_TRANSFER, VK_PIPELINE_STAGE_TRANSFER_BIT, {},
-                           {}, {}, pre_barriers);
+    cmdbuf.PipelineBarrier(0, {}, {}, pre_barriers);
 
     if (blit_supported) {
         cmdbuf.BlitImage(*frame->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image,
@@ -539,30 +515,55 @@ void PresentManager::CopyToSwapchainImpl(Frame* frame) {
                          MakeImageCopy(frame->width, frame->height, extent.width, extent.height));
     }
 
-    cmdbuf.PipelineBarrier(VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, {},
-                           {}, {}, post_barriers);
+    cmdbuf.PipelineBarrier(0, {}, {}, post_barriers);
 
     cmdbuf.End();
 
     const VkSemaphore present_semaphore = swapchain.CurrentPresentSemaphore();
     const VkSemaphore render_semaphore = swapchain.CurrentRenderSemaphore();
-    const std::array wait_semaphores = {present_semaphore, *frame->render_ready};
-
-    static constexpr std::array<VkPipelineStageFlags, 2> wait_stage_masks{
-        VK_PIPELINE_STAGE_TRANSFER_BIT,
-        VK_PIPELINE_STAGE_TRANSFER_BIT,
+    const std::array<VkSemaphoreSubmitInfo, 2> wait_infos{{
+        {
+            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+            .pNext = nullptr,
+            .semaphore = present_semaphore,
+            .value = 0,
+            .stageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+            .deviceIndex = 0,
+        },
+        {
+            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+            .pNext = nullptr,
+            .semaphore = *frame->render_ready,
+            .value = 0,
+            .stageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+            .deviceIndex = 0,
+        },
+    }};
+    const VkCommandBufferSubmitInfo cmdbuf_info{
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
+        .pNext = nullptr,
+        .commandBuffer = *cmdbuf,
+        .deviceMask = 0,
+    };
+    const VkSemaphoreSubmitInfo signal_info{
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+        .pNext = nullptr,
+        .semaphore = render_semaphore,
+        .value = 0,
+        .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+        .deviceIndex = 0,
     };
 
-    const VkSubmitInfo submit_info{
-        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+    const VkSubmitInfo2 submit_info{
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
         .pNext = nullptr,
-        .waitSemaphoreCount = 2U,
-        .pWaitSemaphores = wait_semaphores.data(),
-        .pWaitDstStageMask = wait_stage_masks.data(),
-        .commandBufferCount = 1,
-        .pCommandBuffers = cmdbuf.address(),
-        .signalSemaphoreCount = 1U,
-        .pSignalSemaphores = &render_semaphore,
+        .flags = 0,
+        .waitSemaphoreInfoCount = 2U,
+        .pWaitSemaphoreInfos = wait_infos.data(),
+        .commandBufferInfoCount = 1U,
+        .pCommandBufferInfos = &cmdbuf_info,
+        .signalSemaphoreInfoCount = 1U,
+        .pSignalSemaphoreInfos = &signal_info,
     };
 
     // Submit the image copy/blit to the swapchain

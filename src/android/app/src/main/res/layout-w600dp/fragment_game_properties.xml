@@ -1,129 +1,363 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-FileCopyrightText: Copyright 2026 Eden Emulator Project -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!--
+    Console-style game screen, two columns (landscape / wide screens): game card and file
+    information on the left (scrollable), tabs and the options (or the settings of the opened
+    section) on the right, Play in the bottom right corner with the gamepad hints next to it.
+    IDs shared with layout/fragment_game_properties.xml.
+-->
 <androidx.constraintlayout.widget.ConstraintLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="?attr/colorSurface">
+    android:background="@drawable/console_home_base_background">
 
-    <androidx.core.widget.NestedScrollView
-        android:id="@+id/list_all"
+    <!-- Same animated background as Home, tinted with this game's colors -->
+    <org.yuzu.yuzu_emu.views.ConsoleLiquidBackgroundView
+        android:id="@+id/console_background"
         android:layout_width="0dp"
-        android:layout_height="match_parent"
-        android:clipToPadding="false"
-        android:fadeScrollbars="false"
-        android:scrollbars="vertical"
-        android:defaultFocusHighlightEnabled="false"
+        android:layout_height="0dp"
+        android:importantForAccessibility="no"
+        app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toEndOf="@+id/icon_layout"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <!-- Top bar: back (corner) | shortcut, clock, Wi-Fi/battery. The breadcrumb is kept
+         invisible only as the flexible spacer. -->
+    <LinearLayout
+        android:id="@+id/header"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="@dimen/console_home_header_margin"
+        android:layout_marginTop="@dimen/console_home_header_margin_top"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent">
 
+        <Button
+            android:id="@+id/button_back"
+            style="?attr/materialIconButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:contentDescription="@string/back"
+            app:icon="@drawable/ic_back"
+            app:iconSize="22dp"
+            app:iconTint="@color/console_home_text_primary" />
+
+        <TextView
+            android:id="@+id/console_breadcrumb"
+            android:visibility="invisible"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:letterSpacing="0.2"
+            android:singleLine="true"
+            android:textAllCaps="true"
+            android:textColor="@color/console_home_text_secondary"
+            android:textSize="13sp" />
+
+        <Button
+            android:id="@+id/button_shortcut"
+            style="?attr/materialIconButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:contentDescription="@string/game_console_shortcut"
+            app:icon="@drawable/ic_shortcut"
+            app:iconSize="22dp"
+            app:iconTint="@color/console_home_text_primary" />
+
+        <TextClock
+            android:id="@+id/console_clock"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:textColor="@color/console_home_text_primary"
+            android:textSize="18sp" />
+
+        <org.yuzu.yuzu_emu.views.ConsoleStatusView
+            android:id="@+id/console_status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="18dp" />
+
+    </LinearLayout>
+
+    <!-- Left column: the game (scrolls on short screens so nothing overlaps) -->
+    <androidx.core.widget.NestedScrollView
+        android:id="@+id/icon_scroll"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:clipToPadding="false"
+        android:paddingBottom="12dp"
+        android:scrollbars="none"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toStartOf="@+id/guideline"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/header">
+
         <LinearLayout
-            android:id="@+id/layout_all"
+            android:id="@+id/icon_layout"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:gravity="center_horizontal"
-            android:orientation="horizontal">
+            android:orientation="vertical"
+            android:paddingHorizontal="20dp"
+            android:paddingTop="8dp">
 
-            <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/list_properties"
+            <!-- Same tile as Home: rounded artwork with the animated palette outline. -->
+            <org.yuzu.yuzu_emu.views.GradientBorderCardView
+                android:id="@+id/cover_card"
+                android:layout_width="@dimen/console_game_cover_size"
+                android:layout_height="@dimen/console_game_cover_size"
+                android:layout_gravity="center_horizontal"
+                app:cardBackgroundColor="@color/console_home_card_bg"
+                app:cardCornerRadius="@dimen/console_home_card_radius"
+                app:cardElevation="0dp"
+                app:cardPreventCornerOverlap="false"
+                app:strokeWidth="0dp">
+
+                <com.google.android.material.imageview.ShapeableImageView
+                    android:id="@+id/image_game_screen"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:importantForAccessibility="no"
+                    android:scaleType="centerCrop"
+                    app:shapeAppearanceOverlay="@style/ShapeAppearance.Console.Card" />
+
+            </org.yuzu.yuzu_emu.views.GradientBorderCardView>
+
+            <com.google.android.material.textview.MaterialTextView
+                android:id="@+id/title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginTop="14dp"
+                android:ellipsize="none"
+                android:marqueeRepeatLimit="marquee_forever"
+                android:requiresFadingEdge="horizontal"
+                android:singleLine="true"
+                android:textColor="@color/console_home_text_primary"
+                android:textSize="@dimen/console_game_title_size" />
+
+            <!-- File information rows (developer, version, playtime, format, size, program ID);
+                 filled by GamePropertiesFragment. -->
+            <LinearLayout
+                android:id="@+id/console_game_info"
                 android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                tools:listitem="@layout/card_simple_outlined" />
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:background="@drawable/console_property_card_background"
+                android:orientation="vertical"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="10dp" />
 
         </LinearLayout>
 
     </androidx.core.widget.NestedScrollView>
 
-    <LinearLayout
-        android:id="@+id/icon_layout"
+    <androidx.constraintlayout.widget.Guideline
+        android:id="@+id/guideline"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent">
+        app:layout_constraintGuide_percent="0.34" />
 
-        <androidx.constraintlayout.widget.ConstraintLayout
+    <!-- Right column: tabs, then the options or the settings of the opened section -->
+    <LinearLayout
+        android:id="@+id/console_options"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_marginEnd="@dimen/console_home_side_margin"
+        android:layout_marginBottom="10dp"
+        android:orientation="vertical"
+        app:layout_constraintBottom_toTopOf="@+id/button_start"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toEndOf="@id/guideline"
+        app:layout_constraintTop_toTopOf="@id/header">
+
+        <!-- Tabs share the top bar line (between back and the status icons). -->
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_margin="8dp"
+            android:gravity="center_vertical"
+            android:minHeight="48dp"
             android:orientation="horizontal">
 
-            <Button
-                android:id="@+id/button_back"
-                style="?attr/materialIconButtonStyle"
+            <HorizontalScrollView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                app:icon="@drawable/ic_back"
-                app:iconSize="24dp"
-                app:iconTint="?attr/colorOnSurface"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toTopOf="parent" />
+                android:scrollbars="none">
 
-            <Button
-                android:id="@+id/button_shortcut"
-                style="?attr/materialIconButtonStyle"
-                android:layout_width="wrap_content"
+                <LinearLayout
+                    android:id="@+id/console_tabs"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:id="@+id/tab_settings"
+                        style="@style/ConsoleTab"
+                        android:text="@string/game_console_tab_settings" />
+
+                    <TextView
+                        android:id="@+id/tab_content"
+                        style="@style/ConsoleTab"
+                        android:text="@string/game_console_tab_content" />
+
+                    <TextView
+                        android:id="@+id/tab_data"
+                        style="@style/ConsoleTab"
+                        android:text="@string/game_console_tab_data" />
+
+                </LinearLayout>
+
+            </HorizontalScrollView>
+
+        </LinearLayout>
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/list_properties"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_marginTop="4dp"
+            android:layout_weight="1"
+            android:clipToPadding="false"
+            android:paddingBottom="12dp"
+            android:scrollbars="none"
+            tools:listitem="@layout/card_console_property" />
+
+        <!-- Settings of the section opened from the settings tab, shown in place of the cards. -->
+        <LinearLayout
+            android:id="@+id/console_inline_settings"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_marginTop="4dp"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:theme="@style/ThemeOverlay.Console.Panel"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                app:icon="@drawable/ic_shortcut"
-                app:iconSize="24dp"
-                app:iconTint="?attr/colorOnSurface"
-                app:layout_constraintTop_toTopOf="parent"
-                app:layout_constraintEnd_toEndOf="parent" />
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
 
-        </androidx.constraintlayout.widget.ConstraintLayout>
+                <Button
+                    android:id="@+id/button_inline_back"
+                    style="?attr/materialIconButtonStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:contentDescription="@string/back"
+                    app:icon="@drawable/ic_back"
+                    app:iconSize="20dp"
+                    app:iconTint="@color/console_home_text_primary" />
 
-        <com.google.android.material.card.MaterialCardView
-            style="?attr/materialCardViewElevatedStyle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginHorizontal="16dp"
-            android:layout_marginTop="8dp"
-            app:cardCornerRadius="4dp"
-            app:cardElevation="4dp">
+                <TextView
+                    android:id="@+id/inline_settings_title"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="4dp"
+                    android:layout_weight="1"
+                    android:ellipsize="end"
+                    android:singleLine="true"
+                    android:textColor="@color/console_home_text_primary"
+                    android:textSize="18sp"
+                    android:textStyle="bold" />
 
-            <ImageView
-                android:id="@+id/image_game_screen"
-                android:layout_width="175dp"
-                android:layout_height="175dp"
-                tools:src="@drawable/default_icon" />
+            </LinearLayout>
 
-        </com.google.android.material.card.MaterialCardView>
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/inline_settings_card"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_marginTop="4dp"
+                android:layout_weight="1"
+                app:cardBackgroundColor="@color/console_home_surface"
+                app:cardCornerRadius="18dp"
+                app:cardElevation="0dp"
+                app:strokeColor="@color/console_home_surface_stroke"
+                app:strokeWidth="1dp">
 
-        <com.google.android.material.textview.MaterialTextView
-            android:id="@+id/title"
-            style="@style/TextAppearance.Material3.TitleMedium"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginHorizontal="16dp"
-            android:layout_marginTop="12dp"
-            android:ellipsize="none"
-            android:marqueeRepeatLimit="marquee_forever"
-            android:requiresFadingEdge="horizontal"
-            android:singleLine="true"
-            android:textAlignment="center"
-            tools:text="deko_basic" />
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/list_inline_settings"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:clipToPadding="false"
+                    android:paddingVertical="8dp"
+                    android:scrollbars="vertical" />
 
-        <com.google.android.material.textview.MaterialTextView
-            android:id="@+id/playtime"
-            style="?attr/textAppearanceBodyMedium"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginHorizontal="16dp"
-            android:layout_marginBottom="8dp"
-            android:textAlignment="center"
-            tools:text="Game Playtime" />
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Subscreens (info, add-ons, Freedreno) hosted in place; ConsoleSubscreenHost. -->
+            <androidx.fragment.app.FragmentContainerView
+                android:id="@+id/console_subscreen_container"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_marginTop="4dp"
+                android:layout_weight="1"
+                android:visibility="gone" />
+
+        </LinearLayout>
 
     </LinearLayout>
 
-    <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+    <!-- Primary action, bottom right corner -->
+    <com.google.android.material.button.MaterialButton
         android:id="@+id/button_start"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/start"
-        app:icon="@drawable/ic_play"
+        style="@style/ConsolePlayButton"
+        android:layout_marginEnd="@dimen/console_home_side_margin"
+        android:layout_marginBottom="14dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
+
+    <!-- Gamepad hints (only shown with a controller connected) -->
+    <LinearLayout
+        android:id="@+id/console_hints"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="20dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="@id/button_start"
+        app:layout_constraintEnd_toStartOf="@id/button_start"
+        app:layout_constraintTop_toTopOf="@id/button_start">
+
+        <TextView
+            android:id="@+id/console_hint_confirm_glyph"
+            style="@style/ConsoleGlyph.Light"
+            android:text="A" />
+
+        <TextView
+            style="@style/ConsoleHintLabel"
+            android:text="@string/game_console_select" />
+
+        <TextView
+            style="@style/ConsoleGlyph.Light"
+            android:text="X" />
+
+        <TextView
+            style="@style/ConsoleHintLabel"
+            android:text="@string/home_console_play" />
+
+        <TextView
+            android:id="@+id/console_hint_back_glyph"
+            style="@style/ConsoleGlyph.Light"
+            android:text="B" />
+
+        <TextView
+            style="@style/ConsoleHintLabel"
+            android:text="@string/back" />
+
+    </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

@@ -30,12 +30,18 @@ class System;
 class DynarmicCallbacks32 : public Dynarmic::A32::UserCallbacks {
 public:
     explicit DynarmicCallbacks32(ArmDynarmic32& parent, Kernel::KProcess* process);
-    u64 MemoryRead(u32 vaddr, size_t size) override;
+    u8 MemoryRead8(u32 vaddr) override;
+    u16 MemoryRead16(u32 vaddr) override;
+    u32 MemoryRead32(u32 vaddr) override;
+    u64 MemoryRead64(u32 vaddr) override;
     std::optional<u32> MemoryReadCode(u32 vaddr) override;
     void InstructionSynchronizationBarrierRaised() override {
         last_code_addr = u64(-1); //reset back, force refetch
     }
-    void MemoryWrite(Dynarmic::A32::VAddr vaddr, u64 value, size_t size) override;
+    void MemoryWrite8(u32 vaddr, u8 value) override;
+    void MemoryWrite16(u32 vaddr, u16 value) override;
+    void MemoryWrite32(u32 vaddr, u32 value) override;
+    void MemoryWrite64(u32 vaddr, u64 value) override;
     bool MemoryWriteExclusive8(u32 vaddr, u8 value, u8 expected) override;
     bool MemoryWriteExclusive16(u32 vaddr, u16 value, u16 expected) override;
     bool MemoryWriteExclusive32(u32 vaddr, u32 value, u32 expected) override;

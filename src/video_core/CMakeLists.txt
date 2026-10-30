@@ -22,6 +22,7 @@ add_library(video_core STATIC
     buffer_cache/usage_tracker.h
     buffer_cache/virtual_range_cache.h
     buffer_cache/word_manager.h
+    cache_reclaim.h
     cache_types.h
     capture.h
     cdma_pusher.cpp
@@ -167,6 +168,8 @@ add_library(video_core STATIC
     renderer_vulkan/vk_fence_manager.h
     renderer_vulkan/vk_graphics_pipeline.cpp
     renderer_vulkan/vk_graphics_pipeline.h
+    renderer_vulkan/vk_guest_memory.cpp
+    renderer_vulkan/vk_guest_memory.h
     renderer_vulkan/vk_multi_range_buffer.cpp
     renderer_vulkan/vk_multi_range_buffer.h
     renderer_vulkan/vk_master_semaphore.cpp
@@ -256,8 +259,6 @@ add_library(video_core STATIC
     texture_cache/util.h
     textures/astc.h
     textures/astc.cpp
-    textures/bcn.cpp
-    textures/bcn.h
     textures/decoders.cpp
     textures/decoders.h
     textures/texture.cpp
@@ -406,7 +407,7 @@ if (ENABLE_OPENGL)
 endif()
 
 target_link_libraries(video_core PUBLIC common core)
-target_link_libraries(video_core PUBLIC shader_recompiler stb bc_decoder gpu_logging)
+target_link_libraries(video_core PUBLIC shader_recompiler bc_decoder gpu_logging)
 if (ENABLE_OPENGL)
     target_link_libraries(video_core PUBLIC glad)
 endif()

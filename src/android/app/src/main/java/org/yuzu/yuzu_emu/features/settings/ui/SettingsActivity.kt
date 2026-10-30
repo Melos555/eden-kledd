@@ -6,6 +6,8 @@
 
 package org.yuzu.yuzu_emu.features.settings.ui
 
+import org.yuzu.yuzu_emu.ui.home.ConsoleDialogStyler
+import org.yuzu.yuzu_emu.ui.home.ConsoleScreenStyler
 import android.content.Context
 import org.yuzu.yuzu_emu.YuzuApplication
 import android.os.Bundle
@@ -46,6 +48,15 @@ class SettingsActivity : AppCompatActivity() {
         ThemeHelper.setTheme(this)
 
         super.onCreate(savedInstanceState)
+        supportFragmentManager.registerFragmentLifecycleCallbacks(
+            ConsoleDialogStyler.fragmentCallbacks,
+            true
+        )
+        // Every screen shows the animated console background of the selected game.
+        supportFragmentManager.registerFragmentLifecycleCallbacks(
+            ConsoleScreenStyler.fragmentCallbacks,
+            true
+        )
 
         binding = ActivitySettingsBinding.inflate(layoutInflater)
         setContentView(binding.root)
@@ -114,6 +125,12 @@ class SettingsActivity : AppCompatActivity() {
         } else {
             finish()
         }
+    }
+
+    override fun setTheme(resId: Int) {
+        super.setTheme(resId)
+        // Console UI colors on top of the app theme (also re-applied after any theme change).
+        theme.applyStyle(R.style.ThemeOverlay_Console, true)
     }
 
     override fun onStart() {

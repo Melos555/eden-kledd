@@ -429,14 +429,13 @@ Can help reduce stuttering at lower framerates.</source>
     <message>
         <location filename="../../src/qt_common/config/shared_translation.cpp" line="95"/>
         <source>CPU Clocks</source>
-        <translation>Тактові частоти ЦП</translation>
+        <translation type="unfinished"/>
     </message>
     <message>
         <location filename="../../src/qt_common/config/shared_translation.cpp" line="96"/>
         <source>Raises the clock the emulated CPU reports, which removes some FPS limiters.
 Weaker CPUs may see reduced performance, and certain games may behave improperly.</source>
-        <translation>Збільшує тактову частоту, про яку повідомляє емульований ЦП, завдяки чому прибираються деякі обмеження частоти кадрів.
-На слабших ЦП це може спричинити зменшення продуктивності, а деякі ігри можуть неправильно відтворюватися.</translation>
+        <translation type="unfinished"/>
     </message>
     <message>
         <location filename="../../src/qt_common/config/shared_translation.cpp" line="100"/>
@@ -594,22 +593,12 @@ SMAA забезпечує найкращу якість.
 FXAA може створювати стабільніше зображення при низьких роздільностях.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="155"/>
-        <source>Enable post-processing effects</source>
-        <translation>Увімкнути ефекти постобробки</translation>
-    </message>
-    <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="156"/>
-        <source>Applies post-processing effects to the final image.</source>
-        <translation>Застосовує ефекти постобробки до фінального зображення.</translation>
-    </message>
-    <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="157"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="154"/>
         <source>Fullscreen Mode:</source>
         <translation>Повноекранний режим:</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="158"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="155"/>
         <source>The method used to render the window in fullscreen.
 Borderless offers the best compatibility with the on-screen keyboard that some games request for input.
 Exclusive fullscreen may offer better performance and better Freesync/Gsync support.</source>
@@ -618,12 +607,12 @@ Exclusive fullscreen may offer better performance and better Freesync/Gsync supp
 «Ексклюзивний повноекранний» може надати кращі продуктивність і підтримку Freesync/Gsync.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="162"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="159"/>
         <source>Aspect Ratio:</source>
         <translation>Співвідношення сторін:</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="163"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="160"/>
         <source>Stretches the renderer to fit the specified aspect ratio.
 Most games only support 16:9, so modifications are required to get other ratios.
 Also controls the aspect ratio of captured screenshots.</source>
@@ -632,36 +621,36 @@ Also controls the aspect ratio of captured screenshots.</source>
 Також керує співвідношеням сторін знімків екрана.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="166"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="163"/>
         <source>Use persistent pipeline cache</source>
         <translation>Використовувати стійкий кеш конвеєра</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="167"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="164"/>
         <source>Allows saving shaders to storage for faster loading on following game boots.
 Disabling it is only intended for debugging.</source>
         <translation>Дозволяє зберігати шейдери на накопичувачі для швидшого завантаження під час наступних запусків гри.
 Вимкнення цього налаштування задумане лише для зневадження.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="170"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="167"/>
         <source>Use asynchronous GPU emulation</source>
         <translation>Використовувати асинхронну емуляцію ГП</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="171"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="168"/>
         <source>Uses an extra CPU thread for rendering.
 This option should always remain enabled.</source>
         <translation>Використовує додатковий потік ЦП для візуалізації.
 Це налаштування повинно завжди залишатися увімкненим.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="172"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="169"/>
         <source>NVDEC emulation:</source>
         <translation>Емуляція NVDEC:</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="173"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="170"/>
         <source>Specifies how videos should be decoded.
 It can either use the CPU or the GPU for decoding, or perform no decoding at all (black screen on videos).
 In most cases, GPU decoding provides the best performance.</source>
@@ -670,12 +659,12 @@ In most cases, GPU decoding provides the best performance.</source>
 У більшості випадків декодування за допомогою ГП забезпечує найкращу продуктивність.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="176"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="173"/>
         <source>ASTC Decoding Method:</source>
         <translation>Метод декодування ASTC:</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="177"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="174"/>
         <source>This option controls how ASTC textures should be decoded.
 CPU: Use the CPU for decoding.
 GPU: Use the GPU's compute shaders to decode ASTC textures (recommended).
@@ -687,12 +676,12 @@ stuttering but may present artifacts.</source>
 Асинхронно ЦП: Використання ЦП для декодування ASTC-текстур по мірі їх викликів. Повністю усуває затримки декодування ASTC ціною проблем з візуалізацією, поки текстури декодуються.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="182"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="179"/>
         <source>ASTC Recompression Method:</source>
         <translation>Метод перестиснення ASTC:</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="183"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="180"/>
         <source>Most GPUs lack support for ASTC textures and must decompress to anintermediate format: RGBA8.
 BC1/BC3: The intermediate format will be recompressed to BC1 or BC3 format,
  saving VRAM but degrading image quality.</source>
@@ -700,64 +689,44 @@ BC1/BC3: The intermediate format will be recompressed to BC1 or BC3 format,
 BC1/BC3: Проміжний формат буде перепаковано у формат BC1 або BC3 для збереження відеопам’яті, але це негатривно вплине на якість зображення.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="187"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="184"/>
         <source>Frame Pacing Mode (Vulkan only)</source>
         <translation>Режим виведення кадрів (лише Vulkan)</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="188"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="185"/>
         <source>Controls how the emulator manages frame pacing to reduce stuttering and make the frame rate smoother and more consistent.</source>
         <translation>Керує тим, як емулятор виконує виведення кадрів, щоб зменшити затримки й забезпечити плавнішу й стабільнішу частоту кадрів.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="190"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="187"/>
         <source>VRAM Usage Mode:</source>
         <translation>Режим використання відеопам’яті:</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="191"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="188"/>
         <source>Selects whether the emulator should prefer to conserve memory or make maximum usage of available video memory for performance.
 Aggressive mode may impact performance of other applications such as recording software.</source>
         <translation>Це налаштування вибирає, чи повинен емулятор надавати перевагу заощадженню пам’яті, чи по максимуму використовувати доступну відеопам’ять задля продуктивності.
 Режим «Агресивно» може вплинути на продуктивність інших застосунків, як-от засоби запису.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="194"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="191"/>
         <source>Skip CPU Inner Invalidation</source>
         <translation>Пропускати внутрішнє анулювання ЦП</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="195"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="192"/>
         <source>Skips certain cache invalidations during memory updates, reducing CPU usage and improving latency. This may cause soft-crashes.</source>
         <translation>Пропускає деякі анулювання кешу під час оновлень пам’яті, зменшуючи використання ЦП й виправляючи затримки. Це може спричинити збої.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="198"/>
-        <source>GPU Readback Before NCE Invalidation</source>
-        <translation type="unfinished"/>
-    </message>
-    <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="199"/>
-        <source>Flushes GPU buffer data back to guest memory before NCE invalidates the whole guest page, preserving it while the CPU store proceeds.</source>
-        <translation type="unfinished"/>
-    </message>
-    <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="202"/>
-        <source>Patch Runtime NROs for NCE</source>
-        <translation type="unfinished"/>
-    </message>
-    <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="203"/>
-        <source>Applies NCE code patches to runtime-loaded NRO modules.This is required for some games to run correctly.</source>
-        <translation type="unfinished"/>
-    </message>
-    <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="205"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="194"/>
         <source>VSync Mode:</source>
         <translation>Режим вертикальної синхронізації:</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="206"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="195"/>
         <source>FIFO (VSync) does not drop frames or exhibit tearing but is limited by the screen refresh rate.
 FIFO Relaxed allows tearing as it recovers from a slow down.
 Mailbox can have lower latency than FIFO and does not tear but may drop frames.
@@ -768,12 +737,12 @@ Mailbox може мати меншу затримку, ніж FIFO, і не ма
 Immediate (без синхронізації) показує всі кадри й може створювати розриви.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="218"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="207"/>
         <source>Sync Memory Operations</source>
         <translation>Синхронізувати операції з пам’яттю</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="219"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="208"/>
         <source>Ensures data consistency between compute and memory operations.
 This option fixes issues in games, but may degrade performance.
 Unreal Engine 4 games often see the most significant changes thereof.</source>
@@ -782,44 +751,44 @@ Unreal Engine 4 games often see the most significant changes thereof.</source>
 Ігри на Unreal Engine 4 часто зазнають найзначніших змін.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="222"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="211"/>
         <source>Enable asynchronous presentation (Vulkan only)</source>
         <translation>Увімкнути асинхронне подання (лише Vulkan)</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="223"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="212"/>
         <source>Slightly improves performance by moving presentation to a separate CPU thread.</source>
         <translation>Трохи покращує продуктивність завдяки переміщенню подання на окремий потік ЦП.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="225"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="214"/>
         <source>Force maximum clocks (Vulkan only)</source>
         <translation>Примусово максимальна тактова частота (лише Vulkan)</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="226"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="215"/>
         <source>Runs work in the background while waiting for graphics commands to keep the GPU from lowering its clock speed.</source>
         <translation>Виконує роботу у фоновому режимі в очікуванні графічних команд, не даючи змоги ГП знижувати тактову частоту.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="228"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="217"/>
         <source>Anisotropic Filtering:</source>
         <translation>Анізотропна фільтрація:</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="229"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="218"/>
         <source>Controls the quality of texture rendering at oblique angles.
 Safe to set at 16x on most GPUs.</source>
         <translation>Керує якістю візуалізації текстур під непрямими кутами.
 Для більшості ГП можна вільно вибирати 16x.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="231"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="220"/>
         <source>GPU Mode:</source>
         <translation>Режим ГП:</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="232"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="221"/>
         <source>Controls the GPU emulation mode.
 Most games render fine with Fast, but Accurate is still required for some.
 Particles tend to only render correctly with Accurate mode.</source>
@@ -828,70 +797,82 @@ Particles tend to only render correctly with Accurate mode.</source>
 Частинки зазвичай правильно візуалізуються лише з режимом «Точно».</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="234"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="223"/>
         <source>DMA Accuracy:</source>
         <translation>Точність DMA:</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="235"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="224"/>
         <source>Controls the DMA read mode.
 Unsafe is faster, while Safe is more stable and can fix issues in some games.
 Default follows the GPU Accuracy setting.</source>
         <translation type="unfinished"/>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="236"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="225"/>
         <source>GPU Fence Behavior:</source>
         <translation type="unfinished"/>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="237"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="226"/>
         <source>Controls the GPU fence synchronization behavior.
 Immediate is the fastest option, but can introduce some issues.
 Balanced offers better compatibility and may fix issues in some games.
 Accurate further improves compatibility at the cost of some performance.
-Default follows the GPU Mode setting.</source>
+Strict is the slowest option, but can fix issues that require stricter synchronization.
+Default follows the GPU Accuracy setting.</source>
         <translation type="unfinished"/>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="238"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="227"/>
+        <source>Enable GPU buffer readback</source>
+        <translation type="unfinished"/>
+    </message>
+    <message>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="228"/>
+        <source>Preserves GPU-modified data by reading it back before uploading.
+Some games require this to render certain effects properly.</source>
+        <translation type="unfinished"/>
+    </message>
+    <message>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="229"/>
         <source>Enable asynchronous shader compilation</source>
         <translation>Увімкнути асинхронну компіляцію шейдерів</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="239"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="230"/>
         <source>May reduce shader stutter.</source>
         <translation>Може зменшити шейдерні затримки.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="240"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="231"/>
         <source>GPU Clocks</source>
         <translation type="unfinished"/>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="241"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="232"/>
         <source>Makes the game believe GPU work finishes faster than it does, so it stops lowering resolution and render distance to fit the Switch&apos;s clocks.</source>
         <translation type="unfinished"/>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="243"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="234"/>
         <source>GPU Unswizzle</source>
         <translation>Розпакування за допомогою ГП</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="244"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="235"/>
         <source>Accelerates BCn 3D texture decoding using GPU compute.
 Disable if experiencing crashes or graphical glitches.</source>
         <translation>Прискорює декодування 3D-текстур BCn застосовуючи обчислення за допомогою ГП.
 Вимкніть у разі збоїв або проблем із графікою.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="246"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="237"/>
         <source>GPU Unswizzle Max Texture Size</source>
         <translation>Максимальний розмір текстур для розпакування за допомогою ГП</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="247"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="238"/>
         <source>Sets the maximum size (MiB) for GPU-based texture unswizzling.
 While the GPU is faster for medium and large textures, the CPU may be more efficient for very small ones.
 Adjust this to find the balance between GPU acceleration and CPU overhead.</source>
@@ -900,48 +881,48 @@ Adjust this to find the balance between GPU acceleration and CPU overhead.</sour
 Налаштуйте, щоб збалансувати ГП-прискоренням і навантаженням на ЦП.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="251"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="242"/>
         <source>GPU Unswizzle Stream Size</source>
         <translation>Розмір потоку розпакування за допомогою ГП</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="252"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="243"/>
         <source>Sets the maximum amount of texture data (in MiB) processed per frame.
 Higher values can reduce stutter during texture loading but may impact frame consistency.</source>
         <translation>Встановлює максимальний обсяг даних текстур (у МіБ) для обробки на кадр.
 Вищі значення здатні зменшити затримки під час завантаження текстур, але можуть вплинути на стабільність кадрів.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="255"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="246"/>
         <source>GPU Unswizzle Chunk Size</source>
         <translation>Розмір блоків розпакування за допомогою ГП</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="256"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="247"/>
         <source>Determines the number of depth slices processed in a single dispatch.
 Increasing this can improve throughput on high-end GPUs but may cause TDR or driver timeouts on weaker hardware.</source>
         <translation>Визначає кількість зрізів глибини, оброблених за одне відправлення.
 Збільшення здатне покращити пропускну здатність на потужних ГП, але може призвести до TDR або затримок драйвера зі слабшим устаткуванням.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="260"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="251"/>
         <source>Use Vulkan pipeline cache</source>
         <translation>Використовувати кеш конвеєра Vulkan</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="261"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="252"/>
         <source>Enables GPU vendor-specific pipeline cache.
 This option can improve shader loading time significantly in cases where the Vulkan driver does not store pipeline cache files internally.</source>
         <translation>Вмикає особливий для різних виробників ГП кеш конвеєра.
 Це налаштування може значно зменшити час завантаження шейдерів у випадках, коли драйвер Vulkan не зберігає власний кеш конвеєра.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="264"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="255"/>
         <source>Enable Compute Pipelines (Intel Vulkan Only)</source>
         <translation>Увімкнути обчислювальні конвеєри (лише Intel Vulkan)</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="265"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="256"/>
         <source>Required by some games.
 This setting only exists for Intel proprietary drivers and may crash if enabled.
 Compute pipelines are always enabled on all other drivers.</source>
@@ -950,182 +931,194 @@ Compute pipelines are always enabled on all other drivers.</source>
 Обчислювальні конвеєри завжди увімкнені у всіх інших драйверах.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="269"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="260"/>
         <source>Enable Reactive Flushing</source>
         <translation>Увімкнути реактивне очищення</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="270"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="261"/>
         <source>Uses reactive flushing instead of predictive flushing, allowing more accurate memory syncing.</source>
         <translation>Використовує реактивне очищення замість прогнозованого, забезпечуючи точнішу синхронізацію пам’яті.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="272"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="263"/>
         <source>Sync to framerate of video playback</source>
         <translation>Синхронізувати частоту кадрів з відтворенням відео</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="273"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="264"/>
         <source>Run the game at normal speed during video playback, even when the framerate is unlocked.</source>
         <translation>Відтворювати гру з нормальною швидкістю під час відтворення відео навіть при розблокованій частоті кадрів.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="275"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="266"/>
         <source>Barrier feedback loops</source>
         <translation>Бар’єрні цикли відгуку</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="276"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="267"/>
         <source>Improves rendering of transparency effects in specific games.</source>
         <translation>Покращує візуалізацію ефектів прозорості в деяких іграх.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="277"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="268"/>
         <source>Enable buffer history</source>
         <translation>Увімкнути історію буфера</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="278"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="269"/>
         <source>Enables access to previous buffer states.
 This option may improve rendering quality and performance consistency in some games.</source>
         <translation>Вмикає доступ до попередніх станів буфера.
 Цей параметр може покращити якість візуалізації та стабільну продуктивність у деяких іграх.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="280"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="271"/>
         <source>Fix bloom effects</source>
         <translation>Виправити ефекти світіння</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="280"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="271"/>
         <source>Removes bloom in Burnout.</source>
         <translation>Прибирає світіння в Burnout.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="283"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="273"/>
+        <source>Enable Legacy Rescale Pass</source>
+        <translation>Увімкнути застаріле масштабування</translation>
+    </message>
+    <message>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="274"/>
+        <source>May fix rescale issues in some games by relying on behavior from the previous implementation.
+Legacy behavior workaround that fixes line artifacts on AMD and Intel GPUs, and grey texture flicker on Nvidia GPUs in Luigis Mansion 3.</source>
+        <translation>Може виправити проблеми з масштабуванням в іграх, покладаючись на поведінку з попередньої імплементації.
+Застаріле масштабування виправляє артефакти з лініями на ГП від AMD та Intel, а також сіре блимання текстур на ГП від Nvidia в Luigis Mansion 3.</translation>
+    </message>
+    <message>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="280"/>
         <source>Extended Dynamic State</source>
         <translation>Розширений динамічний стан</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="284"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="281"/>
         <source>Controls the number of features that can be used in Extended Dynamic State.
 Higher states allow for more features and can increase performance, but may cause additional graphical issues.</source>
         <translation>Керує кількістю функцій, які можна використовувати в «Розширеному динамічному стані».
 Вищі значення допускають більше функцій і можуть збільшити продуктивність, але можуть спричинити додаткові проблеми з графікою.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="288"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="285"/>
         <source>Vertex Input Dynamic State</source>
         <translation>Динамічний стан введення вершин</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="289"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="286"/>
         <source>Enables vertex input dynamic state feature for better quality and performance.</source>
         <translation>Вмикає можливість динамічного стану введення вершин для кращих якості й продуктивності.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="292"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="289"/>
         <source>Sample Shading</source>
         <translation>Шейдинг зразків</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="293"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="290"/>
         <source>Allows the fragment shader to execute per sample in a multi-sampled fragment instead of once per fragment. Improves graphics quality at the cost of performance.
 Higher values improve quality but degrade performance.</source>
         <translation>Дозволяє виконувати фрагмент шейдера для кожного зразка в багатозразковому фрагменті замість одного разу для кожного фрагмента. Покращує якість графікі ціною втрати продуктивності.
 Вищі значення покращують якість, але погіршують продуктивність.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="300"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="297"/>
         <source>RNG Seed</source>
         <translation>Початкове значення RNG</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="301"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="298"/>
         <source>Controls the seed of the random number generator.
 Mainly used for speedrunning.</source>
         <translation>Керує початковим значення генератора випадкових чисел.
 Зазвичай використовується в спідранах.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="303"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="300"/>
         <source>Device Name</source>
         <translation>Назва пристрою</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="303"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="300"/>
         <source>The name of the console.</source>
         <translation>Назва консолі.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="304"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="301"/>
         <source>Homebrew Args</source>
         <translation>Параметри запуску Homebrew</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="305"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="302"/>
         <source>Command-line arguments passed to homebrew at launch (e.g. -noglsl).</source>
         <translation>Параметри командного рядка, що передаються Homebrew при запуску (як-от noglsl).</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="306"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="303"/>
         <source>Custom RTC Date:</source>
         <translation>Користувацька дата RTC:</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="307"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="304"/>
         <source>This option allows to change the clock of the console.
 Can be used to manipulate time in games.</source>
         <translation>Це налаштування дозволяє змінити час годинника консолі.
 Можна використовувати для маніпуляцій із часом в іграх.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="311"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="308"/>
         <source>The number of seconds from the current unix time</source>
         <translation>Кількість секунд від поточного unix-часу.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="312"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="309"/>
         <source>Language:</source>
         <translation>Мова:</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="313"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="310"/>
         <source>This option can be overridden when region setting is auto-select</source>
         <translation>Це налаштування може перевизначитися, якщо налаштування регіону вибирається автоматично</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="314"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="311"/>
         <source>Region:</source>
         <translation>Регіон:</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="314"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="311"/>
         <source>The region of the console.</source>
         <translation>Регіон консолі.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="315"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="312"/>
         <source>Time Zone:</source>
         <translation>Часовий пояс:</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="315"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="312"/>
         <source>The time zone of the console.</source>
         <translation>Часовий пояс консолі.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="316"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="313"/>
         <source>Sound Output Mode:</source>
         <translation>Режим виведення звуку:</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="317"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="314"/>
         <source>Console Mode:</source>
         <translation>Режим консолі:</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="318"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="315"/>
         <source>Selects if the console is in Docked or Handheld mode.
 Games will change their resolution, details and supported controllers and depending on this setting.
 Setting to Handheld can help improve performance for low end systems.</source>
@@ -1134,46 +1127,58 @@ Setting to Handheld can help improve performance for low end systems.</source>
 Налаштування «Портативний» може покращити продуктивність на слабких системах.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="338"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="335"/>
         <source>Prompt for user profile on boot</source>
         <translation>Запитувати профіль користувача під час запуску</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="339"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="336"/>
         <source>Useful if multiple people use the same PC.</source>
         <translation>Корисно, якщо одним комп’ютером користуються кілька користувачів.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="340"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="337"/>
         <source>Pause when not in focus</source>
         <translation>Призупиняти, якщо не у фокусі</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="341"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="338"/>
         <source>Pauses emulation when focusing on other windows.</source>
         <translation>Призупиняє емуляцію при фокусування на інших вікнах.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="342"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="339"/>
         <source>Confirm before stopping emulation</source>
         <translation>Підтверджувати зупинку емуляції</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="343"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="340"/>
         <source>Overrides prompts asking to confirm stopping the emulation.
 Enabling it bypasses such prompts and directly exits the emulation.</source>
         <translation>Перевизначає запити на підтвердження зупинки емуляції.
 Увімкнення обходить такі запити й одразу зупиняє емуляцію.</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="345"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="342"/>
         <source>Hide mouse on inactivity</source>
         <translation>Приховувати курсор миші при бездіяльності</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="346"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="343"/>
         <source>Hides the mouse after 2.5s of inactivity.</source>
         <translation>Приховує курсор миші після 2,5 с її бездіяльності.</translation>
+    </message>
+    <message>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="344"/>
+        <source>Disable controller applet</source>
+        <translation>Вимкнути аплет контролера</translation>
+    </message>
+    <message>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="345"/>
+        <source>Forcibly disables the use of the controller applet in emulated programs.
+When a program attempts to open the controller applet, it is immediately closed.</source>
+        <translation>Примусово вимикає використання в емульованих програмах аплета контролера.
+Якщо програма спробує відкрити аплет контролера, він одразу закриється.</translation>
     </message>
     <message>
         <location filename="../../src/qt_common/config/shared_translation.cpp" line="347"/>
@@ -1206,155 +1211,154 @@ Enabling it bypasses such prompts and directly exits the emulation.</source>
         <translation>Справжній аплет</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="382"/>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="681"/>
-        <source>Disabled</source>
-        <translation>Вимкнено</translation>
-    </message>
-    <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="387"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="386"/>
         <source>Never</source>
         <translation>Ніколи</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="388"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="387"/>
         <source>On Load</source>
         <translation>При завантаженні</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="389"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="388"/>
         <source>Always</source>
         <translation>Завжди</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="393"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="392"/>
         <source>CPU</source>
         <translation>ЦП</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="394"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="393"/>
         <source>GPU</source>
         <translation>ГП</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="395"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="394"/>
         <source>CPU Asynchronous</source>
         <translation>Асинхронно ЦП</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="400"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="399"/>
         <source>Uncompressed (Best quality)</source>
         <translation>Без стиснення (Найкраща якість)</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="401"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="400"/>
         <source>BC1 (Low quality)</source>
         <translation>ВС1 (Низька якість)</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="402"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="401"/>
         <source>BC3 (Medium quality)</source>
         <translation>ВС3 (Середня якість)</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="406"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="405"/>
         <location filename="../../src/qt_common/config/shared_translation.cpp" line="447"/>
         <source>Auto</source>
         <translation>Автоматично</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="407"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="406"/>
         <source>30 FPS</source>
         <translation>30 к/с</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="408"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="407"/>
         <source>60 FPS</source>
         <translation>60 к/с</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="409"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="408"/>
         <source>90 FPS</source>
         <translation>90 к/с</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="410"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="409"/>
         <source>120 FPS</source>
         <translation>120 к/с</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="414"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="413"/>
         <source>Conservative</source>
         <translation>Заощадження</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="415"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="414"/>
         <source>Aggressive</source>
         <translation>Агресивно</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="419"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="418"/>
         <source>Vulkan</source>
         <translation>Vulkan</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="421"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="420"/>
         <source>OpenGL GLSL</source>
         <translation>OpenGL GLSL</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="422"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="421"/>
         <source>OpenGL GLASM (Assembly Shaders, NVIDIA Only)</source>
         <translation>OpenGL GLASM (асемблерні шейдери, лише NVIDIA)</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="423"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="422"/>
         <source>OpenGL SPIR-V (Experimental, AMD/Mesa Only)</source>
         <translation>OpenGL SPIR-V (експериментально, лише AMD/Mesa)</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="425"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="424"/>
         <source>Null</source>
         <translation>Нічого</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="428"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="427"/>
         <source>Fast</source>
         <translation>Швидко</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="429"/>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="442"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="428"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="441"/>
         <location filename="../../src/qt_common/config/shared_translation.cpp" line="448"/>
         <source>Accurate</source>
         <translation>Точно</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="433"/>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="439"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="432"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="438"/>
         <location filename="../../src/qt_common/config/shared_translation.cpp" line="521"/>
         <source>Default</source>
         <translation>Стандартно</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="434"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="433"/>
         <source>Unsafe (fast)</source>
         <translation>Небезпечно (швидко)</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="435"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="434"/>
         <source>Safe (stable)</source>
         <translation>Безпечно (стабільно)</translation>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="440"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="439"/>
         <source>Immediate</source>
         <translation type="unfinished"/>
     </message>
     <message>
-        <location filename="../../src/qt_common/config/shared_translation.cpp" line="441"/>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="440"/>
         <source>Balanced</source>
         <translation>Збалансовано</translation>
+    </message>
+    <message>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="442"/>
+        <source>Strict</source>
+        <translation type="unfinished"/>
     </message>
     <message>
         <location filename="../../src/qt_common/config/shared_translation.cpp" line="449"/>
@@ -2131,6 +2135,11 @@ Enabling it bypasses such prompts and directly exits the emulation.</source>
         <location filename="../../src/qt_common/config/shared_translation.cpp" line="676"/>
         <source>High (512)</source>
         <translation>Високо (512)</translation>
+    </message>
+    <message>
+        <location filename="../../src/qt_common/config/shared_translation.cpp" line="681"/>
+        <source>Disabled</source>
+        <translation>Вимкнено</translation>
     </message>
     <message>
         <location filename="../../src/qt_common/config/shared_translation.cpp" line="682"/>
@@ -3265,38 +3274,33 @@ Would you like to delete the old save data?</source>
         <translation>Колір тла:</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/configuration/configure_graphics.cpp" line="234"/>
+        <location filename="../../src/yuzu/configuration/configure_graphics.cpp" line="224"/>
         <source>%</source>
         <comment>FSR/SGSR sharpening percentage (e.g. 50%)</comment>
         <translation>%</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/configuration/configure_graphics.cpp" line="310"/>
-        <source>Configure Effects...</source>
-        <translation type="unfinished"/>
-    </message>
-    <message>
-        <location filename="../../src/yuzu/configuration/configure_graphics.cpp" line="388"/>
+        <location filename="../../src/yuzu/configuration/configure_graphics.cpp" line="361"/>
         <source>Off</source>
         <translation>Вимкнено</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/configuration/configure_graphics.cpp" line="389"/>
+        <location filename="../../src/yuzu/configuration/configure_graphics.cpp" line="362"/>
         <source>VSync Off</source>
         <translation>Вертикальну синхронізацію вимкнено</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/configuration/configure_graphics.cpp" line="391"/>
+        <location filename="../../src/yuzu/configuration/configure_graphics.cpp" line="364"/>
         <source>Recommended</source>
         <translation>Рекомендовано</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/configuration/configure_graphics.cpp" line="396"/>
+        <location filename="../../src/yuzu/configuration/configure_graphics.cpp" line="369"/>
         <source>On</source>
         <translation>Увімкнено</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/configuration/configure_graphics.cpp" line="397"/>
+        <location filename="../../src/yuzu/configuration/configure_graphics.cpp" line="370"/>
         <source>VSync On</source>
         <translation>Вертикальну синхронізацію увімкнено</translation>
     </message>
@@ -4923,117 +4927,102 @@ Once deleted, these can NOT be recovered. Are you 100% sure you want to delete t
     </message>
     <message>
         <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="74"/>
-        <source>Changes apply immediately while a game is running.</source>
+        <source>ReShade FX effects are loaded from the post_shaders folder in the Eden data directory. Changes apply immediately while a game is running.</source>
         <translation type="unfinished"/>
     </message>
     <message>
-        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="78"/>
+        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="80"/>
         <source>Enable post-processing</source>
         <translation type="unfinished"/>
     </message>
     <message>
-        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="86"/>
+        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="88"/>
         <source>Preset:</source>
         <translation type="unfinished"/>
     </message>
     <message>
-        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="91"/>
+        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="93"/>
         <source>Apply</source>
         <translation type="unfinished"/>
     </message>
     <message>
-        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="102"/>
+        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="104"/>
         <source>Reset Values</source>
         <translation type="unfinished"/>
     </message>
     <message>
-        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="103"/>
+        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="105"/>
         <source>Return every effect to the values the preset ships with.</source>
         <translation type="unfinished"/>
     </message>
     <message>
-        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="114"/>
+        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="116"/>
         <source>Save As...</source>
         <translation type="unfinished"/>
     </message>
     <message>
-        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="118"/>
+        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="120"/>
         <source>Save Preset</source>
         <translation type="unfinished"/>
     </message>
     <message>
-        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="118"/>
+        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="120"/>
         <source>Preset name:</source>
         <translation type="unfinished"/>
     </message>
     <message>
-        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="129"/>
-        <source>Clear</source>
+        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="131"/>
+        <source>Delete</source>
         <translation type="unfinished"/>
     </message>
     <message>
-        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="130"/>
-        <source>Remove every effect in use and deselect the preset.</source>
-        <translation type="unfinished"/>
-    </message>
-    <message>
-        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="155"/>
+        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="159"/>
         <source>Add Effect</source>
         <translation type="unfinished"/>
     </message>
     <message>
-        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="202"/>
-        <source>None</source>
-        <translation type="unfinished"/>
-    </message>
-    <message>
-        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="231"/>
-        <source>No effects in use. Pick a preset and press Apply, or add effects one by one.</source>
-        <translation type="unfinished"/>
-    </message>
-    <message>
-        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="235"/>
+        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="229"/>
         <source>Custom chain. Pick a preset above and press Apply to replace it.</source>
         <translation type="unfinished"/>
     </message>
     <message>
-        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="241"/>
+        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="235"/>
         <source>Active preset: %1 (modified). Press Reset Values to go back to how it ships.</source>
         <translation type="unfinished"/>
     </message>
     <message>
-        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="246"/>
+        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="240"/>
         <source>Active preset: %1</source>
         <translation type="unfinished"/>
     </message>
     <message>
-        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="307"/>
+        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="301"/>
         <source>Enabled</source>
         <translation type="unfinished"/>
     </message>
     <message>
-        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="308"/>
+        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="302"/>
         <source>Disabled</source>
         <translation type="unfinished"/>
     </message>
     <message>
-        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="420"/>
+        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="414"/>
         <source>Reset to defaults</source>
         <translation type="unfinished"/>
     </message>
     <message>
-        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="455"/>
+        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="449"/>
         <source>Effect &apos;%1&apos; was not found.</source>
         <translation type="unfinished"/>
     </message>
     <message>
-        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="464"/>
+        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="458"/>
         <source>Effect failed to compile:
 %1</source>
         <translation type="unfinished"/>
     </message>
     <message>
-        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="505"/>
+        <location filename="../../src/yuzu/configuration/configure_post_processing.cpp" line="499"/>
         <source>No usable ReShade FX effects were found. Place .fx files in the post_shaders folder.</source>
         <translation type="unfinished"/>
     </message>
@@ -7051,7 +7040,7 @@ Debug Message: </source>
     </message>
     <message>
         <location filename="../../src/yuzu/main.ui" line="277"/>
-        <location filename="../../src/yuzu/main_window.cpp" line="1661"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="1675"/>
         <source>&amp;Pause</source>
         <translation>[&amp;P] Призупинити</translation>
     </message>
@@ -7202,7 +7191,7 @@ Debug Message: </source>
     </message>
     <message>
         <location filename="../../src/yuzu/main.ui" line="477"/>
-        <location filename="../../src/yuzu/main_window.cpp" line="4156"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4169"/>
         <source>&amp;Start</source>
         <translation>[&amp;S] Запустити</translation>
     </message>
@@ -7213,7 +7202,7 @@ Debug Message: </source>
     </message>
     <message>
         <location filename="../../src/yuzu/main.ui" line="493"/>
-        <location filename="../../src/yuzu/main_window.cpp" line="4157"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4170"/>
         <source>R&amp;ecord</source>
         <translation>[&amp;E] Запис</translation>
     </message>
@@ -7304,7 +7293,7 @@ Debug Message: </source>
     </message>
     <message>
         <location filename="../../src/yuzu/main.ui" line="589"/>
-        <location filename="../../src/yuzu/main_window.cpp" line="331"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="329"/>
         <location filename="../../src/qt_common/config/shared_translation.h" line="31"/>
         <source>None</source>
         <translation>Жодного</translation>
@@ -7330,405 +7319,400 @@ Debug Message: </source>
         <translation type="unfinished"/>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="332"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="330"/>
         <source>Small (32x32)</source>
         <translation>Маленький (32х32)</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="333"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="331"/>
         <source>Standard (64x64)</source>
         <translation>Стандартний (64х64)</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="334"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="332"/>
         <source>Large (128x128)</source>
         <translation>Великий (128х128)</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="335"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="333"/>
         <source>Full Size (256x256)</source>
         <translation>Повнорозмірний (256х256)</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="481"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="479"/>
         <source>Broken Vulkan Installation Detected</source>
         <translation>Виявлено пошкоджене встановлення Vulkan</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="482"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="480"/>
         <source>Vulkan initialization failed during boot.</source>
         <translation>Не вдалося ініціалізувати Vulkan під час запуску.</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="503"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="501"/>
         <source>Running a game</source>
         <extracomment>TRANSLATORS: This string is shown to the user to explain why yuzu needs to prevent the computer from sleeping</extracomment>
         <translation>Запущено гру</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="786"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="835"/>
         <source>Loading Web Applet...</source>
         <translation>Завантаження вебаплета...</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="836"/>
-        <location filename="../../src/yuzu/main_window.cpp" line="839"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="885"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="888"/>
         <source>Disable Web Applet</source>
         <translation>Вимкнути вебаплет</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="840"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="889"/>
         <source>Disabling the web applet can lead to undefined behavior and should only be used with Super Mario 3D All-Stars. Are you sure you want to disable the web applet?
 (This can be re-enabled in the Debug settings.)</source>
         <translation>Вимкнення вебапплета може призвести до несподіваної поведінки, і це слід робити лише для Super Mario 3D All-Stars. Ви впевнені, що хочете вимкнути вебапплет?
 (Його можна знову увімкнути в налаштуваннях зневадження.)</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="954"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="1003"/>
         <source>The amount of shaders currently being built</source>
         <translation>Кількість наразі створених шейдерів</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="956"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="1005"/>
         <source>The current selected resolution scaling multiplier.</source>
         <translation>Наразі вибраний множник масштабування роздільності.</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="959"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="1008"/>
         <source>Current emulation speed. Values higher or lower than 100% indicate emulation is running faster or slower than a Switch.</source>
         <translation>Поточна швидкість емуляції. Значення вище або нижче 100% вказують на те, що емуляція йде швидше або повільніше, ніж на Switch.</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="962"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="1011"/>
         <source>How many frames per second the game is currently displaying. This will vary from game to game and scene to scene.</source>
         <translation>Частота кадрів, яку наразі показує гра. Значення змінюватиметься залежно від гри та з кожною сценою.</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="966"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="1015"/>
         <source>Time taken to emulate a Switch frame, not counting framelimiting or v-sync. For full-speed emulation this should be at most 16.67 ms.</source>
         <translation>Час, потрібний для емуляції 1 кадру Switch, не враховуючи обмеження частоти кадрів або вертикальну синхронізацію. Для повношвидкісної емуляції значення повинно бути не вище 16,67 мс.</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="1027"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="1076"/>
         <source>Unmute</source>
         <translation>Увімкнути звук</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="1027"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="1076"/>
         <source>Mute</source>
         <translation>Вимкнути звук</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="1032"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="1081"/>
         <source>Reset Volume</source>
         <translation>Скинути гучність</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="1070"/>
-        <source>Configure Effects...</source>
-        <translation type="unfinished"/>
-    </message>
-    <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="1242"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="1256"/>
         <source>&amp;Clear Recent Files</source>
         <translation>[&amp;C] Очистити нещодавні файли</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="1659"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="1673"/>
         <source>&amp;Continue</source>
         <translation>[&amp;C] Продовжити</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="1821"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="1835"/>
         <source>Warning: Outdated Game Format</source>
         <translation>Увага: Застарілий формат гри</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="1822"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="1836"/>
         <source>You are using the deconstructed ROM directory format for this game, which is an outdated format that has been superseded by others such as NCA, NAX, XCI, or NSP. Deconstructed ROM directories lack icons, metadata, and update support.&lt;br&gt;For an explanation of the various Switch formats Eden supports, out our user handbook. This message will not be shown again.</source>
         <translation>Для цієї гри ви використовуєте формат теки з деконструйованим ROM, який є застарілим форматом, заміненим на інші, як-от NCA, NAX, XCI, або NSP. У тек із деконструйованими ROM немає значків, метаданих, а також вони не підтримують оновлення.&lt;br&gt;Для подробиць стосовно різноманітних форматів Switch, які підтримує Eden, ознайомтеся з нашим посібником користувача. Це повідомлення не буде показано знову.</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="1833"/>
-        <location filename="../../src/yuzu/main_window.cpp" line="1863"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="1847"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="1877"/>
         <source>Error while loading ROM!</source>
         <translation>Помилка під час завантаження ROM!</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="1834"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="1848"/>
         <source>The ROM format is not supported.</source>
         <translation>Непідтримуваний формат ROM.</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="1838"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="1852"/>
         <source>An error occurred initializing the video core.</source>
         <translation>Сталася помилка під час ініціалізації відеоядра.</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="1839"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="1853"/>
         <source>This is usually caused by outdated GPU drivers. Please see the log for more details. See: &lt;a href=&apos;https://git.eden-emu.dev/eden-emu/eden/src/branch/master/docs/user/HowToAccessLogs.md&apos;&gt;How to access log files&lt;/a&gt;.</source>
         <translation type="unfinished"/>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="1852"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="1866"/>
         <source>Error while loading ROM! %1</source>
         <comment>%1 signifies a numeric error code.</comment>
         <translation>Помилка під час завантаження ROM! %1</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="1855"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="1869"/>
         <source>%1&lt;br&gt;Please redump your files or ask on Discord/Stoat for help.</source>
         <comment>%1 signifies an error string.</comment>
         <translation>%1&lt;br&gt;Створіть новий дамп файлів або зверніться по допомогу в Discord/Stoat.</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="1864"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="1878"/>
         <source>An unknown error occurred. Please see the log for more details.</source>
         <translation>Сталася невідома помилка. Ознайомтеся з журналом, щоб дізнатися подробиці.</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2038"/>
-        <location filename="../../src/yuzu/main_window.cpp" line="4069"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2052"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4082"/>
         <source>(64-bit)</source>
         <translation>(64-бітовий)</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2038"/>
-        <location filename="../../src/yuzu/main_window.cpp" line="4069"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2052"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4082"/>
         <source>(32-bit)</source>
         <translation>(32-бітовий)</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2039"/>
-        <location filename="../../src/yuzu/main_window.cpp" line="4071"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2053"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4084"/>
         <source>%1 %2</source>
         <comment>%1 is the title name. %2 indicates if the title is 64-bit or 32-bit</comment>
         <translation>%1 %2</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2117"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2131"/>
         <source>Closing software...</source>
         <translation>Закриття програмного засобу...</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2283"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2297"/>
         <source>Save Data</source>
         <translation>Дані збережень</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2314"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2328"/>
         <source>Mod Data</source>
         <translation>Дані модів</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2327"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2341"/>
         <source>Error Opening %1 Folder</source>
         <translation>Помилка під час відкриття теки «%1»</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2328"/>
-        <location filename="../../src/yuzu/main_window.cpp" line="2661"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2342"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2675"/>
         <source>Folder does not exist!</source>
         <translation>Теки не існує!</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2406"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2420"/>
         <source>Remove Installed Game Contents?</source>
         <translation>Вилучити встановлений вміст гри?</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2408"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2422"/>
         <source>Remove Installed Game Update?</source>
         <translation>Вилучити встановлені оновлення гри?</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2410"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2424"/>
         <source>Remove Installed Game DLC?</source>
         <translation>Вилучити встановлені доповнення гри?</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2416"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2430"/>
         <source>Remove Entry</source>
         <translation>Вилучити запис</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2446"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2460"/>
         <source>Delete OpenGL Transferable Shader Cache?</source>
         <translation>Видалити переміщуваний кеш шейдерів OpenGL?</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2448"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2462"/>
         <source>Delete Vulkan Transferable Shader Cache?</source>
         <translation>Видалити переміщуваний кеш шейдерів Vulkan?</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2450"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2464"/>
         <source>Delete All Transferable Shader Caches?</source>
         <translation>Видалити весь переміщуваний кеш шейдерів?</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2452"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2466"/>
         <source>Remove Custom Game Configuration?</source>
         <translation>Вилучити користувацькі налаштування гри?</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2454"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2468"/>
         <source>Remove Cache Storage?</source>
         <translation>Вилучити сховище кешу?</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2460"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2474"/>
         <source>Remove File</source>
         <translation>Вилучити файл</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2497"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2511"/>
         <source>Remove Play Time Data</source>
         <translation>Вилучити дані награного часу</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2497"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2511"/>
         <source>Reset play time?</source>
         <translation>Скинути награний час?</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2510"/>
-        <location filename="../../src/yuzu/main_window.cpp" line="2595"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2524"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2609"/>
         <source>RomFS Extraction Failed!</source>
         <translation>Не вдалося видобути RomFS!</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2511"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2525"/>
         <source>There was an error copying the RomFS files or the user cancelled the operation.</source>
         <translation>Під час копіювання файлів RomFS сталася помилка або користувач скасував операцію.</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2570"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2584"/>
         <source>Full</source>
         <translation>Повний</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2570"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2584"/>
         <source>Skeleton</source>
         <translation>Скелет</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2572"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2586"/>
         <source>Select RomFS Dump Mode</source>
         <translation>Виберіть режим створення дампу RomFS</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2573"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2587"/>
         <source>Please select the how you would like the RomFS dumped.&lt;br&gt;Full will copy all of the files into the new directory while &lt;br&gt;skeleton will only create the directory structure.</source>
         <translation>Виберіть, як ви хочете виконати дамп RomFS &lt;br&gt;Повний скопіює всі файли до нової теки, тоді як &lt;br&gt;скелет створить лише структуру тек.</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2596"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2610"/>
         <source>There is not enough free space at %1 to extract the RomFS. Please free up space or select a different dump directory at Emulation &gt; Configure &gt; System &gt; Filesystem &gt; Dump Root</source>
         <translation>За адресою «%1» недостатньо вільного місця для видобування RomFS. Звільніть місце або виберіть іншу теку для створення дампу в «Емуляція» → «Налаштувати» → «Система» → «Файлова система» → «Коренева тека дампів».</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2603"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2617"/>
         <source>Extracting RomFS...</source>
         <translation>Видобування RomFS...</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2603"/>
-        <location filename="../../src/yuzu/main_window.cpp" line="2845"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2617"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2859"/>
         <source>Cancel</source>
         <translation>Скасувати</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2613"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2627"/>
         <source>RomFS Extraction Succeeded!</source>
         <translation>RomFS видобуто успішно!</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2614"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2628"/>
         <source>The operation completed successfully.</source>
         <translation>Операцію успішно виконано.</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2660"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2674"/>
         <source>Error Opening %1</source>
         <translation>Помилка під час відкриття «%1»</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2669"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2683"/>
         <source>Select Directory</source>
         <translation>Вибрати теку</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2698"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2712"/>
         <source>Properties</source>
         <translation>Властивості</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2699"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2713"/>
         <source>The game properties could not be loaded.</source>
         <translation>Неможливо завантажити властивості гри.</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2761"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2775"/>
         <source>Switch Executable (%1);;All Files (*.*)</source>
         <comment>%1 is an identifier for the Switch executable file extensions.</comment>
         <translation>Виконуваний файл Switch (%1);;Усі файли (*.*)</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2765"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2779"/>
         <source>Load File</source>
         <translation>Завантажити файл</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2778"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2792"/>
         <source>Open Extracted ROM Directory</source>
         <translation>Відкрити теку видобутого ROM</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2789"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2803"/>
         <source>Invalid Directory Selected</source>
         <translation>Вибрано неправильну теку</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2790"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2804"/>
         <source>The directory you have selected does not contain a &apos;main&apos; file.</source>
         <translation>Вибрана тека не містить файлу «main».</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2800"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2814"/>
         <source>Installable Switch File (*.nca *.nsp *.xci);;Nintendo Content Archive (*.nca);;Nintendo Submission Package (*.nsp);;NX Cartridge Image (*.xci)</source>
         <translation>Встановлюваний файл Switch (*.nca, *.nsp, *.xci);;Архів вмісту Nintendo (*.nca);;Пакет подання Nintendo (*.nsp);;Образ картриджа NX (*.xci)</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2805"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2819"/>
         <source>Install Files</source>
         <translation>Встановити файли</translation>
     </message>
     <message numerus="yes">
-        <location filename="../../src/yuzu/main_window.cpp" line="2852"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2866"/>
         <source>%n file(s) remaining</source>
         <translation><numerusform>Лишився 1 файл</numerusform><numerusform>Лишилося %n файли</numerusform><numerusform>Лишилося %n файлів</numerusform><numerusform>Лишилося %n файлів</numerusform></translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2854"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2868"/>
         <source>Installing file &quot;%1&quot;...</source>
         <translation>Встановлення файлу «%1»...</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2908"/>
         <location filename="../../src/yuzu/main_window.cpp" line="2922"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2936"/>
         <source>Install Results</source>
         <translation>Результати встановлення</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2909"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2923"/>
         <source>To avoid possible conflicts, we discourage users from installing base games to the NAND.
 Please, only use this feature to install updates and DLC.</source>
         <translation>Щоб уникнути можливих конфліктів, ми не радимо користувачам встановлювати ігри в NAND.
 Користуйтеся цією функцією лише для встановлення оновлень і доповнень.</translation>
     </message>
     <message numerus="yes">
-        <location filename="../../src/yuzu/main_window.cpp" line="2915"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2929"/>
         <source>%n file(s) were newly installed
 </source>
         <translation><numerusform>Щойно встановлено %n файл
@@ -7738,7 +7722,7 @@ Please, only use this feature to install updates and DLC.</source>
 </numerusform></translation>
     </message>
     <message numerus="yes">
-        <location filename="../../src/yuzu/main_window.cpp" line="2918"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2932"/>
         <source>%n file(s) were overwritten
 </source>
         <translation><numerusform>Перезаписано %n файл
@@ -7748,7 +7732,7 @@ Please, only use this feature to install updates and DLC.</source>
 </numerusform></translation>
     </message>
     <message numerus="yes">
-        <location filename="../../src/yuzu/main_window.cpp" line="2920"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2934"/>
         <source>%n file(s) failed to install
 </source>
         <translation><numerusform>Не вдалося встановити %n файл
@@ -7758,324 +7742,314 @@ Please, only use this feature to install updates and DLC.</source>
 </numerusform></translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2930"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2944"/>
         <source>System Application</source>
         <translation>Системний застосунок</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2931"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2945"/>
         <source>System Archive</source>
         <translation>Системний архів</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2932"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2946"/>
         <source>System Application Update</source>
         <translation>Оновлення системного застосунку</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2933"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2947"/>
         <source>Firmware Package (Type A)</source>
         <translation>Пакет прошивки (Тип А)</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2934"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2948"/>
         <source>Firmware Package (Type B)</source>
         <translation>Пакет прошивки (Тип Б)</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2935"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2949"/>
         <source>Game</source>
         <translation>Гра</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2936"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2950"/>
         <source>Game Update</source>
         <translation>Оновлення гри</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2937"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2951"/>
         <source>Game DLC</source>
         <translation>Доповнення гри</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2938"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2952"/>
         <source>Delta Title</source>
         <translation>Проєкт «Дельта»</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2941"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2955"/>
         <source>Select NCA Install Type...</source>
         <translation>Виберіть тип встановлення NCA...</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2942"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2956"/>
         <source>Please select the type of title you would like to install this NCA as:
 (In most instances, the default &apos;Game&apos; is fine.)</source>
         <translation>Виберіть тип проєкту, який ви хочете встановити для цього NCA:
 (У більшості випадків підходить стандартний вибір «Гра».)</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2948"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2962"/>
         <source>Failed to Install</source>
         <translation>Не вдалося встановити</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2949"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2963"/>
         <source>The title type you selected for the NCA is invalid.</source>
         <translation>Тип проєкту, який ви вибрали для NCA, неправильний.</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2984"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2998"/>
         <source>File not found</source>
         <translation>Файл не виявлено</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="2985"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="2999"/>
         <source>File &quot;%1&quot; not found</source>
         <translation>Файл «%1» не виявлено</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="3123"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="3137"/>
         <source>OK</source>
         <translation>Гаразд</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="3141"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="3155"/>
         <source>Function Disabled</source>
         <translation>Функцію вимкнену</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="3142"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="3156"/>
         <source>Compatibility list reporting is currently disabled. Check back later!</source>
         <translation>Звітування для переліку сумісності наразі вимкнено. Зазирніть пізніше!</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="3184"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="3198"/>
         <source>Error opening URL</source>
         <translation>Помилка під час відкриття URL</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="3185"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="3199"/>
         <source>Unable to open the URL &quot;%1&quot;.</source>
         <translation>Не вдалося відкрити URL: «%1».</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="3560"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="3574"/>
         <source>TAS Recording</source>
         <translation>Записування TAS</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="3560"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="3574"/>
         <source>Overwrite file of player 1?</source>
         <translation>Перезаписати файл гравця 1?</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="3584"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="3598"/>
         <source>Invalid config detected</source>
         <translation>Виявлено неправильне налаштування</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="3585"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="3599"/>
         <source>Handheld controller can&apos;t be used on docked mode. Pro controller will be selected.</source>
         <translation>Портативний контролер неможливо використовувати в режимі докстанції. Буде вибрано контролер Pro.</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="3736"/>
-        <location filename="../../src/yuzu/main_window.cpp" line="3787"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="3750"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="3801"/>
         <source>Amiibo</source>
         <translation>Amiibo</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="3736"/>
-        <location filename="../../src/yuzu/main_window.cpp" line="3787"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="3750"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="3801"/>
         <source>The current amiibo has been removed</source>
         <translation>Поточний amiibo вилучено</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="3741"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="3755"/>
         <source>Error</source>
         <translation>Помилка</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="3741"/>
-        <location filename="../../src/yuzu/main_window.cpp" line="3799"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="3755"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="3813"/>
         <source>The current game is not looking for amiibos</source>
         <translation>Поточна гра не очікує amiibo</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="3747"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="3761"/>
         <source>Amiibo File (%1);; All Files (*.*)</source>
         <translation>Файл amiibo (%1);; Усі файли (*.*)</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="3748"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="3762"/>
         <source>Load Amiibo</source>
         <translation>Завантажити amiibo</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="3783"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="3797"/>
         <source>Error loading Amiibo data</source>
         <translation>Помилка під час завантаження даних amiibo</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="3793"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="3807"/>
         <source>The selected file is not a valid amiibo</source>
         <translation>Вибраний файл не є дійсним amiibo</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="3796"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="3810"/>
         <source>The selected file is already on use</source>
         <translation>Вибраний файл уже використовується</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="3802"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="3816"/>
         <source>An unknown error occurred</source>
         <translation>Сталася невідома помилка</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="3922"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="3935"/>
         <source>No firmware available</source>
         <translation>Немає доступних прошивок</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="3926"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="3939"/>
         <source>Firmware Corrupted</source>
         <translation>Прошивка пошкоджена</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="3992"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4005"/>
         <source>Unknown applet</source>
         <translation>Невідомий аплет</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="3993"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4006"/>
         <source>Applet doesn&apos;t map to a known value.</source>
         <translation>Аплет не призначено до відомого значення.</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="3996"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4009"/>
         <source>Record not found</source>
         <translation>Запис не виявлено</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="3997"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4010"/>
         <source>Applet not found. Please reinstall firmware.</source>
         <translation>Аплет не виявлено. Перевстановіть прошивку.</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="4029"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4042"/>
         <source>Capture Screenshot</source>
         <translation>Зробити знімок екрана</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="4030"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4043"/>
         <source>PNG Image (*.png)</source>
         <translation>Зображення PNG (*.png)</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="4132"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4145"/>
         <source>TAS state: Running %1/%2</source>
         <translation>Стан TAS: Працює %1/%2</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="4136"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4149"/>
         <source>TAS state: Recording %1</source>
         <translation>Стан TAS: Триває запис %1</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="4138"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4151"/>
         <source>TAS state: Idle %1/%2</source>
         <translation>Стан TAS: Бездіяльність %1/%2</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="4142"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4155"/>
         <source>TAS State: Invalid</source>
         <translation>Стан TAS: Неправильний</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="4156"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4169"/>
         <source>&amp;Stop Running</source>
         <translation>[&amp;S] Зупинити</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="4157"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4170"/>
         <source>Stop R&amp;ecording</source>
         <translation>[&amp;E] Зупинити запис</translation>
     </message>
     <message numerus="yes">
-        <location filename="../../src/yuzu/main_window.cpp" line="4182"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4195"/>
         <source>Building: %n shader(s)</source>
         <translation><numerusform>Компіляція: %n шейдер</numerusform><numerusform>Компіляція: %n шейдери</numerusform><numerusform>Компіляція: %n шейдерів</numerusform><numerusform>Компіляція: %n шейдерів</numerusform></translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="4191"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4204"/>
         <source>Scale: %1x</source>
         <comment>%1 is the resolution scaling factor</comment>
         <translation>Масштаб: %1x</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="4194"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4207"/>
         <source>Speed: %1% / %2%</source>
         <translation>Швидкість: %1% / %2%</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="4198"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4211"/>
         <source>Speed: %1%</source>
         <translation>Швидкість: %1%</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="4201"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4214"/>
         <source>Game: %1 FPS</source>
         <translation>Гра: %1 к/с</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="4207"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4220"/>
         <source>Frame: %1 ms</source>
         <translation>Кадр: %1 мс</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="4248"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4261"/>
         <source>NO AA</source>
         <translation>БЕЗ ЗГЛАДЖУВАННЯ</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="4258"/>
-        <source>NO FX</source>
-        <translation type="unfinished"/>
-    </message>
-    <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="4264"/>
-        <source>FX</source>
-        <translation type="unfinished"/>
-    </message>
-    <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="4277"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4270"/>
         <source>VOLUME: MUTE</source>
         <translation>ГУЧНІСТЬ: ВИМКНЕНО</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="4280"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4273"/>
         <source>VOLUME: %1%</source>
         <comment>Volume percentage (e.g. 50%)</comment>
         <translation>ГУЧНІСТЬ: %1%</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="4343"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4336"/>
         <source>Derivation Components Missing</source>
         <translation>Відсутні компоненти виведення</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="4344"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4337"/>
         <source>Decryption keys are missing. Install them now?</source>
         <translation>Відсутні ключі шифрування. Встановити їх зараз?</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="4374"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4367"/>
         <source>Wayland Detected!</source>
         <translation>Виявлено Wayland!</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="4376"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4369"/>
         <source>Wayland is known to have significant performance issues and mysterious bugs.
 It's recommended to use X11 instead.
 
@@ -8086,74 +8060,74 @@ Would you like to force it for future launches?</source>
 Хочете примусово увімкнути його для наступних запусків?</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="4381"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4374"/>
         <source>Use X11</source>
         <translation>Використовувати X11</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="4382"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4375"/>
         <source>Continue with Wayland</source>
         <translation>Продовжити з Wayland</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="4385"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4378"/>
         <source>Don&apos;t show again</source>
         <translation>Не показувати знову</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="4399"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4392"/>
         <source>Restart Required</source>
         <translation>Потрібен перезапуск</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="4400"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4393"/>
         <source>Restart Eden to apply the X11 backend.</source>
         <translation>Перезапуск Eden для застосування бекенду X11.</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="4438"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4431"/>
         <source>Slow</source>
         <translation>Сповільнення</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="4441"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4434"/>
         <source>Turbo</source>
         <translation>Прискорення</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="4445"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4438"/>
         <source>Unlocked</source>
         <translation>Розблоковано</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="4495"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4488"/>
         <source>Select RomFS Dump Target</source>
         <translation>Виберіть розташування для створення дампу RomFS</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="4496"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4489"/>
         <source>Please select which RomFS you would like to dump.</source>
         <translation>Виберіть, який дамп RomFS ви хочете створити.</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="4519"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4512"/>
         <source>Are you sure you want to close Eden?</source>
         <translation>Ви впевнені, що хочете закрити Eden?</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="4520"/>
-        <location filename="../../src/yuzu/main_window.cpp" line="4608"/>
-        <location filename="../../src/yuzu/main_window.cpp" line="4620"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4513"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4601"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4613"/>
         <source>Eden</source>
         <translation>Eden</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="4609"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4602"/>
         <source>Are you sure you want to stop the emulation? Any unsaved progress will be lost.</source>
         <translation>Ви впевнені, що хочете зупинити емуляцію? Увесь незбережений поступ буде втрачено.</translation>
     </message>
     <message>
-        <location filename="../../src/yuzu/main_window.cpp" line="4617"/>
+        <location filename="../../src/yuzu/main_window.cpp" line="4610"/>
         <source>The currently running application has requested Eden to not exit.
 
 Would you like to bypass this and exit anyway?</source>

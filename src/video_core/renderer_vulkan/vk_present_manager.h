@@ -7,6 +7,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <mutex>
 #include <boost/container/deque.hpp>
@@ -32,12 +33,11 @@ struct Frame {
     u32 index;
     vk::Image image;
     vk::ImageView image_view;
-    vk::ImageView storage_view;
-    vk::Framebuffer framebuffer;
     vk::CommandBuffer cmdbuf;
     vk::Semaphore render_ready;
     vk::Fence present_done;
-    bool storage_capable{};
+    std::chrono::nanoseconds pace_step{};
+    u32 pace_index{};
 };
 
 class PresentManager {
@@ -54,14 +54,13 @@ public:
     /// Returns the last used presentation frame
     Frame* GetRenderFrame();
 
+    [[nodiscard]] Frame* TryGetRenderFrame();
+
     /// Pushes a frame for presentation
-    void Present(Frame* frame);
+    void Present(Frame* frame, u32 pace_index, std::chrono::nanoseconds pace_step);
 
     /// Recreates the present frame to match the provided parameters
-    void RecreateFrame(Frame* frame, u32 width, u32 height, VkFormat image_view_format,
-                       VkRenderPass rd, bool storage);
-
-    [[nodiscard]] bool NeedsStorage(const Frame* frame, bool required) const;
+    void RecreateFrame(Frame* frame, u32 width, u32 height, VkFormat image_view_format);
 
     /// Waits for the present thread to finish presenting all queued frames.
     void WaitPresent();
@@ -104,7 +103,6 @@ private:
     std::mutex free_mutex;
     std::jthread present_thread;
     bool blit_supported;
-    bool storage_supported;
     bool use_present_thread;
     std::atomic<std::size_t> image_count{};
     std::atomic<std::size_t> swapchain_image_count{};

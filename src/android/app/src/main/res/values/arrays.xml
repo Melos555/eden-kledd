@@ -558,6 +558,7 @@
         <item>@string/gpu_fence_behavior_immediate</item>
         <item>@string/gpu_fence_behavior_balanced</item>
         <item>@string/gpu_fence_behavior_accurate</item>
+        <item>@string/gpu_fence_behavior_strict</item>
     </string-array>
     <integer-array name="gpuFenceBehaviorValues">
         <item>0</item>
@@ -588,54 +589,6 @@
         <item>0</item>
         <item>1</item>
         <item>2</item>
-    </integer-array>
-
-    <string-array name="gpuTextureSizeSwizzleEntries">
-        <item>@string/gpu_texturesizeswizzle_verysmall</item>
-        <item>@string/gpu_texturesizeswizzle_small</item>
-        <item>@string/gpu_texturesizeswizzle_normal</item>
-        <item>@string/gpu_texturesizeswizzle_large</item>
-        <item>@string/gpu_texturesizeswizzle_verylarge</item>
-    </string-array>
-
-    <integer-array name="gpuTextureSizeSwizzleValues">
-        <item>0</item>
-        <item>1</item>
-        <item>2</item>
-        <item>3</item>
-        <item>4</item>
-    </integer-array>
-
-    <string-array name="gpuSwizzleEntries">
-        <item>@string/gpu_swizzle_verylow</item>
-        <item>@string/gpu_swizzle_low</item>
-        <item>@string/gpu_swizzle_normal</item>
-        <item>@string/gpu_swizzle_medium</item>
-        <item>@string/gpu_swizzle_high</item>
-    </string-array>
-
-    <integer-array name="gpuSwizzleValues">
-        <item>0</item>
-        <item>1</item>
-        <item>2</item>
-        <item>3</item>
-        <item>4</item>
-    </integer-array>
-    
-    <string-array name="gpuSwizzleChunkEntries">
-        <item>@string/gpu_swizzlechunk_verylow</item>
-        <item>@string/gpu_swizzlechunk_low</item>
-        <item>@string/gpu_swizzlechunk_normal</item>
-        <item>@string/gpu_swizzlechunk_medium</item>
-        <item>@string/gpu_swizzlechunk_high</item>
-    </string-array>
-
-    <integer-array name="gpuSwizzleChunkValues">
-        <item>0</item>
-        <item>1</item>
-        <item>2</item>
-        <item>3</item>
-        <item>4</item>
     </integer-array>
 
     <string-array name="temperatureUnitEntries">

@@ -130,14 +130,12 @@ ENUM(TimeZone, Auto, Default, Cet, Cst6Cdt, Cuba, Eet, Egypt, Eire, Est, Est5Edt
     Roc, Rok, Singapore, Turkey, Uct, Universal, Utc, WSu, Wet, Zulu);
 ENUM(AnisotropyMode, Automatic, Default, X2, X4, X8, X16);
 ENUM(AstcDecodeMode, Cpu, Gpu, CpuAsynchronous);
-ENUM(AstcRecompression, Uncompressed, Bc1, Bc3);
-ENUM(FramePacingMode, Target_Auto, Target_30, Target_60, Target_90, Target_120);
 ENUM(VSyncMode, Immediate, Mailbox, Fifo, FifoRelaxed);
 ENUM(VramUsageMode, Conservative, Aggressive);
 ENUM(RendererBackend, OpenGL_GLSL, Vulkan, Null, OpenGL_GLASM, OpenGL_SPIRV);
 ENUM(GpuAccuracy, Low, High);
 ENUM(DmaAccuracy, Default, Unsafe, Safe);
-ENUM(GpuFenceBehavior, Default, Immediate, Balanced, Accurate);
+ENUM(GpuFenceBehavior, Default, Immediate, Balanced, Accurate, Strict);
 ENUM(CpuBackend, Dynarmic, Nce);
 ENUM(CpuAccuracy, Auto, Accurate, Unsafe, Paranoid, Debugging);
 ENUM(CpuClock, Normal, Boost, Overclock)
@@ -150,12 +148,9 @@ ENUM(ScalingFilter, NearestNeighbor, Bilinear, Bicubic, Gaussian, Lanczos, Scale
 ENUM(AntiAliasing, None, Fxaa, Smaa);
 ENUM(AspectRatio, R16_9, R4_3, R21_9, R16_10, Stretch);
 ENUM(ConsoleMode, Handheld, Docked);
-ENUM(AppletMode, HLE, LLE, Disabled);
+ENUM(AppletMode, HLE, LLE);
 ENUM(SpirvOptimizeMode, Never, OnLoad, Always);
 ENUM(GpuClock, Normal, Boost, Overclock)
-ENUM(GpuUnswizzleSize, VerySmall, Small, Normal, Large, VeryLarge)
-ENUM(GpuUnswizzle, VeryLow, Low, Normal, Medium, High)
-ENUM(GpuUnswizzleChunk, VeryLow, Low, Normal, Medium, High)
 ENUM(TemperatureUnits, Celsius, Fahrenheit)
 ENUM(ExtendedDynamicState, Disabled, EDS1, EDS2, EDS3);
 ENUM(GpuLogLevel, Off, Errors, Standard, Verbose, All)

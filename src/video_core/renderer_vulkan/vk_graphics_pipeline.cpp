@@ -125,22 +125,49 @@ PixelFormat DecodeFormat(u8 encoded_format) {
     return PixelFormatFromRenderTargetFormat(format);
 }
 
-RenderPassKey MakeRenderPassKey(const FixedPipelineState& state, const Device& device) {
-    RenderPassKey key{};
-    std::ranges::transform(state.color_formats, key.color_formats.begin(), DecodeFormat);
+RenderingFormats PipelineFormats(const FixedPipelineState& state, const Device& device) {
+    std::array<PixelFormat, Maxwell::NumRenderTargets> color_formats;
+    std::ranges::transform(state.color_formats, color_formats.begin(), DecodeFormat);
+    PixelFormat depth_format = PixelFormat::Invalid;
     if (state.depth_enabled != 0) {
-        const auto depth_format{static_cast<Tegra::DepthFormat>(state.depth_format.Value())};
-        key.depth_format = PixelFormatFromDepthFormat(depth_format);
-    } else {
-        key.depth_format = PixelFormat::Invalid;
+        depth_format = PixelFormatFromDepthFormat(
+            static_cast<Tegra::DepthFormat>(state.depth_format.Value()));
     }
-    key.samples = MaxwellToVK::MsaaMode(state.msaa_mode);
-    const bool has_color = std::ranges::any_of(key.color_formats, [](PixelFormat format) {
-        return format != PixelFormat::Invalid;
-    });
-    key.resolve_color =
-        key.samples != VK_SAMPLE_COUNT_1_BIT && has_color && device.IsTiler();
-    return key;
+    return MakeRenderingFormats(device, color_formats, depth_format);
+}
+
+struct AttachmentAccess {
+    u32 touched;
+    u32 written;
+};
+
+AttachmentAccess MakeAttachmentAccess(const Maxwell& regs) {
+    AttachmentAccess access{};
+    if (regs.rasterize_enable == 0) {
+        return access;
+    }
+    for (size_t index = 0; index < Maxwell::NumRenderTargets; ++index) {
+        size_t mask_index = index;
+        if (regs.color_mask_common) {
+            mask_index = 0;
+        }
+        const auto& mask = regs.color_mask[mask_index];
+        if (mask.R || mask.G || mask.B || mask.A) {
+            access.touched |= 1u << index;
+            access.written |= 1u << index;
+        }
+    }
+    if (regs.depth_test_enable || regs.depth_bounds_enable) {
+        access.touched |= Scheduler::DEPTH_ATTACHMENT_BIT;
+    }
+    if (regs.depth_test_enable && regs.depth_write_enabled) {
+        access.written |= Scheduler::DEPTH_ATTACHMENT_BIT;
+    }
+    if (regs.stencil_enable) {
+        access.touched |= Scheduler::STENCIL_ATTACHMENT_BIT;
+        access.written |= Scheduler::STENCIL_ATTACHMENT_BIT;
+    }
+    return access;
 }
 
 size_t NumAttachments(const FixedPipelineState& state) {
@@ -253,8 +280,8 @@ GraphicsPipeline::GraphicsPipeline(
     const Device& device_, DescriptorPool& descriptor_pool,
     GuestDescriptorQueue& guest_descriptor_queue_, DescriptorBufferRing& descriptor_buffer_ring_,
     Common::ThreadWorker* worker_thread,
-    PipelineStatistics* pipeline_statistics, RenderPassCache& render_pass_cache,
-    const GraphicsPipelineCacheKey& key_, std::array<vk::ShaderModule, NUM_STAGES> stages,
+    PipelineStatistics* pipeline_statistics, const GraphicsPipelineCacheKey& key_,
+    std::array<vk::ShaderModule, NUM_STAGES> stages,
     const std::array<const Shader::Info*, NUM_STAGES>& infos)
     : key{key_}, device{device_}, texture_cache{texture_cache_}, buffer_cache{buffer_cache_},
       pipeline_cache(pipeline_cache_), scheduler{scheduler_},
@@ -279,6 +306,11 @@ GraphicsPipeline::GraphicsPipeline(
         num_descriptor_entries += NumDescriptorEntries(*info);
     }
     fragment_has_color0_output = stage_infos[NUM_STAGES - 1].stores_frag_color[0];
+    for (size_t index = 0; index < Maxwell::NumVertexAttributes; ++index) {
+        if (stage_infos[0].loads.Generic(index)) {
+            vertex_attribute_mask |= 1u << index;
+        }
+    }
 
     DescriptorLayoutBuilder builder{MakeBuilder(device, stage_infos)};
     uses_push_descriptor = builder.CanUsePushDescriptor();
@@ -309,11 +341,10 @@ GraphicsPipeline::GraphicsPipeline(
         }
     }
 
-    auto func{[this, shader_notify, &render_pass_cache, pipeline_statistics] {
-        const VkRenderPass render_pass{render_pass_cache.Get(MakeRenderPassKey(key.state, device))};
+    auto func{[this, shader_notify, pipeline_statistics] {
         Validate();
         try {
-            MakePipeline(render_pass);
+            MakePipeline(PipelineFormats(key.state, device));
         } catch (const vk::Exception& exception) {
             LOG_CRITICAL(Render_Vulkan, "Graphics pipeline build failed: {}", exception.what());
             std::scoped_lock lock{build_mutex};
@@ -548,13 +579,17 @@ bool GraphicsPipeline::ConfigureImpl(bool is_indexed) {
     if constexpr (Spec::enabled_stages[4]) {
         prepare_stage(4);
     }
-    if (buffer_cache.any_buffer_uploaded) {
-        buffer_cache.runtime.PostCopyBarrier();
-        buffer_cache.any_buffer_uploaded = false;
-    }
     texture_cache.UpdateRenderTargets(false);
-    texture_cache.CheckFeedbackLoop(std::span<const VideoCommon::ImageViewInOut>{views.data(),
-                                                                                 views.size()});
+    const std::span<const VideoCommon::ImageViewInOut> view_span{views.data(), views.size()};
+    texture_cache.CheckFeedbackLoop(view_span);
+    const auto samples_render_pass_image = [&](const VideoCommon::ImageViewInOut& view) {
+        return view.id &&
+               scheduler.IsRenderPassImage(texture_cache.GetImageView(view.id).ImageHandle());
+    };
+    if (scheduler.CanAliasRenderPass(texture_cache.GetFramebuffer()) &&
+        std::ranges::any_of(view_span, samples_render_pass_image)) {
+        scheduler.RequestOutsideRenderPassOperationContext();
+    }
     if (IsBuilt() && !pipeline) {
         return false;
     }
@@ -595,7 +630,12 @@ bool GraphicsPipeline::ConfigureDraw(const RescalingPushConstant& rescaling,
         }
     }
 
-    scheduler.RequestRenderpass(texture_cache.GetFramebuffer());
+    if (buffer_cache.TakeDrawHazard()) {
+        scheduler.RequestOutsideRenderPassOperationContext();
+    }
+    const AttachmentAccess access = MakeAttachmentAccess(maxwell3d->regs);
+    scheduler.RequestRenderpass(texture_cache.GetFramebuffer(), access.touched, access.written);
+    buffer_cache.CommitDrawWrites();
     if (!is_built.load(std::memory_order::relaxed)) {
         // Wait for the pipeline to be built
         scheduler.Record([this](vk::CommandBuffer) {
@@ -680,7 +720,7 @@ bool GraphicsPipeline::ConfigureDraw(const RescalingPushConstant& rescaling,
     return true;
 }
 
-void GraphicsPipeline::MakePipeline(VkRenderPass render_pass) {
+void GraphicsPipeline::MakePipeline(const RenderingFormats& formats) {
     FixedPipelineState::DynamicState dynamic{};
     if (!key.state.extended_dynamic_state) {
         dynamic = key.state.dynamic_state;
@@ -705,7 +745,8 @@ void GraphicsPipeline::MakePipeline(VkRenderPass render_pass) {
             if (instanced) {
                 vertex_binding_divisors.push_back({
                     .binding = static_cast<u32>(index),
-                    .divisor = key.state.binding_divisors[index],
+                    .divisor = (std::min)(key.state.binding_divisors[index],
+                                          device.GetMaxVertexAttribDivisor()),
                 });
             }
         }
@@ -739,7 +780,7 @@ void GraphicsPipeline::MakePipeline(VkRenderPass render_pass) {
         .vertexBindingDivisorCount = static_cast<u32>(vertex_binding_divisors.size()),
         .pVertexBindingDivisors = vertex_binding_divisors.data(),
     };
-    if (!vertex_binding_divisors.empty()) {
+    if (!vertex_binding_divisors.empty() && device.IsExtVertexAttributeDivisorSupported()) {
         vertex_input_ci.pNext = &input_divisor_ci;
     }
     const bool has_tess_stages = spv_modules[1] || spv_modules[2];
@@ -908,8 +949,8 @@ void GraphicsPipeline::MakePipeline(VkRenderPass render_pass) {
         .stencilTestEnable = dynamic.stencil_enable,
         .front = GetStencilFaceState(dynamic.front),
         .back = GetStencilFaceState(dynamic.back),
-        .minDepthBounds = f32(key.state.depth_bounds_min),
-        .maxDepthBounds = f32(key.state.depth_bounds_max),
+        .minDepthBounds = 0.0f,
+        .maxDepthBounds = 1.0f,
     };
     if (dynamic.depth_bounds_enable && !device.IsDepthBoundsSupported()) {
         LOG_WARNING(Render_Vulkan, "Depth bounds is enabled but not supported");
@@ -1073,9 +1114,10 @@ void GraphicsPipeline::MakePipeline(VkRenderPass render_pass) {
         flags |= VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
     }
 
+    const VkPipelineRenderingCreateInfo rendering_ci = formats.CreateInfo();
     pipeline = device.GetLogical().CreateGraphicsPipeline({
         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
-        .pNext = nullptr,
+        .pNext = &rendering_ci,
         .flags = flags,
         .stageCount = static_cast<u32>(shader_stages.size()),
         .pStages = shader_stages.data(),
@@ -1089,7 +1131,6 @@ void GraphicsPipeline::MakePipeline(VkRenderPass render_pass) {
         .pColorBlendState = &color_blend_ci,
         .pDynamicState = &dynamic_state_ci,
         .layout = *pipeline_layout,
-        .renderPass = render_pass,
         .subpass = 0,
         .basePipelineHandle = nullptr,
         .basePipelineIndex = 0,

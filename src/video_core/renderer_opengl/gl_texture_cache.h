@@ -75,9 +75,7 @@ public:
 
     void Finish();
 
-    void FlushDeferredClear() {}
-
-    StagingBufferMap UploadStagingBuffer(size_t size, bool deferred = false);
+    StagingBufferMap UploadStagingBuffer(size_t size);
 
     StagingBufferMap DownloadStagingBuffer(size_t size, bool deferred = false);
 
@@ -121,8 +119,7 @@ public:
                          Tegra::Engines::Fermi2D::Operation operation);
 
     void AccelerateImageUpload(Image& image, const StagingBufferMap& map,
-                               std::span<const VideoCommon::SwizzleParameters> swizzles,
-                               u32 z_start, u32 z_count);
+                               std::span<const VideoCommon::SwizzleParameters> swizzles);
 
     void InsertUploadMemoryBarrier();
 
@@ -209,11 +206,14 @@ public:
     void DownloadMemory(StagingBufferMap& map,
                         std::span<const VideoCommon::BufferImageCopy> copies);
 
-    /// eden-kledd: split depth/stencil downloads are only implemented for Vulkan
-    [[nodiscard]] bool KleddCanSplitDepthStencil() const {
+    /// Split depth/stencil downloads are only implemented on Vulkan
+    [[nodiscard]] bool CanSplitDepthStencil() const {
         return false;
     }
-    size_t kledd_stencil_split = 0;
+    [[nodiscard]] bool IsDepthFloat() const {
+        return false;
+    }
+    size_t stencil_split_offset = 0;
 
     GLuint StorageHandle() noexcept;
 
@@ -234,8 +234,6 @@ public:
     bool ScaleUp(bool ignore = false);
 
     bool ScaleDown(bool ignore = false);
-
-    u64 allocation_tick;
 
 private:
     void CopyBufferToImage(const VideoCommon::BufferImageCopy& copy, size_t buffer_offset);
@@ -373,7 +371,6 @@ private:
 };
 
 struct TextureCacheParams {
-    static constexpr bool ENABLE_VALIDATION = true;
     static constexpr bool FRAMEBUFFER_BLITS = true;
     static constexpr bool HAS_EMULATED_COPIES = true;
     static constexpr bool HAS_DEVICE_MEMORY_INFO = true;

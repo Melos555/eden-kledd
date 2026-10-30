@@ -152,6 +152,10 @@ struct GPU::Impl {
 
     /// Tick pending requests within the GPU.
     void TickWork() {
+        if (last_sync_fence.load(std::memory_order_relaxed) ==
+            current_sync_fence.load(std::memory_order_relaxed)) {
+            return;
+        }
         std::unique_lock lck{sync_request_mutex};
         while (!sync_requests.empty()) {
             auto request = std::move(sync_requests.front());
@@ -226,19 +230,7 @@ struct GPU::Impl {
     }
 
     /// Notify rasterizer that any caches of the specified region should be invalidated
-    void InvalidateRegion(DAddr addr, u64 size, bool preserve_gpu_writes) {
-        if (Settings::values.nce_invalidation_gpu_readback.GetValue()) {
-            VideoCore::RasterizerInterface* rasterizer = renderer->ReadRasterizer();
-            if (preserve_gpu_writes && rasterizer->MustFlushRegion(addr, size, VideoCommon::CacheType::BufferCache)) {
-                const u64 fence = RequestSyncOperation([rasterizer, addr, size] {
-                    rasterizer->FlushRegion(addr, size, VideoCommon::CacheType::BufferCache);
-                    rasterizer->OnCacheInvalidation(addr, size);
-                });
-                gpu_thread.TickGPU(is_async);
-                WaitForSyncOperation(fence);
-                return;
-            }
-        }
+    void InvalidateRegion(DAddr addr, u64 size) {
         gpu_thread.InvalidateRegion(addr, size);
     }
 
@@ -340,7 +332,7 @@ struct GPU::Impl {
 
     std::list<std::function<void()>> sync_requests;
     std::atomic<u64> current_sync_fence{};
-    u64 last_sync_fence{};
+    std::atomic<u64> last_sync_fence{};
     std::mutex sync_request_mutex;
     std::condition_variable sync_request_cv;
 
@@ -530,8 +522,8 @@ void GPU::FlushRegion(DAddr addr, u64 size) {
     impl->FlushRegion(addr, size);
 }
 
-void GPU::InvalidateRegion(DAddr addr, u64 size, bool preserve_gpu_writes) {
-    impl->InvalidateRegion(addr, size, preserve_gpu_writes);
+void GPU::InvalidateRegion(DAddr addr, u64 size) {
+    impl->InvalidateRegion(addr, size);
 }
 
 bool GPU::OnCPUWrite(DAddr addr, u64 size) {

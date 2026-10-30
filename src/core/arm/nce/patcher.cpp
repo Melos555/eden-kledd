@@ -45,23 +45,6 @@ Patcher::Patcher() : c(m_patch_instructions), c_pre(m_patch_instructions_pre) {
     WriteLoadContext(c_pre);
 }
 
-Patcher::Patcher(std::span<const u8> text) : c(m_patch_instructions), c_pre(m_patch_instructions_pre) {
-    modules.emplace_back();
-    curr_patch = &modules.back();
-    const auto words = std::span<const u32>{reinterpret_cast<const u32*>(text.data()), text.size() / sizeof(u32)};
-    for (u32 i = ModuleCodeIndex; i < static_cast<u32>(words.size()); ++i) {
-        const uintptr_t offset = i * sizeof(u32);
-        if (auto mrs = MRS{words[i]}; mrs.Verify() && mrs.GetRt() != 31 && (mrs.GetSystemReg() == TpidrEl0 || mrs.GetSystemReg() == TpidrroEl0)) {
-            BranchToPatch(offset);
-            const auto src_reg = mrs.GetSystemReg() == TpidrroEl0 ? oaknut::SystemReg::TPIDRRO_EL0 : oaknut::SystemReg::TPIDR_EL0;
-            WriteMrsHandler(offset + sizeof(u32), oaknut::XReg{static_cast<int>(mrs.GetRt())}, src_reg);
-        } else if (auto msr = MSR{words[i]}; msr.Verify() && msr.GetSystemReg() == TpidrEl0) {
-            BranchToPatch(offset);
-            WriteMsrHandler(offset + sizeof(u32), oaknut::XReg{static_cast<int>(msr.GetRt())});
-        }
-    }
-}
-
 Patcher::~Patcher() = default;
 
 bool Patcher::PatchText(std::span<const u8> program_image, const Kernel::CodeSet::Segment& code) {
@@ -197,31 +180,6 @@ bool Patcher::PatchText(std::span<const u8> program_image, const Kernel::CodeSet
         this->mode = image_size > MaxRelativeBranch ? PatchMode::PreText : PatchMode::PostData;
     }
     return true;
-}
-
-std::span<const u32> Patcher::RelocateRuntimeTls(
-    s64 patch_offset, std::vector<InstructionPatch>& out_patches) {
-    const auto& patch = modules.front();
-    const auto can_branch = [](s64 offset) {
-        return offset % 4 == 0 && offset >= -static_cast<s64>(MaxRelativeBranch) && offset < static_cast<s64>(MaxRelativeBranch);
-    };
-    out_patches.clear();
-    out_patches.reserve(patch.m_branch_to_patch_relocations.size());
-    for (const auto& rel : patch.m_branch_to_patch_relocations) {
-        const s64 offset = patch_offset + rel.patch_offset - static_cast<s64>(rel.module_offset);
-        if (!can_branch(offset)) {return {};}
-        u32 replacement;
-        oaknut::CodeGenerator rc{&replacement};
-        rc.B(offset);
-        out_patches.push_back({rel.module_offset, replacement});
-    }
-    for (const auto& rel : patch.m_branch_to_module_relocations) {
-        const s64 offset = static_cast<s64>(rel.module_offset) - patch_offset - rel.patch_offset;
-        if (!can_branch(offset)) {return {};}
-        oaknut::CodeGenerator rc{m_patch_instructions.data() + rel.patch_offset / sizeof(u32)};
-        rc.B(offset);
-    }
-    return m_patch_instructions;
 }
 
 bool Patcher::RelocateAndCopy(Common::ProcessAddress load_base, const Kernel::CodeSet::Segment& code, std::vector<u8>& program_image, EntryTrampolines* out_trampolines) {
@@ -413,14 +371,9 @@ size_t Patcher::GetPreSectionSize() const noexcept {
 }
 
 void Patcher::WriteLoadContext(oaknut::VectorCodeGenerator& cg) {
-    // This function was called, which modifies X30, so use that as a scratch register.
-    // SP contains the guest X30, so save our return X30 to SP + 8, since we have allocated 16 bytes
-    // of stack.
     cg.STR(X30, SP, 8);
-    cg.MRS(X30, oaknut::SystemReg::TPIDR_EL0);
-    cg.LDR(X30, X30, offsetof(NativeExecutionParameters, native_context));
+    cg.LDR(X30, SP, 0);
 
-    // Load system registers.
     cg.LDR(W0, X30, offsetof(GuestContext, fpsr));
     cg.MSR(oaknut::SystemReg::FPSR, X0);
     cg.LDR(W0, X30, offsetof(GuestContext, fpcr));
@@ -428,7 +381,9 @@ void Patcher::WriteLoadContext(oaknut::VectorCodeGenerator& cg) {
     cg.LDR(W0, X30, offsetof(GuestContext, nzcv));
     cg.MSR(oaknut::SystemReg::NZCV, X0);
 
-    // Load all vector registers.
+    cg.LDR(X0, X30, 8 * 30);
+    cg.STR(X0, SP, 0);
+
     static constexpr size_t VEC_OFF = offsetof(GuestContext, vector_registers);
     for (int i = 0; i <= 30; i += 2) {
         cg.LDP(oaknut::QReg{i}, oaknut::QReg{i + 1}, X30, VEC_OFF + 16 * i);
@@ -478,7 +433,7 @@ void Patcher::WriteSaveContext(oaknut::VectorCodeGenerator& cg) {
     cg.STR(W0, X30, offsetof(GuestContext, nzcv));
     cg.LDR(X0, SP, POST_INDEXED, 16);
 
-    // Reload our return X30 from the stack, and return.
+    cg.MOV(X1, X30);
     cg.LDR(X30, SP, 8);
     cg.RET();
 }
@@ -499,8 +454,6 @@ void Patcher::WriteSvcTrampoline(ModuleDestLabel module_dest, u32 svc_id, oaknut
     // Now that we've saved all registers, we can use any registers as scratch.
     // Store PC + 4 to arm interface, since we know the instruction offset from the entry point.
     oaknut::Label pc_after_svc;
-    cg.MRS(X1, oaknut::SystemReg::TPIDR_EL0);
-    cg.LDR(X1, X1, offsetof(NativeExecutionParameters, native_context));
     cg.LDR(X2, pc_after_svc);
     cg.STR(X2, X1, offsetof(GuestContext, pc));
 
@@ -556,23 +509,12 @@ void Patcher::WriteSvcTrampoline(ModuleDestLabel module_dest, u32 svc_id, oaknut
 
     // Host called this location. Save the return address so we can
     // unwind the stack properly when jumping back.
-    cg.MRS(X2, oaknut::SystemReg::TPIDR_EL0);
-    cg.LDR(X2, X2, offsetof(NativeExecutionParameters, native_context));
-    cg.ADD(X0, X2, offsetof(GuestContext, host_ctx));
+    cg.ADD(X0, X1, offsetof(GuestContext, host_ctx));
     cg.STR(X30, X0, offsetof(HostContext, host_saved_regs) + 11 * sizeof(u64));
 
-    // Reload all guest registers except X30 and PC.
-    // The function also expects 16 bytes of stack already allocated.
-    cg.STR(X30, SP, PRE_INDEXED, -16);
+    cg.STR(X1, SP, PRE_INDEXED, -16);
     cg.BL(load_ctx);
     cg.LDR(X30, SP, POST_INDEXED, 16);
-
-    // Use X1 as a scratch register to restore X30.
-    cg.STR(X1, SP, PRE_INDEXED, -16);
-    cg.MRS(X1, oaknut::SystemReg::TPIDR_EL0);
-    cg.LDR(X1, X1, offsetof(NativeExecutionParameters, native_context));
-    cg.LDR(X30, X1, offsetof(GuestContext, cpu_registers) + sizeof(u64) * 30);
-    cg.LDR(X1, SP, POST_INDEXED, 16);
 
     // Unlock the context.
     this->UnlockContext(cg);
