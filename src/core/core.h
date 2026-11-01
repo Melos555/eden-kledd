@@ -194,7 +194,6 @@ public:
     void NotifyNVDECChannelOpen(u64 process_id);
     void NotifyNVDECChannelClose(u64 process_id);
     [[nodiscard]] bool GetNVDECActive();
-    [[nodiscard]] bool IsNVDECActiveForProcess(u64 process_id);
 
     /**
      * Initialize the debugger.
