@@ -269,13 +269,26 @@ private:
     std::chrono::steady_clock::time_point kledd_big_upload_log{};
     void KleddNoteBigUpload(const Image& image);
 
-    /// eden-kledd: delta uploads for large single-level 3D images. The guest bytes last uploaded
-    /// are kept per image, and the next upload only sends the z groups whose bytes changed.
-    struct KleddShadow {
-        std::vector<u8> data;
+    /// eden-kledd: write watch for large single-level 3D images. After an upload the image stays
+    /// tracked; a CPU write unprotects and marks only the block-linear z group it hit, so the next
+    /// upload sends just the written groups instead of the whole image.
+    struct KleddWatch {
+        u64 group_bytes = 0;
+        u32 group_slices = 0;
+        u32 num_groups = 0;
+        /// Host image holds a full upload and every clean group is still protected
+        bool complete = false;
+        std::vector<u8> tracked;
+        std::vector<u8> dirty;
     };
-    ::Common::unordered_map<ImageId, KleddShadow> kledd_shadows;
-    u64 kledd_shadow_bytes = 0;
+    ::Common::unordered_map<ImageId, KleddWatch> kledd_watches;
+    std::chrono::steady_clock::time_point kledd_decline_log{};
+    KleddWatch* KleddFindWatch(ImageId image_id);
+    /// Page range owned by one z group (the groups partition the image's pages)
+    std::pair<DAddr, size_t> KleddGroupPages(const ImageBase& image, const KleddWatch& watch,
+                                             u32 group) const;
+    void KleddTrackGroups(const ImageBase& image, KleddWatch& watch, bool track);
+    void KleddMarkWritten(const ImageBase& image, KleddWatch& watch, DAddr cpu_addr, size_t size);
     bool KleddTryDeltaUpload(Image& image, ImageId image_id);
 
     /// eden-kledd: log the previous frame if it took too long, then reset the frame counters
