@@ -6,7 +6,9 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <memory>
+#include <string>
 #include <mutex>
 
 #include <fmt/format.h>
@@ -1021,6 +1023,45 @@ bool AccelerateDMA::DmaBufferImageCopy(const Tegra::DMA::ImageCopy& copy_info,
                                        const Tegra::DMA::ImageOperand& image_operand) {
     std::scoped_lock lock{buffer_cache.mutex, texture_cache.mutex};
     const auto image_id = texture_cache.DmaImageId(image_operand, IS_IMAGE_UPLOAD);
+    if constexpr (IS_IMAGE_UPLOAD) {
+        // eden-kledd diagnostic: how DMA image uploads are handled (GPU copy, or a CPU fallback
+        // and why), summarised every 2 s with the largest case per outcome.
+        static std::array<u32, 8> counts{};
+        static std::array<u64, 8> max_bytes{};
+        static std::array<std::array<u32, 5>, 8> max_dims{};
+        static std::chrono::steady_clock::time_point last_log{};
+        static constexpr std::array<const char*, 8> names{
+            "gpu", "no-image", "not-gpu-modified", "3d", "first-sync", "no-base", "cpu-modified",
+            "other"};
+        const auto& d = texture_cache.kledd_last_dma;
+        const u32 outcome = image_id == VideoCommon::NULL_IMAGE_ID
+                                ? (std::min)(static_cast<u32>(d.reason), 7u)
+                                : 0u;
+        const u64 bytes = static_cast<u64>(buffer_operand.pitch) * buffer_operand.height;
+        counts[outcome]++;
+        if (bytes > max_bytes[outcome]) {
+            max_bytes[outcome] = bytes;
+            max_dims[outcome] = {copy_info.length_x, copy_info.length_y, d.width, d.height,
+                                 d.format};
+        }
+        const auto now = std::chrono::steady_clock::now();
+        if (now - last_log >= std::chrono::seconds{2}) {
+            last_log = now;
+            std::string summary;
+            for (size_t i = 0; i < counts.size(); ++i) {
+                if (counts[i] == 0) {
+                    continue;
+                }
+                summary += fmt::format(" {} {} (max {} KiB, copy {}x{} into {}x{} fmt {});",
+                                       names[i], counts[i], max_bytes[i] / 1024, max_dims[i][0],
+                                       max_dims[i][1], max_dims[i][2], max_dims[i][3],
+                                       max_dims[i][4]);
+            }
+            LOG_WARNING(HW_GPU, "[Kledd] dma image uploads in the last 2 s:{}", summary);
+            counts.fill(0);
+            max_bytes.fill(0);
+        }
+    }
     const bool kledd_log = !IS_IMAGE_UPLOAD && Settings::values.kledd_dma_readback_log.GetValue() &&
                            copy_info.length_y >= 32 && copy_info.length_y <= 512;
     if (kledd_log) {

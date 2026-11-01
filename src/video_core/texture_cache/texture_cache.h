@@ -11,6 +11,7 @@
 #include <optional>
 #include <bit>
 #include <cstring>
+#include <fmt/format.h>
 #include "common/container/unordered_map.h"
 #include <boost/container/small_vector.hpp>
 
@@ -1342,9 +1343,45 @@ void TextureCache<P>::RefreshContents(Image& image, ImageId image_id) {
     }
     kledd_stats.uploads.fetch_add(1, std::memory_order_relaxed);
     kledd_stats.upload_bytes.fetch_add(MapSizeBytes(image), std::memory_order_relaxed);
+    KleddNoteBigUpload(image);
     auto staging = runtime.UploadStagingBuffer(MapSizeBytes(image));
     UploadImageContents(image, staging);
     runtime.InsertUploadMemoryBarrier();
+}
+
+template <class P>
+void TextureCache<P>::KleddNoteBigUpload(const Image& image) {
+    // Diagnostic: every upload of an image of 32 MiB or more is counted per image, and a summary
+    // naming the images (size, levels, layers, type, format) is logged at most every 2 seconds.
+    const u64 bytes = MapSizeBytes(image);
+    if (bytes < 32_MiB) {
+        return;
+    }
+    auto& entry = kledd_big_uploads[image.gpu_addr];
+    entry.count++;
+    entry.bytes = bytes;
+    entry.info = image.info;
+
+    const auto now = std::chrono::steady_clock::now();
+    if (kledd_big_upload_log.time_since_epoch().count() != 0 &&
+        now - kledd_big_upload_log < std::chrono::seconds{2}) {
+        return;
+    }
+    kledd_big_upload_log = now;
+    std::string summary;
+    for (auto& [addr, upload] : kledd_big_uploads) {
+        if (upload.count == 0) {
+            continue;
+        }
+        summary += fmt::format(" {}x image {:#x} {}x{}x{} levels {} layers {} type {} fmt {} {} MiB;",
+                               upload.count, addr, upload.info.size.width,
+                               upload.info.size.height, upload.info.size.depth,
+                               upload.info.resources.levels, upload.info.resources.layers,
+                               static_cast<u32>(upload.info.type),
+                               static_cast<u32>(upload.info.format), upload.bytes >> 20);
+        upload.count = 0;
+    }
+    LOG_WARNING(HW_GPU, "[Kledd] big texture uploads in the last 2 s:{}", summary);
 }
 
 template <class P>
