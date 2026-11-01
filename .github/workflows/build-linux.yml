@@ -35,7 +35,7 @@ jobs:
             spirv-tools spirv-headers libusb-1.0-0-dev libxbyak-dev libboost-dev \
             libboost-fiber-dev libboost-context-dev libsdl3-dev libopus-dev libasound2t64 \
             vulkan-utility-libraries-dev qmake6 qt6-qpa-plugins qt6-wayland libqt6svg6 \
-            libfuse2t64 squashfs-tools desktop-file-utils
+            libfuse2t64 squashfs-tools desktop-file-utils librsvg2-bin
 
       - uses: actions/checkout@v4
 
@@ -74,6 +74,8 @@ jobs:
           cp build/bin/eden* out/ 2>/dev/null || cp -r build/bin/* out/
           tar -C out -czf eden-kledd-linux-x86_64.tar.gz .
 
+      # appimagetool (linuxdeploy's continuous build) needs a PNG or XPM icon at the top of the
+      # AppDir to make .DirIcon; the repo only ships an SVG, so one is rendered here.
       - name: Package AppImage
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
@@ -84,12 +86,17 @@ jobs:
           {
             set -x
             DESTDIR="$PWD/AppDir" cmake --install build &&
+            mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps &&
+            rsvg-convert -w 256 -h 256 dist/dev.eden_emu.eden.svg \
+              -o AppDir/usr/share/icons/hicolor/256x256/apps/dev.eden_emu.eden.png &&
+            cp AppDir/usr/share/icons/hicolor/256x256/apps/dev.eden_emu.eden.png AppDir/ &&
             curl -fsSLo linuxdeploy https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage &&
             curl -fsSLo linuxdeploy-plugin-qt https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage &&
             chmod +x linuxdeploy linuxdeploy-plugin-qt &&
             ./linuxdeploy --appdir AppDir --plugin qt --output appimage \
               -e AppDir/usr/bin/eden \
               -d AppDir/usr/share/applications/dev.eden_emu.eden.desktop \
+              -i AppDir/usr/share/icons/hicolor/256x256/apps/dev.eden_emu.eden.png \
               -i AppDir/usr/share/icons/hicolor/scalable/apps/dev.eden_emu.eden.svg
           } > appimage.log 2>&1
           code=$?
