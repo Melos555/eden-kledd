@@ -450,7 +450,7 @@ void System::Stop() {
         const auto waited_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                                    std::chrono::steady_clock::now() - wait_start)
                                    .count();
-        if (waited_ms >= 100) {
+        if (waited_ms >= 100 && !core.IsShuttingDown()) {
             LOG_WARNING(Service_Audio,
                         "Audio renderer session {} Stop waited {} ms for the render thread",
                         session_id, waited_ms);

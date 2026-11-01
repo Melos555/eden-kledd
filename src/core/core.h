@@ -190,6 +190,8 @@ public:
 
     std::unique_lock<std::mutex> StallApplication();
     void UnstallApplication();
+    /// True while the guest is suspended by StallApplication (waiting for the GPU).
+    [[nodiscard]] bool IsApplicationStalled() const;
 
     void NotifyNVDECChannelOpen(u64 process_id);
     void NotifyNVDECChannelClose(u64 process_id);
