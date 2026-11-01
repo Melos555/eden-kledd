@@ -4,7 +4,11 @@
 // SPDX-FileCopyrightText: Copyright 2019 yuzu Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <chrono>
+
 #include "common/assert.h"
+#include "common/kledd_slow_log.h"
+#include "common/logging.h"
 #include "common/scope_exit.h"
 #include "common/settings.h"
 #include "common/thread.h"
@@ -35,21 +39,53 @@ void ThreadManager::StartThread(VideoCore::RendererBase& renderer, Core::Fronten
 
         auto current_context = context.Acquire();
         CommandDataContainer next;
+        // eden-kledd diagnostic: how far behind the GPU thread runs and which commands take long
+        Common::Kledd::SlowEventLog slow_commands{};
+        Common::Kledd::SlowEventLog queue_lag{};
         while (!stop_token.stop_requested()) {
             state.queue.PopWait(next, stop_token);
             if (stop_token.stop_requested()) {
                 break;
             }
+            const auto started{std::chrono::steady_clock::now()};
+            const char* kind{"other"};
             if (auto* submit_list = std::get_if<SubmitListCommand>(&next.data)) {
+                kind = "submit";
                 scheduler.Push(system.GPU(), submit_list->channel, std::move(submit_list->entries));
             } else if (std::holds_alternative<GPUTickCommand>(next.data)) {
+                kind = "tick";
                 system.GPU().TickWork();
             } else if (const auto* flush = std::get_if<FlushRegionCommand>(&next.data)) {
+                kind = "flush";
                 renderer.ReadRasterizer()->FlushRegion(flush->addr, flush->size);
             } else if (const auto* invalidate = std::get_if<InvalidateRegionCommand>(&next.data)) {
+                kind = "invalidate";
                 renderer.ReadRasterizer()->OnCacheInvalidation(invalidate->addr, invalidate->size);
             } else {
                 ASSERT(false);
+            }
+            {
+                const auto finished{std::chrono::steady_clock::now()};
+                const auto lag_ms{static_cast<u32>(
+                    std::chrono::duration_cast<std::chrono::milliseconds>(started - next.enqueued)
+                        .count())};
+                const auto took_ms{static_cast<u32>(
+                    std::chrono::duration_cast<std::chrono::milliseconds>(finished - started)
+                        .count())};
+                u32 n{};
+                u32 worst{};
+                if (took_ms >= 20 && slow_commands.Note(took_ms, n, worst)) {
+                    LOG_WARNING(HW_GPU,
+                                "[Kledd] GPU thread: {} commands took over 20 ms in the last 2 s "
+                                "(longest {} ms, latest kind {})",
+                                n, worst, kind);
+                }
+                if (lag_ms >= 50 && queue_lag.Note(lag_ms, n, worst)) {
+                    LOG_WARNING(HW_GPU,
+                                "[Kledd] GPU thread behind: {} commands waited over 50 ms in the "
+                                "queue in the last 2 s (longest {} ms)",
+                                n, worst);
+                }
             }
             state.signaled_fence.store(next.fence);
             if (next.block) {

@@ -7,6 +7,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <mutex>
 #include <optional>
@@ -84,11 +85,14 @@ struct CommandDataContainer {
     CommandDataContainer() = default;
 
     explicit CommandDataContainer(CommandData&& data_, u64 next_fence_, bool block_)
-        : data{std::move(data_)}, fence{next_fence_}, block(block_) {}
+        : data{std::move(data_)}, fence{next_fence_}, block(block_),
+          enqueued{std::chrono::steady_clock::now()} {}
 
     CommandData data;
     u64 fence{};
     bool block{};
+    /// eden-kledd diagnostic: when this command was queued, to measure how far the GPU thread lags
+    std::chrono::steady_clock::time_point enqueued{};
 };
 
 /// Struct used to synchronize the GPU thread
