@@ -312,6 +312,15 @@ private:
     std::chrono::steady_clock::time_point kledd_big_upload_log{};
     void KleddNoteBigUpload(const Image& image);
 
+    /// eden-kledd: delta uploads for large single-level 3D images. The guest bytes last uploaded
+    /// are kept per image, and the next upload only sends the z groups whose bytes changed.
+    struct KleddShadow {
+        std::vector<u8> data;
+    };
+    ::Common::unordered_map<ImageId, KleddShadow> kledd_shadows;
+    u64 kledd_shadow_bytes = 0;
+    bool KleddTryDeltaUpload(Image& image, ImageId image_id);
+
     /// eden-kledd: log the previous frame if it took too long, then reset the frame counters
     void KleddLogLongFrame();
     std::chrono::steady_clock::time_point kledd_last_frame{};

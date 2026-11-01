@@ -12,8 +12,10 @@
 #include <optional>
 #include <bit>
 #include <condition_variable>
+#include <algorithm>
 #include <cstring>
 #include <fmt/format.h>
+#include <thread>
 #include "common/container/unordered_map.h"
 #include <boost/container/small_vector.hpp>
 
@@ -1436,12 +1438,141 @@ void TextureCache<P>::RefreshContents(Image& image, ImageId image_id) {
         }
         return;
     }
+    if (KleddTryDeltaUpload(image, image_id)) {
+        kledd_stats.uploads.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
     kledd_stats.uploads.fetch_add(1, std::memory_order_relaxed);
     kledd_stats.upload_bytes.fetch_add(MapSizeBytes(image), std::memory_order_relaxed);
     KleddNoteBigUpload(image);
     auto staging = runtime.UploadStagingBuffer(MapSizeBytes(image));
     UploadImageContents(image, staging);
     runtime.InsertUploadMemoryBarrier();
+}
+
+template <class P>
+bool TextureCache<P>::KleddTryDeltaUpload(Image& image, ImageId image_id) {
+    // eden-kledd: Metroid Prime 4 streams texture pages from the CPU into a few 170-350 MiB
+    // single-level 3D textures. Every page write marked the whole image CPU-modified and the
+    // cache re-uploaded all of it, stalling the GPU thread for hundreds of milliseconds. Keep the
+    // guest bytes last uploaded and upload only the block-linear z groups that changed.
+    constexpr u64 min_bytes = 64_MiB;
+    constexpr u64 shadow_budget = 2_GiB;
+
+    const auto& info = image.info;
+    if (True(image.flags & (ImageFlagBits::AcceleratedUpload | ImageFlagBits::Converted |
+                            ImageFlagBits::Sparse | ImageFlagBits::Rescaled))) {
+        return false;
+    }
+    const u64 guest_bytes = image.guest_size_bytes;
+    if (guest_bytes < min_bytes) {
+        return false;
+    }
+    const u64 group_bytes = ImageSliceGroupBytes(info, guest_bytes);
+    if (group_bytes == 0) {
+        return false;
+    }
+    const u32 group_slices = ImageSliceGroupSlices(info);
+    const u32 num_groups = Common::DivCeil(info.size.depth, group_slices);
+    if (group_bytes * num_groups > guest_bytes) {
+        return false;
+    }
+
+    auto shadow_it = kledd_shadows.find(image_id);
+    const bool have_shadow =
+        shadow_it != kledd_shadows.end() && shadow_it->second.data.size() == guest_bytes;
+    if (!have_shadow) {
+        if (kledd_shadow_bytes + guest_bytes > shadow_budget) {
+            return false;
+        }
+        if (shadow_it != kledd_shadows.end()) {
+            kledd_shadow_bytes -= shadow_it->second.data.size();
+            kledd_shadows.erase(shadow_it);
+        }
+        shadow_it = kledd_shadows.emplace(image_id, KleddShadow{}).first;
+        shadow_it->second.data.resize(guest_bytes);
+        kledd_shadow_bytes += guest_bytes;
+    }
+    auto& shadow = shadow_it->second.data;
+
+    const auto compare_start = std::chrono::steady_clock::now();
+    Tegra::Memory::GpuGuestMemory<u8, Tegra::Memory::GuestMemoryFlags::UnsafeRead> guest(
+        *gpu_memory, image.gpu_addr, guest_bytes, &swizzle_data_buffer);
+    const u8* const src = guest.data();
+
+    std::vector<u32> changed;
+    if (!have_shadow || True(image.flags & ImageFlagBits::GpuModified)) {
+        // Nothing to compare against (or the host image was written by the GPU): full upload.
+        changed.resize(num_groups);
+        for (u32 g = 0; g < num_groups; ++g) {
+            changed[g] = g;
+        }
+    } else {
+        const u32 hw = std::thread::hardware_concurrency();
+        const u32 num_threads = (std::min)(8u, (std::max)(1u, hw / 2));
+        std::vector<std::vector<u32>> found(num_threads);
+        std::vector<std::thread> threads;
+        threads.reserve(num_threads);
+        for (u32 t = 0; t < num_threads; ++t) {
+            threads.emplace_back([&, t] {
+                for (u32 g = t; g < num_groups; g += num_threads) {
+                    const size_t offset = static_cast<size_t>(g) * group_bytes;
+                    if (std::memcmp(src + offset, shadow.data() + offset, group_bytes) != 0) {
+                        found[t].push_back(g);
+                    }
+                }
+            });
+        }
+        for (auto& thread : threads) {
+            thread.join();
+        }
+        for (const auto& part : found) {
+            changed.insert(changed.end(), part.begin(), part.end());
+        }
+        std::sort(changed.begin(), changed.end());
+    }
+    const auto compare_end = std::chrono::steady_clock::now();
+
+    if (changed.empty()) {
+        LOG_INFO(HW_GPU, "[Kledd] delta upload image {:#x} {}x{}x{}: no z group changed, nothing uploaded",
+                 image.gpu_addr, info.size.width, info.size.height, info.size.depth);
+        return true;
+    }
+    for (const u32 g : changed) {
+        const size_t offset = static_cast<size_t>(g) * group_bytes;
+        std::memcpy(shadow.data() + offset, src + offset, group_bytes);
+    }
+
+    const u64 host_group_bytes = ImageSliceGroupHostBytes(info);
+    auto staging = runtime.UploadStagingBuffer(host_group_bytes * changed.size());
+    boost::container::small_vector<BufferImageCopy, 16> copies;
+    size_t host_offset = 0;
+    for (const u32 g : changed) {
+        const u32 z_start = g * group_slices;
+        const u32 z_count = (std::min)(group_slices, info.size.depth - z_start);
+        const std::span<const u8> input(shadow.data() + static_cast<size_t>(g) * group_bytes,
+                                        group_bytes);
+        copies.push_back(UnswizzleImageSliceGroup(info, input,
+                                                  staging.mapped_span.subspan(host_offset,
+                                                                              host_group_bytes),
+                                                  z_start, z_count, host_offset));
+        host_offset += host_group_bytes;
+    }
+    image.UploadMemory(staging, copies);
+    runtime.InsertUploadMemoryBarrier();
+    const auto upload_end = std::chrono::steady_clock::now();
+
+    const auto ms = [](auto a, auto b) {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(b - a).count();
+    };
+    LOG_INFO(HW_GPU,
+             "[Kledd] delta upload image {:#x} {}x{}x{} fmt {}: {} of {} z groups changed "
+             "({} of {} MiB), compare {} ms, unswizzle+upload {} ms",
+             image.gpu_addr, info.size.width, info.size.height, info.size.depth,
+             static_cast<u32>(info.format), changed.size(), num_groups,
+             (changed.size() * group_bytes) >> 20, guest_bytes >> 20,
+             ms(compare_start, compare_end), ms(compare_end, upload_end));
+    return true;
 }
 
 template <class P>
@@ -3286,6 +3417,10 @@ void TextureCache<P>::CancelPendingUnswizzle(ImageId image_id) {
 template <class P>
 void TextureCache<P>::DeleteImage(ImageId image_id, bool immediate_delete) {
     Common::Kledd::GetFrameStats().images_deleted.fetch_add(1, std::memory_order_relaxed);
+    if (const auto shadow = kledd_shadows.find(image_id); shadow != kledd_shadows.end()) {
+        kledd_shadow_bytes -= shadow->second.data.size();
+        kledd_shadows.erase(shadow);
+    }
     ImageBase& image = slot_images[image_id];
     CancelPendingUnswizzle(image_id);
     std::erase_if(async_decodes, [image_id](const std::unique_ptr<AsyncDecodeContext>& ctx) {

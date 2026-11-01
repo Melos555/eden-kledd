@@ -843,6 +843,65 @@ bool IsValidEntry(const Tegra::MemoryManager& gpu_memory, const TICEntry& config
     return gpu_memory.GpuToCpuAddress(address, guest_size_bytes).has_value();
 }
 
+u32 ImageSliceGroupSlices(const ImageInfo& info) {
+    return 1U << info.block.depth;
+}
+
+u64 ImageSliceGroupBytes(const ImageInfo& info, u64 guest_size_bytes) {
+    if (info.type != ImageType::e3D || info.resources.levels != 1 ||
+        info.resources.layers != 1 || info.num_samples != 1) {
+        return 0;
+    }
+    const LevelInfo level_info =
+        MakeLevelInfo(info.format, info.size, info.block, info.tile_width_spacing, 1);
+    const u64 level_bytes = CalculateLevelSize(level_info, 0);
+    const u32 num_groups = Common::DivCeil(info.size.depth, ImageSliceGroupSlices(info));
+    if (level_bytes == 0 || num_groups == 0 || level_bytes % num_groups != 0 ||
+        level_bytes > guest_size_bytes) {
+        return 0;
+    }
+    return level_bytes / num_groups;
+}
+
+u64 ImageSliceGroupHostBytes(const ImageInfo& info) {
+    const Extent2D tile_size = DefaultBlockSize(info.format);
+    const Extent3D num_tiles = AdjustTileSize(info.size, tile_size);
+    return static_cast<u64>(num_tiles.width) * num_tiles.height * BytesPerBlock(info.format) *
+           ImageSliceGroupSlices(info);
+}
+
+BufferImageCopy UnswizzleImageSliceGroup(const ImageInfo& info, std::span<const u8> input,
+                                         std::span<u8> output, u32 z_start, u32 z_count,
+                                         size_t buffer_offset) {
+    // One z group is laid out exactly like a 3D block-linear image whose depth is the group's
+    // slice count, so the regular unswizzle of such an image yields the group's slices in order.
+    const u32 bpp_log2 = BytesPerBlockLog2(info.format);
+    const Extent2D tile_size = DefaultBlockSize(info.format);
+    const LevelInfo level_info =
+        MakeLevelInfo(info.format, info.size, info.block, info.tile_width_spacing, 1);
+    const Extent3D num_tiles = AdjustTileSize(info.size, tile_size);
+    const Extent3D block = AdjustMipBlockSize(num_tiles, level_info.block, 0, 1);
+    const Extent2D gob = GobSize(bpp_log2, info.block.height, info.tile_width_spacing);
+    const u32 stride_alignment = StrideAlignment(num_tiles, info.block, gob, bpp_log2);
+    const u32 group_slices = ImageSliceGroupSlices(info);
+    UnswizzleTexture(output, input, 1U << bpp_log2, num_tiles.width, num_tiles.height,
+                     group_slices, block.height, block.depth, stride_alignment);
+    return BufferImageCopy{
+        .buffer_offset = buffer_offset,
+        .buffer_size = output.size_bytes(),
+        .buffer_row_length = Common::AlignUp(info.size.width, tile_size.width),
+        .buffer_image_height = Common::AlignUp(info.size.height, tile_size.height),
+        .image_subresource =
+            {
+                .base_level = 0,
+                .base_layer = 0,
+                .num_layers = 1,
+            },
+        .image_offset = {0, 0, static_cast<s32>(z_start)},
+        .image_extent = {info.size.width, info.size.height, z_count},
+    };
+}
+
 boost::container::small_vector<BufferImageCopy, 16> UnswizzleImage(Tegra::MemoryManager& gpu_memory,
                                                                    GPUVAddr gpu_addr,
                                                                    const ImageInfo& info,
