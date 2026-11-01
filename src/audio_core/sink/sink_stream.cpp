@@ -125,8 +125,8 @@ void SinkStream::ProcessAudioIn(std::span<const s16> input_buffer, std::size_t n
     size_t frames_written{0};
 
     // If we're paused or going to shut down, we don't want to consume buffers as coretiming is
-    // paused and we'll desync, so just return.
-    if (system.IsPaused() || system.IsShuttingDown())
+    // paused and we'll desync, so just return. The same applies while the guest is stalled.
+    if (system.IsPaused() || system.IsShuttingDown() || system.IsApplicationStalled())
         return;
 
     while (frames_written < num_frames) {
@@ -191,6 +191,16 @@ void SinkStream::ProcessAudioOutAndRender(std::span<s16> output_buffer, std::siz
             }
         }
         last_callback_time = now;
+    }
+
+    if (system.IsApplicationStalled()) {
+        // The guest is suspended until the GPU catches up, so its time stands still. Hold the
+        // last played frame and consume nothing, like a pause: the render thread then blocks on
+        // the full queue and the renderer resumes from the same point afterwards, instead of
+        // running ahead of the game and looping whatever buffer it could not refill.
+        for (size_t i = 0; i < num_frames; i++)
+            std::memcpy(&output_buffer[i * frame_size], last_frame.data(), frame_size_bytes);
+        return;
     }
 
     if (system.IsPaused() || system.IsShuttingDown()) {

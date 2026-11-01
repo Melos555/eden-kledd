@@ -239,14 +239,20 @@ struct System::Impl {
         std::unique_lock<std::mutex> lk(suspend_guard);
         kernel.SuspendEmulation(true);
         core_timing.SyncPause(true);
+        is_stalled.store(true, std::memory_order_relaxed);
         return lk;
     }
 
     void UnstallApplication() {
+        is_stalled.store(false, std::memory_order_relaxed);
         if (!IsPaused()) {
             core_timing.SyncPause(false);
             kernel.SuspendEmulation(false);
         }
+    }
+
+    bool IsApplicationStalled() const {
+        return is_stalled.load(std::memory_order_relaxed);
     }
 
     void NotifyNVDECChannelOpen(u64 process_id) {
@@ -526,6 +532,8 @@ struct System::Impl {
     std::mutex nvdec_active_mutex;
     std::unordered_map<u64, u32> nvdec_active_channels;
     std::atomic_bool is_paused{};
+    /// Set while StallApplication holds the guest suspended waiting for the GPU
+    std::atomic_bool is_stalled{};
     std::atomic_bool is_shutting_down{};
     std::atomic_bool is_powered_on{};
     bool is_multicore : 1 = false;
@@ -593,6 +601,10 @@ std::unique_lock<std::mutex> System::StallApplication() {
 
 void System::UnstallApplication() {
     impl->UnstallApplication();
+}
+
+bool System::IsApplicationStalled() const {
+    return impl->IsApplicationStalled();
 }
 
 void System::NotifyNVDECChannelOpen(u64 process_id) {

@@ -159,6 +159,12 @@ void AudioRenderer::Main(std::stop_token stop_token) {
                 mailbox.Send(Direction::Host, Message::RenderResponse);
                 continue;
             }
+            // While the guest is suspended waiting for the GPU its time stands still, so do not
+            // render ahead of it: the DSP would loop whatever buffer the game could not refill.
+            while (system.IsApplicationStalled() && !system.IsShuttingDown() &&
+                   !stop_token.stop_requested()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
             std::array<bool, MaxRendererSessions> buffers_reset{};
             std::array<u64, MaxRendererSessions> render_times_taken{};
             const auto start_time{system.CoreTiming().GetGlobalTimeUs().count()};
