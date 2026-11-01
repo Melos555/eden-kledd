@@ -327,11 +327,14 @@ private:
     ::Common::unordered_map<ImageId, KleddWatch> kledd_watches;
     std::chrono::steady_clock::time_point kledd_decline_log{};
     KleddWatch* KleddFindWatch(ImageId image_id);
-    /// Page range owned by one z group (the groups partition the image's pages)
-    std::pair<DAddr, size_t> KleddGroupPages(const ImageBase& image, const KleddWatch& watch,
-                                             u32 group) const;
-    void KleddTrackGroups(const ImageBase& image, KleddWatch& watch, bool track);
-    void KleddMarkWritten(const ImageBase& image, KleddWatch& watch, DAddr cpu_addr, size_t size);
+    /// Calls func(cpu_addr, size) for every CPU page range owned by one z group. The groups
+    /// partition the image's pages; sparse images go through their registered map views.
+    template <typename Func>
+    void KleddForEachGroupRange(ImageId image_id, const ImageBase& image, const KleddWatch& watch,
+                                u32 group, Func&& func);
+    void KleddTrackGroups(ImageId image_id, const ImageBase& image, KleddWatch& watch, bool track);
+    void KleddMarkWritten(ImageId image_id, const ImageBase& image, KleddWatch& watch,
+                          DAddr cpu_addr, size_t size);
     bool KleddTryDeltaUpload(Image& image, ImageId image_id);
 
     /// eden-kledd: log the previous frame if it took too long, then reset the frame counters

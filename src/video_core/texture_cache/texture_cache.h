@@ -654,7 +654,7 @@ void TextureCache<P>::WriteMemory(DAddr cpu_addr, size_t size) {
         if (KleddWatch* watch = KleddFindWatch(image_id); watch && watch->complete) {
             // eden-kledd: only the written z groups lose their protection; the image stays
             // tracked so later writes to other groups are seen too.
-            KleddMarkWritten(image, *watch, cpu_addr, size);
+            KleddMarkWritten(image_id, image, *watch, cpu_addr, size);
             image.flags |= ImageFlagBits::CpuModified;
             return;
         }
@@ -1471,64 +1471,113 @@ typename TextureCache<P>::KleddWatch* TextureCache<P>::KleddFindWatch(ImageId im
 }
 
 template <class P>
-std::pair<DAddr, size_t> TextureCache<P>::KleddGroupPages(const ImageBase& image,
-                                                          const KleddWatch& watch,
-                                                          u32 group) const {
+template <typename Func>
+void TextureCache<P>::KleddForEachGroupRange(ImageId image_id, const ImageBase& image,
+                                             const KleddWatch& watch, u32 group, Func&& func) {
     // The groups partition the image's pages: a page straddling two groups belongs to the lower
-    // one, so every page is counted exactly once whichever groups are protected.
+    // one, so every page is counted exactly once whichever groups are protected. Non-sparse
+    // images are one contiguous CPU range; sparse images are split by their map views, which
+    // are page aligned on both sides.
     constexpr u64 page = Core::Memory::YUZU_PAGESIZE;
-    const DAddr image_begin = image.cpu_addr;
-    const DAddr image_end = image_begin + image.guest_size_bytes;
-    const DAddr begin = group == 0 ? image_begin
-                                   : Common::AlignUp(image_begin + group * watch.group_bytes, page);
-    const DAddr end = group + 1 >= watch.num_groups
-                          ? image_end
-                          : Common::AlignUp(image_begin + (group + 1) * watch.group_bytes, page);
+    const bool sparse = True(image.flags & ImageFlagBits::Sparse);
+    const u64 base = sparse ? image.gpu_addr : image.cpu_addr;
+    const u64 image_end = base + image.guest_size_bytes;
+    const u64 begin = group == 0
+                          ? base
+                          : (std::min)(Common::AlignUp(base + group * watch.group_bytes, page),
+                                       image_end);
+    const u64 end = group + 1 >= watch.num_groups
+                        ? image_end
+                        : (std::min)(Common::AlignUp(base + (group + 1) * watch.group_bytes, page),
+                                     image_end);
     if (end <= begin) {
-        return {0, 0};
+        return;
     }
-    return {begin, static_cast<size_t>(end - begin)};
+    if (!sparse) {
+        func(static_cast<DAddr>(begin), static_cast<size_t>(end - begin));
+        return;
+    }
+    const auto it = sparse_views.find(image_id);
+    if (it == sparse_views.end()) {
+        return;
+    }
+    for (const auto map_view_id : it->second) {
+        const ImageMapView& map = slot_map_views[map_view_id];
+        const u64 seg_begin = (std::max)(static_cast<u64>(map.gpu_addr), begin);
+        const u64 seg_end = (std::min)(static_cast<u64>(map.gpu_addr + map.size), end);
+        if (seg_end <= seg_begin) {
+            continue;
+        }
+        func(static_cast<DAddr>(map.cpu_addr + (seg_begin - map.gpu_addr)),
+             static_cast<size_t>(seg_end - seg_begin));
+    }
 }
 
 template <class P>
-void TextureCache<P>::KleddTrackGroups(const ImageBase& image, KleddWatch& watch, bool track) {
+void TextureCache<P>::KleddTrackGroups(ImageId image_id, const ImageBase& image,
+                                       KleddWatch& watch, bool track) {
     for (u32 group = 0; group < watch.num_groups; ++group) {
         if ((watch.tracked[group] != 0) == track) {
             continue;
         }
-        const auto [addr, size] = KleddGroupPages(image, watch, group);
-        if (size != 0) {
+        KleddForEachGroupRange(image_id, image, watch, group, [&](DAddr addr, size_t size) {
             device_memory.UpdatePagesCachedCount(addr, size, track ? 1 : -1);
-        }
+        });
         watch.tracked[group] = track ? 1 : 0;
     }
 }
 
 template <class P>
-void TextureCache<P>::KleddMarkWritten(const ImageBase& image, KleddWatch& watch, DAddr cpu_addr,
-                                       size_t size) {
+void TextureCache<P>::KleddMarkWritten(ImageId image_id, const ImageBase& image,
+                                       KleddWatch& watch, DAddr cpu_addr, size_t size) {
     // The protection fault reports the access; round it out to whole pages, because a page that
     // straddles two groups can carry bytes of both.
     constexpr u64 page = Core::Memory::YUZU_PAGESIZE;
-    const DAddr image_begin = image.cpu_addr;
-    const DAddr image_end = image_begin + image.guest_size_bytes;
-    const DAddr begin = (std::max)(Common::AlignDown(cpu_addr, page), image_begin);
-    const DAddr end = (std::min)(Common::AlignUp(cpu_addr + size, page), image_end);
-    if (begin >= end) {
+    const auto mark = [&](u64 offset_begin, u64 offset_end) {
+        if (offset_begin >= offset_end) {
+            return;
+        }
+        const u32 first = static_cast<u32>(offset_begin / watch.group_bytes);
+        const u32 last = (std::min)(static_cast<u32>((offset_end - 1) / watch.group_bytes),
+                                    watch.num_groups - 1);
+        for (u32 group = first; group <= last; ++group) {
+            watch.dirty[group] = 1;
+            if (watch.tracked[group] != 0) {
+                KleddForEachGroupRange(image_id, image, watch, group,
+                                       [&](DAddr addr, size_t bytes) {
+                                           device_memory.UpdatePagesCachedCount(addr, bytes, -1);
+                                       });
+                watch.tracked[group] = 0;
+            }
+        }
+    };
+    if (False(image.flags & ImageFlagBits::Sparse)) {
+        const u64 image_begin = image.cpu_addr;
+        const u64 image_end = image_begin + image.guest_size_bytes;
+        const u64 begin = (std::max)(Common::AlignDown(cpu_addr, page), image_begin);
+        const u64 end = (std::min)(Common::AlignUp(cpu_addr + size, page), image_end);
+        if (begin < end) {
+            mark(begin - image_begin, end - image_begin);
+        }
         return;
     }
-    const u32 first = static_cast<u32>((begin - image_begin) / watch.group_bytes);
-    const u32 last = (std::min)(static_cast<u32>((end - 1 - image_begin) / watch.group_bytes),
-                                watch.num_groups - 1);
-    for (u32 group = first; group <= last; ++group) {
-        watch.dirty[group] = 1;
-        if (watch.tracked[group] != 0) {
-            const auto [addr, bytes] = KleddGroupPages(image, watch, group);
-            if (bytes != 0) {
-                device_memory.UpdatePagesCachedCount(addr, bytes, -1);
-            }
-            watch.tracked[group] = 0;
+    const auto it = sparse_views.find(image_id);
+    if (it == sparse_views.end()) {
+        return;
+    }
+    for (const auto map_view_id : it->second) {
+        const ImageMapView& map = slot_map_views[map_view_id];
+        if (!map.Overlaps(cpu_addr, size)) {
+            continue;
         }
+        const u64 begin = (std::max)(Common::AlignDown(cpu_addr, page), static_cast<u64>(map.cpu_addr));
+        const u64 end = (std::min)(Common::AlignUp(cpu_addr + size, page),
+                                   static_cast<u64>(map.cpu_addr + map.size));
+        if (begin >= end) {
+            continue;
+        }
+        const u64 offset_begin = map.gpu_addr + (begin - map.cpu_addr) - image.gpu_addr;
+        mark(offset_begin, offset_begin + (end - begin));
     }
 }
 
@@ -1544,15 +1593,14 @@ bool TextureCache<P>::KleddTryDeltaUpload(Image& image, ImageId image_id) {
     const u64 guest_bytes = image.guest_size_bytes;
     KleddWatch* watch = KleddFindWatch(image_id);
     if (!watch) {
+        if (guest_bytes < min_bytes) {
+            return false;
+        }
         const char* decline = nullptr;
         u64 group_bytes = 0;
         if (info.type != ImageType::e3D || info.resources.levels != 1 ||
             info.resources.layers != 1 || info.num_samples != 1) {
             decline = "not a single-level 3D image";
-        } else if (guest_bytes < min_bytes) {
-            return false;
-        } else if (True(image.flags & ImageFlagBits::Sparse)) {
-            decline = "sparse image";
         } else if (True(image.flags & ImageFlagBits::AcceleratedUpload)) {
             decline = "accelerated upload";
         } else if (True(image.flags & ImageFlagBits::Converted)) {
@@ -1561,6 +1609,9 @@ bool TextureCache<P>::KleddTryDeltaUpload(Image& image, ImageId image_id) {
             decline = "rescaled";
         } else if (False(image.flags & ImageFlagBits::Tracked)) {
             decline = "image not tracked";
+        } else if (True(image.flags & ImageFlagBits::Sparse) &&
+                   !sparse_views.contains(image_id)) {
+            decline = "sparse image without map views";
         } else if ((group_bytes = ImageSliceGroupBytes(info, guest_bytes)) == 0) {
             decline = "unsupported block layout";
         }
@@ -1594,12 +1645,18 @@ bool TextureCache<P>::KleddTryDeltaUpload(Image& image, ImageId image_id) {
         watch->tracked.assign(num_groups, 1);
         watch->dirty.assign(num_groups, 0);
         watch->complete = false;
+        LOG_INFO(HW_GPU,
+                 "[Kledd] watching image {:#x} {}x{}x{} fmt {} {} MiB: {} z groups of {} slices "
+                 "({} MiB each){}",
+                 image.gpu_addr, info.size.width, info.size.height, info.size.depth,
+                 static_cast<u32>(info.format), guest_bytes >> 20, num_groups, group_slices,
+                 group_bytes >> 20, True(image.flags & ImageFlagBits::Sparse) ? ", sparse" : "");
     }
 
     if (!watch->complete || True(image.flags & ImageFlagBits::GpuModified)) {
         // Full upload through the regular path; from then on the watch is valid. Protect any
         // unprotected group first so writes during and after the upload are seen.
-        KleddTrackGroups(image, *watch, true);
+        KleddTrackGroups(image_id, image, *watch, true);
         std::fill(watch->dirty.begin(), watch->dirty.end(), 0);
         watch->complete = true;
         return false;
@@ -1613,7 +1670,7 @@ bool TextureCache<P>::KleddTryDeltaUpload(Image& image, ImageId image_id) {
     }
     // Protect the written groups again before reading them: a write that lands after this
     // point faults and marks its group dirty for the next upload.
-    KleddTrackGroups(image, *watch, true);
+    KleddTrackGroups(image_id, image, *watch, true);
     std::fill(watch->dirty.begin(), watch->dirty.end(), 0);
     if (changed.empty()) {
         return true;
@@ -3419,7 +3476,7 @@ void TextureCache<P>::TrackImage(ImageBase& image, ImageId image_id) {
     image.flags |= ImageFlagBits::Tracked;
     if (KleddWatch* watch = KleddFindWatch(image_id)) {
         // eden-kledd: protect the groups that are not protected yet (page counts stay balanced)
-        KleddTrackGroups(image, *watch, true);
+        KleddTrackGroups(image_id, image, *watch, true);
         return;
     }
     if (False(image.flags & ImageFlagBits::Sparse)) {
@@ -3452,7 +3509,7 @@ void TextureCache<P>::UntrackImage(ImageBase& image, ImageId image_id) {
     image.flags &= ~ImageFlagBits::Tracked;
     if (KleddWatch* watch = KleddFindWatch(image_id)) {
         // eden-kledd: writes are no longer observed, so the next upload must be a full one
-        KleddTrackGroups(image, *watch, false);
+        KleddTrackGroups(image_id, image, *watch, false);
         watch->complete = false;
         return;
     }
