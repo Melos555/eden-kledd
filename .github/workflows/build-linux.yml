@@ -2,7 +2,9 @@ name: Build Eden (Linux)
 
 on:
   push:
+    branches: ["**"]
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read

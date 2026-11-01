@@ -1,0 +1,62 @@
+name: Release Eden (Windows + Linux)
+
+# Push a tag like v0.3-audiofix to build Windows x64 and Linux x86_64 on GitHub's runners and
+# publish them as a GitHub Release. Nothing is built or uploaded by hand.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Windows x64
+    uses: ./.github/workflows/build-windows.yml
+
+  linux:
+    name: Linux x86_64
+    uses: ./.github/workflows/build-linux.yml
+
+  release:
+    name: Publish release
+    needs: [windows, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Package release assets
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          mkdir -p release
+          (cd artifacts/eden-kledd-windows && zip -qr "../../release/eden-kledd-${tag}-windows-x86_64.zip" .)
+          cp artifacts/eden-kledd-linux-x86_64/eden-kledd-linux-x86_64.tar.gz "release/eden-kledd-${tag}-linux-x86_64.tar.gz"
+          cp artifacts/eden-kledd-linux-appimage/eden-kledd-x86_64.AppImage "release/eden-kledd-${tag}-linux-x86_64.AppImage"
+          (cd release && sha256sum * > SHA256SUMS.txt)
+          ls -la release
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: eden-kledd ${{ github.ref_name }}
+          files: release/*
+          body: |
+            Metroid Prime 4: Beyond audio hang fix, on top of the v0.2 scan fix.
+
+            - Audio no longer buzzes when the game stalls while loading: the emulated DSP now pauses in step with the game instead of looping the buffer the game could not refill, and while the game is suspended for the GPU.
+            - The sound output never replays stale device memory on a short buffer.
+            - Removed the 600 us sleep on every file read while a video decoder is open (ported from upstream Eden PR 4525).
+            - Upstream fixes carried over: asynchronous shader revert (PR 4512) and composer buffer release (PR 4548).
+            - Diagnostics in the log for audio starvation and GPU stalls.
+
+            Windows: unzip and run eden.exe. Linux: run the AppImage (built on Debian 13, works on SteamOS) or unpack the tarball.
