@@ -17,5 +17,6 @@ class ServiceManager;
 namespace Service::Audio {
 
 void LoopProcess(Core::System& system);
+void LoopProcessOpus(Core::System& system);
 
 } // namespace Service::Audio

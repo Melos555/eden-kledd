@@ -4,6 +4,7 @@
 // SPDX-FileCopyrightText: Copyright 2022 yuzu Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
 #include <chrono>
 #include <span>
 
@@ -14,6 +15,7 @@
 #include "audio_core/common/common.h"
 #include "audio_core/common/feature_support.h"
 #include "audio_core/common/workbuffer_allocator.h"
+#include "audio_core/opus/opus_stats.h"
 #include "audio_core/renderer/behavior/info_updater.h"
 #include "audio_core/renderer/command/command_buffer.h"
 #include "audio_core/renderer/command/command_generator.h"
@@ -432,6 +434,9 @@ void System::Finalize() {
 void System::Start() {
     std::scoped_lock l{lock};
     frames_elapsed = 0;
+    frames_since_update = 0;
+    update_gaps.fill(0);
+    update_gap_index = 0;
     state = State::Started;
     active = true;
 }
@@ -552,6 +557,8 @@ Result System::Update(std::span<const u8> input, std::span<u8> performance, std:
 
     adsp_rendered_event->Clear(core.Kernel());
     num_times_updated++;
+    update_gaps[update_gap_index++ % update_gaps.size()] = frames_since_update;
+    frames_since_update = 0;
 
     const auto end_time{core.CoreTiming().GetGlobalTimeNs().count()};
     ticks_spent_updating += end_time - start_time;
@@ -604,6 +611,24 @@ void System::SendCommandToDsp() {
             const auto remaining_command_count{audio_renderer.GetRemainCommandCount(session_id)};
             u64 command_size{0};
 
+            // eden-kledd: a game that has stopped calling RequestUpdate (loading hitch, starved
+            // audio thread) has fallen behind the DSP. Hardware would render on and loop whatever
+            // the game could not refill; hold instead, so the sound pauses and resumes in step
+            // with the game. The event is still signalled so the game can catch up.
+            if (remaining_command_count == 0 && num_times_updated > 0) {
+                const u32 usual_gap{*std::min_element(update_gaps.begin(), update_gaps.end())};
+                const u32 hold_after{(std::max)(4u, usual_gap * 3)};
+                if (frames_since_update >= hold_after) {
+                    frames_since_update++;
+                    held_frames_since_log++;
+                    longest_gap_since_log = (std::max)(longest_gap_since_log, frames_since_update);
+                    LogHoldIfDue();
+                    adsp_rendered_event->Signal(core.Kernel());
+                    return;
+                }
+            }
+            frames_since_update++;
+
             if (remaining_command_count) {
                 adsp_behind = true;
                 command_size = command_buffer_size;
@@ -641,6 +666,29 @@ void System::SendCommandToDsp() {
             terminate_event.Set();
         }
     }
+}
+
+void System::LogHoldIfDue() {
+    const auto now{std::chrono::steady_clock::now()};
+    if (last_hold_log.time_since_epoch().count() != 0 &&
+        now - last_hold_log < std::chrono::seconds{2}) {
+        return;
+    }
+    const u32 usual_gap{*std::min_element(update_gaps.begin(), update_gaps.end())};
+    const u64 opus_calls{::AudioCore::OpusDecoder::Stats::decode_calls.load()};
+    const u64 opus_us{::AudioCore::OpusDecoder::Stats::decode_microseconds.load()};
+    LOG_WARNING(Service_Audio,
+                "Audio renderer session {}: game late with updates, held {} frames ({} ms), "
+                "longest gap {} frames, usual gap {} frames; opus decodes since last report {} "
+                "({} ms)",
+                session_id, held_frames_since_log, held_frames_since_log * 5,
+                longest_gap_since_log, usual_gap, opus_calls - opus_calls_at_log,
+                (opus_us - opus_microseconds_at_log) / 1000);
+    held_frames_since_log = 0;
+    longest_gap_since_log = 0;
+    opus_calls_at_log = opus_calls;
+    opus_microseconds_at_log = opus_us;
+    last_hold_log = now;
 }
 
 u64 System::GenerateCommand(std::span<u8> in_command_buffer,

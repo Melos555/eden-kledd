@@ -90,7 +90,22 @@ void ServiceFrameworkBase::InvokeRequest(HLERequestContext& ctx) {
         return ReportUnimplementedFunction(ctx, info);
 
     LOG_TRACE(Service, "{}", MakeFunctionString(info->name, GetServiceName(), ctx.CommandBuffer()));
+    const auto handler_start{std::chrono::steady_clock::now()};
     handler_invoker(this, info->handler_callback, ctx);
+
+    // eden-kledd diagnostic: the audio services share one server thread, so one slow request
+    // delays the game's audio renderer updates queued behind it.
+    const std::string_view name{service_name};
+    if (name.starts_with("IAudio") || name.starts_with("aud") ||
+        name.starts_with("IHardwareOpus") || name == "hwopus") {
+        const auto handler_ms{std::chrono::duration_cast<std::chrono::milliseconds>(
+                                  std::chrono::steady_clock::now() - handler_start)
+                                  .count()};
+        if (handler_ms >= 20) {
+            LOG_WARNING(Service, "{}::{} took {} ms on its service thread", name, info->name,
+                        handler_ms);
+        }
+    }
 
     if (is_i_storage && is_cmd_read) {
         const auto* const process = ctx.GetThread().GetOwnerProcess();
