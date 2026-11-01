@@ -302,6 +302,16 @@ public:
 private:
     void KleddDownloadDepthStencil(Image& image);
 
+    /// eden-kledd diagnostic: which large images get (re)uploaded, summarised every 2 seconds
+    struct KleddBigUpload {
+        u32 count = 0;
+        u64 bytes = 0;
+        ImageInfo info{};
+    };
+    std::unordered_map<GPUVAddr, KleddBigUpload> kledd_big_uploads;
+    std::chrono::steady_clock::time_point kledd_big_upload_log{};
+    void KleddNoteBigUpload(const Image& image);
+
     /// eden-kledd: log the previous frame if it took too long, then reset the frame counters
     void KleddLogLongFrame();
     std::chrono::steady_clock::time_point kledd_last_frame{};
