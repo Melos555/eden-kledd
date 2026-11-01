@@ -199,6 +199,7 @@ NvResult nvhost_ctrl::IocCtrlEventWait(IocCtrlEventWaitParams& params, bool is_a
     params.value.raw = 0;
 
     event.status.store(EventState::Waiting, std::memory_order_release);
+    event.wait_started = std::chrono::steady_clock::now();
     event.assigned_syncpt = fence_id;
     event.assigned_value = target_value;
     if (is_allocation) {
@@ -214,6 +215,19 @@ NvResult nvhost_ctrl::IocCtrlEventWait(IocCtrlEventWaitParams& params, bool is_a
             auto& event_ = events[slot];
             if (event_.status.exchange(EventState::Signalling, std::memory_order_acq_rel) ==
                 EventState::Waiting) {
+                // eden-kledd diagnostic: how long the game waited for this GPU fence
+                const auto waited_ms{static_cast<u32>(
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now() - event_.wait_started)
+                        .count())};
+                u32 n{};
+                u32 worst{};
+                if (waited_ms >= 30 && fence_waits.Note(waited_ms, n, worst)) {
+                    LOG_WARNING(Service_NVDRV,
+                                "[Kledd] game waited for GPU fences: {} waits over 30 ms in the "
+                                "last 2 s (longest {} ms, syncpoint {} value {})",
+                                n, worst, event_.assigned_syncpt, event_.assigned_value);
+                }
                 event_.kevent->Signal(system.Kernel());
             }
             event_.status.store(EventState::Signalled, std::memory_order_release);

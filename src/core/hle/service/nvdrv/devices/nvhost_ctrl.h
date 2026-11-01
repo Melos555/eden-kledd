@@ -4,6 +4,10 @@
 
 #pragma once
 
+#include <chrono>
+
+#include "common/kledd_slow_log.h"
+
 #include <array>
 #include <vector>
 #include "common/bit_field.h"
@@ -56,6 +60,9 @@ public:
     static_assert(sizeof(SyncpointEventValue) == sizeof(u32));
 
 private:
+    /// eden-kledd diagnostic: game waits on GPU fences
+    Common::Kledd::SlowEventLog fence_waits{};
+
     struct InternalEvent {
         // Mask representing registered events
 
@@ -78,6 +85,8 @@ private:
 
         // Used for waiting on a syncpoint & canceling it.
         Tegra::Host1x::SyncpointManager::ActionHandle wait_handle{};
+        // eden-kledd diagnostic: when the current wait started
+        std::chrono::steady_clock::time_point wait_started{};
 
         bool IsBeingUsed() const {
             const auto current_status = status.load(std::memory_order_acquire);

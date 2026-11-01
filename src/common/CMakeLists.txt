@@ -72,6 +72,7 @@ add_library(
     input.h
     intrusive_red_black_tree.h
     kledd_frame_stats.h
+    kledd_slow_log.h
     literals.h
     logging.cpp
     logging.h

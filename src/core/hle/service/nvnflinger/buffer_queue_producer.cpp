@@ -7,7 +7,10 @@
 // Parts of this implementation were based on:
 // https://cs.android.com/android/platform/superproject/+/android-5.1.1_r38:frameworks/native/libs/gui/BufferQueueProducer.cpp
 
+#include <chrono>
+
 #include "common/assert.h"
+#include "common/kledd_slow_log.h"
 #include "common/logging.h"
 #include "common/settings.h"
 #include "common/cpu_features.h"
@@ -217,7 +220,25 @@ Status BufferQueueProducer::WaitForFreeSlotThenRelock(bool async, s32* found, St
                 return Status::WouldBlock;
             }
 
-            if (!core->WaitForDequeueCondition(lk)) {
+            // eden-kledd diagnostic: how long the game waited for a free frame buffer
+            const auto wait_started{std::chrono::steady_clock::now()};
+            const bool still_running{core->WaitForDequeueCondition(lk)};
+            {
+                const auto waited_ms{static_cast<u32>(
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now() - wait_started)
+                        .count())};
+                static Common::Kledd::SlowEventLog dequeue_waits{};
+                u32 n{};
+                u32 worst{};
+                if (waited_ms >= 30 && dequeue_waits.Note(waited_ms, n, worst)) {
+                    LOG_WARNING(Service_Nvnflinger,
+                                "[Kledd] game waited for a free frame buffer: {} waits over 30 ms "
+                                "in the last 2 s (longest {} ms)",
+                                n, worst);
+                }
+            }
+            if (!still_running) {
                 // We are no longer running
                 return Status::NoError;
             }

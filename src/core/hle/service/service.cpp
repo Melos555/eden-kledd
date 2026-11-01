@@ -8,6 +8,7 @@
 #include <fmt/ranges.h>
 #include <string_view>
 #include "common/assert.h"
+#include "common/kledd_slow_log.h"
 #include "common/logging.h"
 #include "common/settings.h"
 #include "core/core.h"
@@ -91,14 +92,31 @@ void ServiceFrameworkBase::InvokeRequest(HLERequestContext& ctx) {
     // eden-kledd diagnostic: the audio services share one server thread, so one slow request
     // delays the game's audio renderer updates queued behind it.
     const std::string_view name{service_name};
-    if (name.starts_with("IAudio") || name.starts_with("aud") ||
-        name.starts_with("IHardwareOpus") || name == "hwopus") {
+    const bool audio_service{name.starts_with("IAudio") || name.starts_with("aud") ||
+                             name.starts_with("IHardwareOpus") || name == "hwopus"};
+    const bool fs_service{name == "IFile" || name == "IStorage" || name == "IFileSystem" ||
+                          name == "IDirectory" || name == "fsp-srv"};
+    if (audio_service || fs_service) {
         const auto handler_ms{std::chrono::duration_cast<std::chrono::milliseconds>(
                                   std::chrono::steady_clock::now() - handler_start)
                                   .count()};
         if (handler_ms >= 20) {
-            LOG_WARNING(Service, "{}::{} took {} ms on its service thread", name, info->name,
-                        handler_ms);
+            if (audio_service) {
+                LOG_WARNING(Service, "{}::{} took {} ms on its service thread", name, info->name,
+                            handler_ms);
+            } else {
+                // eden-kledd diagnostic: file-system requests are served one at a time, so a slow
+                // read during a load delays every other file request queued behind it.
+                static Common::Kledd::SlowEventLog slow_fs{};
+                u32 n{};
+                u32 worst{};
+                if (slow_fs.Note(static_cast<u32>(handler_ms), n, worst)) {
+                    LOG_WARNING(Service,
+                                "[Kledd] file system: {} requests took over 20 ms in the last 2 s "
+                                "(longest {} ms, latest {}::{})",
+                                n, worst, name, info->name);
+                }
+            }
         }
     }
 }
