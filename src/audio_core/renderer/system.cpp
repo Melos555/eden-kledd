@@ -444,7 +444,17 @@ void System::Stop() {
     }
 
     if (execution_mode == ExecutionMode::Auto) {
+        const auto wait_start = std::chrono::steady_clock::now();
         terminate_event.Wait();
+        // Diagnostic: the game thread is held here until the render thread acknowledges.
+        const auto waited_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                   std::chrono::steady_clock::now() - wait_start)
+                                   .count();
+        if (waited_ms >= 100) {
+            LOG_WARNING(Service_Audio,
+                        "Audio renderer session {} Stop waited {} ms for the render thread",
+                        session_id, waited_ms);
+        }
     }
 }
 
