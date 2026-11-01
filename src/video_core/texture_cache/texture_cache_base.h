@@ -323,6 +323,11 @@ private:
         bool complete = false;
         std::vector<u8> tracked;
         std::vector<u8> dirty;
+        u32 dirty_by_remap = 0;
+        u32 views_rebuilt = 0;
+        /// GPU ranges of the image whose page mapping changed; their map views are rebuilt from
+        /// the page table before their groups are protected again
+        std::vector<std::pair<GPUVAddr, GPUVAddr>> remapped;
     };
     ::Common::unordered_map<ImageId, KleddWatch> kledd_watches;
     std::chrono::steady_clock::time_point kledd_decline_log{};
@@ -333,8 +338,16 @@ private:
     void KleddForEachGroupRange(ImageId image_id, const ImageBase& image, const KleddWatch& watch,
                                 u32 group, Func&& func);
     void KleddTrackGroups(ImageId image_id, const ImageBase& image, KleddWatch& watch, bool track);
+    /// Marks the z groups covering image offsets [begin, end) dirty and unprotects them
+    void KleddMarkGroups(ImageId image_id, const ImageBase& image, KleddWatch& watch,
+                         u64 offset_begin, u64 offset_end);
     void KleddMarkWritten(ImageId image_id, const ImageBase& image, KleddWatch& watch,
                           DAddr cpu_addr, size_t size);
+    /// A GPU page of the image was (un)mapped: only its z groups need a new upload
+    void KleddMarkRemapped(ImageId image_id, const ImageBase& image, KleddWatch& watch,
+                           GPUVAddr gpu_addr, size_t size);
+    /// Replaces the map views of the remapped ranges with the current page table mapping
+    void KleddRebuildViews(ImageId image_id, const ImageBase& image, KleddWatch& watch);
     bool KleddTryDeltaUpload(Image& image, ImageId image_id);
 
     /// eden-kledd: log the previous frame if it took too long, then reset the frame counters

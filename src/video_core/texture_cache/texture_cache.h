@@ -831,6 +831,20 @@ void TextureCache<P>::UnmapGPUMemory(size_t as_id, GPUVAddr gpu_addr, size_t siz
                             [&](ImageId id, Image&) { deleted_images.push_back(id); });
     for (const ImageId id : deleted_images) {
         Image& image = slot_images[id];
+        // eden-kledd: a pool forrest's unswizzle is still working on goes the old way, so a
+        // finished async job can never overwrite newer z groups uploaded in between.
+        if (False(image.flags & ImageFlagBits::IsDecoding)) {
+            if (KleddWatch* watch = KleddFindWatch(id)) {
+                // eden-kledd: Metroid Prime 4 streams tiles into its sparse texture pools by
+                // remapping their pages. Untracking the whole 477-955 MiB image here forced a full
+                // re-upload of all six pools every few seconds; instead only the remapped z groups
+                // are marked for the next upload, their map views are rebuilt before they are
+                // protected again, and the image stays in use.
+                KleddMarkRemapped(id, image, *watch, gpu_addr, size);
+                image.flags |= ImageFlagBits::CpuModified;
+                continue;
+            }
+        }
         CancelPendingUnswizzle(id);
         image.flags &= ~ImageFlagBits::IsDecoding;
         if (False(image.flags & ImageFlagBits::CpuModified)) {
@@ -1439,6 +1453,12 @@ void TextureCache<P>::RefreshContents(Image& image, ImageId image_id) {
         return;
     }
 
+    // eden-kledd: once a big pool has been uploaded in full (the first time through forrest's
+    // path below), later writes and remaps only upload the z groups they touched.
+    if (False(image.flags & ImageFlagBits::IsDecoding) && KleddTryDeltaUpload(image, image_id)) {
+        kledd_stats.uploads.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
     if (True(image.flags & ImageFlagBits::SparseUpload)) {
         kledd_stats.async_unswizzles.fetch_add(1, std::memory_order_relaxed);
         if ( async_unswizzle_mode == Settings::AsyncUnswizzleMode::Off ) {
@@ -1447,10 +1467,6 @@ void TextureCache<P>::RefreshContents(Image& image, ImageId image_id) {
         else {
             QueueAsyncUnswizzle(image, image_id);
         }
-        return;
-    }
-    if (KleddTryDeltaUpload(image, image_id)) {
-        kledd_stats.uploads.fetch_add(1, std::memory_order_relaxed);
         return;
     }
     kledd_stats.uploads.fetch_add(1, std::memory_order_relaxed);
@@ -1516,6 +1532,10 @@ void TextureCache<P>::KleddForEachGroupRange(ImageId image_id, const ImageBase& 
 template <class P>
 void TextureCache<P>::KleddTrackGroups(ImageId image_id, const ImageBase& image,
                                        KleddWatch& watch, bool track) {
+    if (track) {
+        // The remapped groups are unprotected right now, so their views can change freely
+        KleddRebuildViews(image_id, image, watch);
+    }
     for (u32 group = 0; group < watch.num_groups; ++group) {
         if ((watch.tracked[group] != 0) == track) {
             continue;
@@ -1528,28 +1548,130 @@ void TextureCache<P>::KleddTrackGroups(ImageId image_id, const ImageBase& image,
 }
 
 template <class P>
+void TextureCache<P>::KleddMarkGroups(ImageId image_id, const ImageBase& image, KleddWatch& watch,
+                                      u64 offset_begin, u64 offset_end) {
+    if (offset_begin >= offset_end) {
+        return;
+    }
+    const u32 first = static_cast<u32>(offset_begin / watch.group_bytes);
+    const u32 last = (std::min)(static_cast<u32>((offset_end - 1) / watch.group_bytes),
+                                watch.num_groups - 1);
+    for (u32 group = first; group <= last; ++group) {
+        watch.dirty[group] = 1;
+        if (watch.tracked[group] != 0) {
+            KleddForEachGroupRange(image_id, image, watch, group, [&](DAddr addr, size_t bytes) {
+                device_memory.UpdatePagesCachedCount(addr, bytes, -1);
+            });
+            watch.tracked[group] = 0;
+        }
+    }
+}
+
+template <class P>
+void TextureCache<P>::KleddMarkRemapped(ImageId image_id, const ImageBase& image,
+                                        KleddWatch& watch, GPUVAddr gpu_addr, size_t size) {
+    const u64 image_begin = image.gpu_addr;
+    const u64 image_end = image_begin + image.guest_size_bytes;
+    const u64 begin = (std::max)(static_cast<u64>(gpu_addr), image_begin);
+    const u64 end = (std::min)(static_cast<u64>(gpu_addr + size), image_end);
+    if (begin >= end) {
+        return;
+    }
+    watch.dirty_by_remap++;
+    KleddMarkGroups(image_id, image, watch, begin - image_begin, end - image_begin);
+    // The page table entry is still being written when this is called, so the new mapping is
+    // read later, by KleddRebuildViews. Pages of one map call arrive in order: merge them.
+    auto& ranges = watch.remapped;
+    if (!ranges.empty() && begin <= ranges.back().second && end >= ranges.back().first) {
+        ranges.back().first = (std::min)(ranges.back().first, static_cast<GPUVAddr>(begin));
+        ranges.back().second = (std::max)(ranges.back().second, static_cast<GPUVAddr>(end));
+    } else {
+        ranges.emplace_back(static_cast<GPUVAddr>(begin), static_cast<GPUVAddr>(end));
+    }
+}
+
+template <class P>
+void TextureCache<P>::KleddRebuildViews(ImageId image_id, const ImageBase& image,
+                                        KleddWatch& watch) {
+    if (watch.remapped.empty()) {
+        return;
+    }
+    const auto ranges = std::move(watch.remapped);
+    watch.remapped.clear();
+    if (False(image.flags & ImageFlagBits::Sparse)) {
+        // One contiguous CPU range that never changes
+        return;
+    }
+    const auto it = sparse_views.find(image_id);
+    if (it == sparse_views.end()) {
+        return;
+    }
+    auto& maps = it->second;
+    const auto add_map = [&](GPUVAddr gpu_addr, DAddr cpu_addr, size_t size) {
+        const ImageMapId map_id = slot_map_views.insert(gpu_addr, cpu_addr, size, image_id);
+        ForEachCPUPage(cpu_addr, size,
+                       [this, map_id](u64 page) { page_table[page].push_back(map_id); });
+        maps.push_back(map_id);
+        watch.views_rebuilt++;
+    };
+    for (const auto& [range_begin, range_end] : ranges) {
+        // Views reaching past the range on either side keep their mapping there
+        boost::container::small_vector<std::tuple<GPUVAddr, DAddr, size_t>, 8> kept;
+        size_t keep_count = 0;
+        for (size_t i = 0; i < maps.size(); ++i) {
+            const ImageMapId map_id = maps[i];
+            const ImageMapView& map = slot_map_views[map_id];
+            const GPUVAddr map_begin = map.gpu_addr;
+            const GPUVAddr map_end = map.gpu_addr + map.size;
+            if (map_end <= range_begin || map_begin >= range_end) {
+                maps[keep_count++] = map_id;
+                continue;
+            }
+            if (map_begin < range_begin) {
+                kept.emplace_back(map_begin, map.cpu_addr,
+                                  static_cast<size_t>(range_begin - map_begin));
+            }
+            if (map_end > range_end) {
+                kept.emplace_back(range_end, map.cpu_addr + (range_end - map_begin),
+                                  static_cast<size_t>(map_end - range_end));
+            }
+            ForEachCPUPage(map.cpu_addr, map.size, [this, map_id](u64 page) {
+                const auto page_it = page_table.find(page);
+                if (page_it == page_table.end()) {
+                    return;
+                }
+                std::vector<ImageMapId>& map_ids = page_it->second;
+                const auto vector_it = std::ranges::find(map_ids, map_id);
+                if (vector_it != map_ids.end()) {
+                    map_ids.erase(vector_it);
+                }
+            });
+            slot_map_views.erase(map_id);
+        }
+        maps.erase(maps.begin() + keep_count, maps.end());
+        for (const auto& [gpu_addr, cpu_addr, size] : kept) {
+            add_map(gpu_addr, cpu_addr, size);
+        }
+        const auto segments =
+            gpu_memory->GetSubmappedRange(range_begin, static_cast<size_t>(range_end - range_begin));
+        for (const auto& [gpu_addr, size] : segments) {
+            const std::optional<DAddr> cpu_addr = gpu_memory->GpuToCpuAddress(gpu_addr);
+            if (!cpu_addr) {
+                continue;
+            }
+            add_map(gpu_addr, *cpu_addr, size);
+        }
+    }
+}
+
+template <class P>
 void TextureCache<P>::KleddMarkWritten(ImageId image_id, const ImageBase& image,
                                        KleddWatch& watch, DAddr cpu_addr, size_t size) {
     // The protection fault reports the access; round it out to whole pages, because a page that
     // straddles two groups can carry bytes of both.
     constexpr u64 page = Core::Memory::YUZU_PAGESIZE;
     const auto mark = [&](u64 offset_begin, u64 offset_end) {
-        if (offset_begin >= offset_end) {
-            return;
-        }
-        const u32 first = static_cast<u32>(offset_begin / watch.group_bytes);
-        const u32 last = (std::min)(static_cast<u32>((offset_end - 1) / watch.group_bytes),
-                                    watch.num_groups - 1);
-        for (u32 group = first; group <= last; ++group) {
-            watch.dirty[group] = 1;
-            if (watch.tracked[group] != 0) {
-                KleddForEachGroupRange(image_id, image, watch, group,
-                                       [&](DAddr addr, size_t bytes) {
-                                           device_memory.UpdatePagesCachedCount(addr, bytes, -1);
-                                       });
-                watch.tracked[group] = 0;
-            }
-        }
+        KleddMarkGroups(image_id, image, watch, offset_begin, offset_end);
     };
     if (False(image.flags & ImageFlagBits::Sparse)) {
         const u64 image_begin = image.cpu_addr;
@@ -1699,12 +1821,15 @@ bool TextureCache<P>::KleddTryDeltaUpload(Image& image, ImageId image_id) {
 
     LOG_INFO(HW_GPU,
              "[Kledd] delta upload image {:#x} {}x{}x{} fmt {}: {} of {} z groups written ({} of "
-             "{} MiB), {} ms",
+             "{} MiB, {} remap events, {} views rebuilt), {} ms",
              image.gpu_addr, info.size.width, info.size.height, info.size.depth,
              static_cast<u32>(info.format), changed.size(), watch->num_groups,
-             (changed.size() * watch->group_bytes) >> 20, guest_bytes >> 20,
+             (changed.size() * watch->group_bytes) >> 20, guest_bytes >> 20, watch->dirty_by_remap,
+             watch->views_rebuilt,
              std::chrono::duration_cast<std::chrono::milliseconds>(upload_end - upload_start)
                  .count());
+    watch->dirty_by_remap = 0;
+    watch->views_rebuilt = 0;
     return true;
 }
 
