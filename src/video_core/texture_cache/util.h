@@ -122,4 +122,21 @@ void DeduceBlitImages(ImageInfo& dst_info, ImageInfo& src_info, const ImageBase*
 
 [[nodiscard]] u32 MapSizeBytes(const ImageBase& image);
 
+/// eden-kledd: slices per block-linear z group of a single-level 3D image
+[[nodiscard]] u32 ImageSliceGroupSlices(const ImageInfo& info);
+
+/// eden-kledd: guest (swizzled) bytes of one z group of a single-level 3D image, or 0 when the
+/// layout is not one this code handles
+[[nodiscard]] u64 ImageSliceGroupBytes(const ImageInfo& info, u64 guest_size_bytes);
+
+/// eden-kledd: host (linear) bytes of one full z group after unswizzling
+[[nodiscard]] u64 ImageSliceGroupHostBytes(const ImageInfo& info);
+
+/// eden-kledd: unswizzles one z group from its guest bytes into output (sized for a full group)
+/// and returns the copy that uploads slices [z_start, z_start + z_count) from buffer_offset.
+[[nodiscard]] BufferImageCopy UnswizzleImageSliceGroup(const ImageInfo& info,
+                                                       std::span<const u8> input,
+                                                       std::span<u8> output, u32 z_start,
+                                                       u32 z_count, size_t buffer_offset);
+
 } // namespace VideoCommon
