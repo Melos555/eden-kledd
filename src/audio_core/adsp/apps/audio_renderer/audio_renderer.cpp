@@ -168,6 +168,7 @@ void AudioRenderer::Main(std::stop_token stop_token) {
             std::array<bool, MaxRendererSessions> buffers_reset{};
             std::array<u64, MaxRendererSessions> render_times_taken{};
             const auto start_time{system.CoreTiming().GetGlobalTimeUs().count()};
+            bool rendered_any{false};
 
             for (u32 index = 0; index < MaxRendererSessions; index++) {
                 auto& command_buffer{command_buffers[index]};
@@ -175,6 +176,7 @@ void AudioRenderer::Main(std::stop_token stop_token) {
 
                 // Check this buffer is valid, as it may not be used.
                 if (command_buffer.buffer != 0) {
+                    rendered_any = true;
                     // If there are no remaining commands (from the previous list),
                     // this is a new command list, initialize it.
                     if (command_buffer.remaining_command_count == 0) {
@@ -216,6 +218,11 @@ void AudioRenderer::Main(std::stop_token stop_token) {
                         command_list_processor.GetRemainingCommandCount();
                     command_buffer.render_time_taken_us = end_time - start_time;
                 }
+            }
+            if (!rendered_any) {
+                // Nothing to render (renderer stopped, or held while the game catches up): keep
+                // the host loop at audio-frame pace instead of spinning.
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
             }
             mailbox.Send(Direction::Host, Message::RenderResponse);
         } break;

@@ -4,8 +4,11 @@
 // SPDX-FileCopyrightText: Copyright 2023 yuzu Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <chrono>
+
 #include "audio_core/opus/decoder.h"
 #include "audio_core/opus/hardware_opus.h"
+#include "audio_core/opus/opus_stats.h"
 #include "audio_core/opus/parameters.h"
 #include "common/alignment.h"
 #include "common/scope_exit.h"
@@ -131,9 +134,16 @@ Result OpusDecoder::DecodeInterleaved(u32* out_data_size, u64* out_time_taken,
 
     std::memcpy(in_data.data(), input_data.data() + sizeof(OpusPacketHeader), header.size);
 
-    R_TRY(hardware_opus.DecodeInterleaved(out_samples, out_data.data(), out_data.size_bytes(),
-                                          channel_count, in_data.data(), header.size,
-                                          shared_buffer.data(), time_taken, reset));
+    const auto decode_start{std::chrono::steady_clock::now()};
+    const auto decode_result{hardware_opus.DecodeInterleaved(
+        out_samples, out_data.data(), out_data.size_bytes(), channel_count, in_data.data(),
+        header.size, shared_buffer.data(), time_taken, reset)};
+    Stats::decode_calls++;
+    Stats::decode_microseconds += static_cast<u64>(
+        std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() -
+                                                              decode_start)
+            .count());
+    R_TRY(decode_result);
 
     std::memcpy(output_data.data(), out_data.data(), out_samples * channel_count * sizeof(s16));
 
@@ -177,9 +187,16 @@ Result OpusDecoder::DecodeInterleavedForMultiStream(u32* out_data_size, u64* out
 
     std::memcpy(in_data.data(), input_data.data() + sizeof(OpusPacketHeader), header.size);
 
-    R_TRY(hardware_opus.DecodeInterleavedForMultiStream(
+    const auto decode_start{std::chrono::steady_clock::now()};
+    const auto decode_result{hardware_opus.DecodeInterleavedForMultiStream(
         out_samples, out_data.data(), out_data.size_bytes(), channel_count, in_data.data(),
-        header.size, shared_buffer.data(), time_taken, reset));
+        header.size, shared_buffer.data(), time_taken, reset)};
+    Stats::decode_calls++;
+    Stats::decode_microseconds += static_cast<u64>(
+        std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() -
+                                                              decode_start)
+            .count());
+    R_TRY(decode_result);
 
     std::memcpy(output_data.data(), out_data.data(), out_samples * channel_count * sizeof(s16));
 

@@ -90,6 +90,7 @@ Services::Services(std::shared_ptr<SM::ServiceManager>& sm, Core::System& system
     // spamming lambdas like it's some kind of lambda calculus class
     for (auto const& e : std::vector<std::pair<std::string_view, void (*)(Core::System&)>>{
         {"audio",      &Audio::LoopProcess},
+        {"hwopus",     &Audio::LoopProcessOpus},
         {"FS",         &FileSystem::LoopProcess},
         {"ldn",        &LDN::LoopProcess},
         {"nvservices", &Nvidia::LoopProcess},

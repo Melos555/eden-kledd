@@ -204,6 +204,13 @@ void LoopProcess(Core::System& system) {
     server_manager->RegisterNamedService("audrec:u", std::make_shared<IFinalOutputRecorderManager>(system), 30);
     server_manager->RegisterNamedService("audren:u", std::make_shared<IAudioRendererManager>(system), 30);
     server_manager->RegisterNamedService("audren:a", std::make_shared<IAudioRendererManagerForApplet>(system), 30);
+    ServerManager::RunServer(std::move(server_manager));
+}
+
+void LoopProcessOpus(Core::System& system) {
+    // eden-kledd: hwopus gets its own server thread. Decoding a burst of Opus packets on the
+    // shared audio thread delayed IAudioRenderer::RequestUpdate, and the DSP ran on without it.
+    auto server_manager = std::make_unique<ServerManager>(system);
     server_manager->RegisterNamedService("hwopus", std::make_shared<IHardwareOpusDecoderManager>(system), 25);
     ServerManager::RunServer(std::move(server_manager));
 }

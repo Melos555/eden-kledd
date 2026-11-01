@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <array>
+#include <chrono>
 #include <memory>
 #include <mutex>
 #include <span>
@@ -317,6 +319,20 @@ private:
     std::atomic<u64> frames_elapsed{};
     /// Is the AudioRenderer running too slow?
     bool adsp_behind{};
+    /// eden-kledd: frames rendered since the game last called RequestUpdate
+    u32 frames_since_update{};
+    /// eden-kledd: recent gaps (in frames) between RequestUpdate calls, to learn the usual cadence
+    std::array<u32, 8> update_gaps{};
+    u32 update_gap_index{};
+    /// eden-kledd: hold diagnostics, reported at most every 2 seconds
+    u32 held_frames_since_log{};
+    u32 longest_gap_since_log{};
+    u64 opus_calls_at_log{};
+    u64 opus_microseconds_at_log{};
+    std::chrono::steady_clock::time_point last_hold_log{};
+
+    /// eden-kledd: log the hold diagnostics if the rate limit allows
+    void LogHoldIfDue();
     /// Number of voices dropped
     u32 num_voices_dropped{};
     /// Tick that rendering started
