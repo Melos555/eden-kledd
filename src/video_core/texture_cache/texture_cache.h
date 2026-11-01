@@ -17,6 +17,7 @@
 #include <fmt/format.h>
 #include <thread>
 #include "common/container/unordered_map.h"
+#include "core/memory.h"
 #include <boost/container/small_vector.hpp>
 
 #include "common/alignment.h"
@@ -649,7 +650,14 @@ FramebufferId TextureCache<P>::GetFramebufferId(const RenderTargets& key) {
 
 template <class P>
 void TextureCache<P>::WriteMemory(DAddr cpu_addr, size_t size) {
-    ForEachImageInRegion(cpu_addr, size, [this](ImageId image_id, Image& image) {
+    ForEachImageInRegion(cpu_addr, size, [this, cpu_addr, size](ImageId image_id, Image& image) {
+        if (KleddWatch* watch = KleddFindWatch(image_id); watch && watch->complete) {
+            // eden-kledd: only the written z groups lose their protection; the image stays
+            // tracked so later writes to other groups are seen too.
+            KleddMarkWritten(image, *watch, cpu_addr, size);
+            image.flags |= ImageFlagBits::CpuModified;
+            return;
+        }
         if (True(image.flags & ImageFlagBits::CpuModified)) {
             return;
         }
@@ -1414,7 +1422,10 @@ void TextureCache<P>::RefreshContents(Image& image, ImageId image_id) {
 
     image.flags &= ~ImageFlagBits::CpuModified;
 
-    TrackImage(image, image_id);
+    // eden-kledd: a watched image stays tracked across writes (see KleddMarkWritten).
+    if (False(image.flags & ImageFlagBits::Tracked)) {
+        TrackImage(image, image_id);
+    }
 
     if (image.info.num_samples > 1 && !runtime.CanUploadMSAA()) {
         LOG_WARNING(HW_GPU, "MSAA image uploads are not implemented");
@@ -1451,127 +1462,192 @@ void TextureCache<P>::RefreshContents(Image& image, ImageId image_id) {
 }
 
 template <class P>
+typename TextureCache<P>::KleddWatch* TextureCache<P>::KleddFindWatch(ImageId image_id) {
+    if (kledd_watches.empty()) {
+        return nullptr;
+    }
+    const auto it = kledd_watches.find(image_id);
+    return it == kledd_watches.end() ? nullptr : &it->second;
+}
+
+template <class P>
+std::pair<DAddr, size_t> TextureCache<P>::KleddGroupPages(const ImageBase& image,
+                                                          const KleddWatch& watch,
+                                                          u32 group) const {
+    // The groups partition the image's pages: a page straddling two groups belongs to the lower
+    // one, so every page is counted exactly once whichever groups are protected.
+    constexpr u64 page = Core::Memory::YUZU_PAGESIZE;
+    const DAddr image_begin = image.cpu_addr;
+    const DAddr image_end = image_begin + image.guest_size_bytes;
+    const DAddr begin = group == 0 ? image_begin
+                                   : Common::AlignUp(image_begin + group * watch.group_bytes, page);
+    const DAddr end = group + 1 >= watch.num_groups
+                          ? image_end
+                          : Common::AlignUp(image_begin + (group + 1) * watch.group_bytes, page);
+    if (end <= begin) {
+        return {0, 0};
+    }
+    return {begin, static_cast<size_t>(end - begin)};
+}
+
+template <class P>
+void TextureCache<P>::KleddTrackGroups(const ImageBase& image, KleddWatch& watch, bool track) {
+    for (u32 group = 0; group < watch.num_groups; ++group) {
+        if ((watch.tracked[group] != 0) == track) {
+            continue;
+        }
+        const auto [addr, size] = KleddGroupPages(image, watch, group);
+        if (size != 0) {
+            device_memory.UpdatePagesCachedCount(addr, size, track ? 1 : -1);
+        }
+        watch.tracked[group] = track ? 1 : 0;
+    }
+}
+
+template <class P>
+void TextureCache<P>::KleddMarkWritten(const ImageBase& image, KleddWatch& watch, DAddr cpu_addr,
+                                       size_t size) {
+    // The protection fault reports the access; round it out to whole pages, because a page that
+    // straddles two groups can carry bytes of both.
+    constexpr u64 page = Core::Memory::YUZU_PAGESIZE;
+    const DAddr image_begin = image.cpu_addr;
+    const DAddr image_end = image_begin + image.guest_size_bytes;
+    const DAddr begin = (std::max)(Common::AlignDown(cpu_addr, page), image_begin);
+    const DAddr end = (std::min)(Common::AlignUp(cpu_addr + size, page), image_end);
+    if (begin >= end) {
+        return;
+    }
+    const u32 first = static_cast<u32>((begin - image_begin) / watch.group_bytes);
+    const u32 last = (std::min)(static_cast<u32>((end - 1 - image_begin) / watch.group_bytes),
+                                watch.num_groups - 1);
+    for (u32 group = first; group <= last; ++group) {
+        watch.dirty[group] = 1;
+        if (watch.tracked[group] != 0) {
+            const auto [addr, bytes] = KleddGroupPages(image, watch, group);
+            if (bytes != 0) {
+                device_memory.UpdatePagesCachedCount(addr, bytes, -1);
+            }
+            watch.tracked[group] = 0;
+        }
+    }
+}
+
+template <class P>
 bool TextureCache<P>::KleddTryDeltaUpload(Image& image, ImageId image_id) {
-    // eden-kledd: Metroid Prime 4 streams texture pages from the CPU into a few 170-350 MiB
-    // single-level 3D textures. Every page write marked the whole image CPU-modified and the
-    // cache re-uploaded all of it, stalling the GPU thread for hundreds of milliseconds. Keep the
-    // guest bytes last uploaded and upload only the block-linear z groups that changed.
+    // eden-kledd: Metroid Prime 4 streams texture pages from the CPU into a few 170-955 MiB
+    // single-level 3D textures, and in some places writes to them every frame. Every write made
+    // the cache re-upload the whole image. Instead keep the image protected after an upload,
+    // let a write unprotect and mark only its z group, and upload just the marked groups.
     constexpr u64 min_bytes = 64_MiB;
-    constexpr u64 shadow_budget = 2_GiB;
 
     const auto& info = image.info;
-    if (True(image.flags & (ImageFlagBits::AcceleratedUpload | ImageFlagBits::Converted |
-                            ImageFlagBits::Sparse | ImageFlagBits::Rescaled))) {
-        return false;
-    }
     const u64 guest_bytes = image.guest_size_bytes;
-    if (guest_bytes < min_bytes) {
-        return false;
-    }
-    const u64 group_bytes = ImageSliceGroupBytes(info, guest_bytes);
-    if (group_bytes == 0) {
-        return false;
-    }
-    const u32 group_slices = ImageSliceGroupSlices(info);
-    const u32 num_groups = Common::DivCeil(info.size.depth, group_slices);
-    if (group_bytes * num_groups > guest_bytes) {
-        return false;
-    }
-
-    auto shadow_it = kledd_shadows.find(image_id);
-    const bool have_shadow =
-        shadow_it != kledd_shadows.end() && shadow_it->second.data.size() == guest_bytes;
-    if (!have_shadow) {
-        if (kledd_shadow_bytes + guest_bytes > shadow_budget) {
+    KleddWatch* watch = KleddFindWatch(image_id);
+    if (!watch) {
+        const char* decline = nullptr;
+        u64 group_bytes = 0;
+        if (info.type != ImageType::e3D || info.resources.levels != 1 ||
+            info.resources.layers != 1 || info.num_samples != 1) {
+            decline = "not a single-level 3D image";
+        } else if (guest_bytes < min_bytes) {
+            return false;
+        } else if (True(image.flags & ImageFlagBits::Sparse)) {
+            decline = "sparse image";
+        } else if (True(image.flags & ImageFlagBits::AcceleratedUpload)) {
+            decline = "accelerated upload";
+        } else if (True(image.flags & ImageFlagBits::Converted)) {
+            decline = "converted format";
+        } else if (True(image.flags & ImageFlagBits::Rescaled)) {
+            decline = "rescaled";
+        } else if (False(image.flags & ImageFlagBits::Tracked)) {
+            decline = "image not tracked";
+        } else if ((group_bytes = ImageSliceGroupBytes(info, guest_bytes)) == 0) {
+            decline = "unsupported block layout";
+        }
+        if (decline) {
+            const auto now = std::chrono::steady_clock::now();
+            if (kledd_decline_log.time_since_epoch().count() == 0 ||
+                now - kledd_decline_log >= std::chrono::seconds{5}) {
+                kledd_decline_log = now;
+                LOG_WARNING(HW_GPU,
+                            "[Kledd] delta upload declined ({}) for image {:#x} {}x{}x{} type {} "
+                            "levels {} layers {} fmt {} flags {:#x} block {}/{}/{} {} MiB",
+                            decline, image.gpu_addr, info.size.width, info.size.height,
+                            info.size.depth, static_cast<u32>(info.type), info.resources.levels,
+                            info.resources.layers, static_cast<u32>(info.format),
+                            static_cast<u32>(image.flags), info.block.width, info.block.height,
+                            info.block.depth, guest_bytes >> 20);
+            }
             return false;
         }
-        if (shadow_it != kledd_shadows.end()) {
-            kledd_shadow_bytes -= shadow_it->second.data.size();
-            kledd_shadows.erase(shadow_it);
+        const u32 group_slices = ImageSliceGroupSlices(info);
+        const u32 num_groups = Common::DivCeil(info.size.depth, group_slices);
+        if (group_bytes * num_groups > guest_bytes) {
+            return false;
         }
-        shadow_it = kledd_shadows.emplace(image_id, KleddShadow{}).first;
-        shadow_it->second.data.resize(guest_bytes);
-        kledd_shadow_bytes += guest_bytes;
+        // The image is fully tracked right now (RefreshContents made sure of it), so every group
+        // starts out protected and the page counts match the whole-image count already taken.
+        watch = &kledd_watches[image_id];
+        watch->group_bytes = group_bytes;
+        watch->group_slices = group_slices;
+        watch->num_groups = num_groups;
+        watch->tracked.assign(num_groups, 1);
+        watch->dirty.assign(num_groups, 0);
+        watch->complete = false;
     }
-    auto& shadow = shadow_it->second.data;
 
-    const auto compare_start = std::chrono::steady_clock::now();
-    Tegra::Memory::GpuGuestMemory<u8, Tegra::Memory::GuestMemoryFlags::UnsafeRead> guest(
-        *gpu_memory, image.gpu_addr, guest_bytes, &swizzle_data_buffer);
-    const u8* const src = guest.data();
+    if (!watch->complete || True(image.flags & ImageFlagBits::GpuModified)) {
+        // Full upload through the regular path; from then on the watch is valid. Protect any
+        // unprotected group first so writes during and after the upload are seen.
+        KleddTrackGroups(image, *watch, true);
+        std::fill(watch->dirty.begin(), watch->dirty.end(), 0);
+        watch->complete = true;
+        return false;
+    }
 
     std::vector<u32> changed;
-    if (!have_shadow || True(image.flags & ImageFlagBits::GpuModified)) {
-        // Nothing to compare against (or the host image was written by the GPU): full upload.
-        changed.resize(num_groups);
-        for (u32 g = 0; g < num_groups; ++g) {
-            changed[g] = g;
+    for (u32 group = 0; group < watch->num_groups; ++group) {
+        if (watch->dirty[group] != 0) {
+            changed.push_back(group);
         }
-    } else {
-        const u32 hw = std::thread::hardware_concurrency();
-        const u32 num_threads = (std::min)(8u, (std::max)(1u, hw / 2));
-        std::vector<std::vector<u32>> found(num_threads);
-        std::vector<std::thread> threads;
-        threads.reserve(num_threads);
-        for (u32 t = 0; t < num_threads; ++t) {
-            threads.emplace_back([&, t] {
-                for (u32 g = t; g < num_groups; g += num_threads) {
-                    const size_t offset = static_cast<size_t>(g) * group_bytes;
-                    if (std::memcmp(src + offset, shadow.data() + offset, group_bytes) != 0) {
-                        found[t].push_back(g);
-                    }
-                }
-            });
-        }
-        for (auto& thread : threads) {
-            thread.join();
-        }
-        for (const auto& part : found) {
-            changed.insert(changed.end(), part.begin(), part.end());
-        }
-        std::sort(changed.begin(), changed.end());
     }
-    const auto compare_end = std::chrono::steady_clock::now();
-
+    // Protect the written groups again before reading them: a write that lands after this
+    // point faults and marks its group dirty for the next upload.
+    KleddTrackGroups(image, *watch, true);
+    std::fill(watch->dirty.begin(), watch->dirty.end(), 0);
     if (changed.empty()) {
-        LOG_INFO(HW_GPU, "[Kledd] delta upload image {:#x} {}x{}x{}: no z group changed, nothing uploaded",
-                 image.gpu_addr, info.size.width, info.size.height, info.size.depth);
         return true;
     }
-    for (const u32 g : changed) {
-        const size_t offset = static_cast<size_t>(g) * group_bytes;
-        std::memcpy(shadow.data() + offset, src + offset, group_bytes);
-    }
 
+    const auto upload_start = std::chrono::steady_clock::now();
     const u64 host_group_bytes = ImageSliceGroupHostBytes(info);
     auto staging = runtime.UploadStagingBuffer(host_group_bytes * changed.size());
     boost::container::small_vector<BufferImageCopy, 16> copies;
     size_t host_offset = 0;
-    for (const u32 g : changed) {
-        const u32 z_start = g * group_slices;
-        const u32 z_count = (std::min)(group_slices, info.size.depth - z_start);
-        const std::span<const u8> input(shadow.data() + static_cast<size_t>(g) * group_bytes,
-                                        group_bytes);
-        copies.push_back(UnswizzleImageSliceGroup(info, input,
-                                                  staging.mapped_span.subspan(host_offset,
-                                                                              host_group_bytes),
-                                                  z_start, z_count, host_offset));
+    for (const u32 group : changed) {
+        const u32 z_start = group * watch->group_slices;
+        const u32 z_count = (std::min)(watch->group_slices, info.size.depth - z_start);
+        Tegra::Memory::GpuGuestMemory<u8, Tegra::Memory::GuestMemoryFlags::UnsafeRead> guest(
+            *gpu_memory, image.gpu_addr + group * watch->group_bytes, watch->group_bytes,
+            &swizzle_data_buffer);
+        const std::span<const u8> input(guest.data(), watch->group_bytes);
+        copies.push_back(UnswizzleImageSliceGroup(
+            info, input, staging.mapped_span.subspan(host_offset, host_group_bytes), z_start,
+            z_count, host_offset));
         host_offset += host_group_bytes;
     }
     image.UploadMemory(staging, copies);
     runtime.InsertUploadMemoryBarrier();
     const auto upload_end = std::chrono::steady_clock::now();
 
-    const auto ms = [](auto a, auto b) {
-        return std::chrono::duration_cast<std::chrono::milliseconds>(b - a).count();
-    };
     LOG_INFO(HW_GPU,
-             "[Kledd] delta upload image {:#x} {}x{}x{} fmt {}: {} of {} z groups changed "
-             "({} of {} MiB), compare {} ms, unswizzle+upload {} ms",
+             "[Kledd] delta upload image {:#x} {}x{}x{} fmt {}: {} of {} z groups written ({} of "
+             "{} MiB), {} ms",
              image.gpu_addr, info.size.width, info.size.height, info.size.depth,
-             static_cast<u32>(info.format), changed.size(), num_groups,
-             (changed.size() * group_bytes) >> 20, guest_bytes >> 20,
-             ms(compare_start, compare_end), ms(compare_end, upload_end));
+             static_cast<u32>(info.format), changed.size(), watch->num_groups,
+             (changed.size() * watch->group_bytes) >> 20, guest_bytes >> 20,
+             std::chrono::duration_cast<std::chrono::milliseconds>(upload_end - upload_start)
+                 .count());
     return true;
 }
 
@@ -3341,6 +3417,11 @@ template <class P>
 void TextureCache<P>::TrackImage(ImageBase& image, ImageId image_id) {
     ASSERT(False(image.flags & ImageFlagBits::Tracked));
     image.flags |= ImageFlagBits::Tracked;
+    if (KleddWatch* watch = KleddFindWatch(image_id)) {
+        // eden-kledd: protect the groups that are not protected yet (page counts stay balanced)
+        KleddTrackGroups(image, *watch, true);
+        return;
+    }
     if (False(image.flags & ImageFlagBits::Sparse)) {
         if (image.cpu_addr < ~(1ULL << 40)) {
             device_memory.UpdatePagesCachedCount(image.cpu_addr, image.guest_size_bytes, 1);
@@ -3369,6 +3450,12 @@ template <class P>
 void TextureCache<P>::UntrackImage(ImageBase& image, ImageId image_id) {
     ASSERT(True(image.flags & ImageFlagBits::Tracked));
     image.flags &= ~ImageFlagBits::Tracked;
+    if (KleddWatch* watch = KleddFindWatch(image_id)) {
+        // eden-kledd: writes are no longer observed, so the next upload must be a full one
+        KleddTrackGroups(image, *watch, false);
+        watch->complete = false;
+        return;
+    }
     if (False(image.flags & ImageFlagBits::Sparse)) {
         if (image.cpu_addr < ~(1ULL << 40)) {
             device_memory.UpdatePagesCachedCount(image.cpu_addr, image.guest_size_bytes, -1);
@@ -3417,10 +3504,7 @@ void TextureCache<P>::CancelPendingUnswizzle(ImageId image_id) {
 template <class P>
 void TextureCache<P>::DeleteImage(ImageId image_id, bool immediate_delete) {
     Common::Kledd::GetFrameStats().images_deleted.fetch_add(1, std::memory_order_relaxed);
-    if (const auto shadow = kledd_shadows.find(image_id); shadow != kledd_shadows.end()) {
-        kledd_shadow_bytes -= shadow->second.data.size();
-        kledd_shadows.erase(shadow);
-    }
+    kledd_watches.erase(image_id);
     ImageBase& image = slot_images[image_id];
     CancelPendingUnswizzle(image_id);
     std::erase_if(async_decodes, [image_id](const std::unique_ptr<AsyncDecodeContext>& ctx) {
