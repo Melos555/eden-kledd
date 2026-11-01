@@ -6,6 +6,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <bit>
+#include <chrono>
 #include <cstdlib>
 #include <cstring>
 
@@ -147,10 +148,20 @@ NvResult nvhost_ctrl::IocCtrlEventWait(IocCtrlEventWaitParams& params, bool is_a
 
     const auto check_failing = [&]() {
         if (events[slot].fails > 2) {
+            const auto stall_start = std::chrono::steady_clock::now();
             {
                 auto lk = system.StallApplication();
                 host1x_syncpoint_manager.WaitHost(fence_id, target_value);
                 system.UnstallApplication();
+            }
+            // Diagnostic: the whole guest was suspended until the GPU reached this fence.
+            const auto stall_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                      std::chrono::steady_clock::now() - stall_start)
+                                      .count();
+            if (stall_ms >= 100) {
+                LOG_WARNING(Service_NVDRV,
+                            "Application stalled {} ms waiting for GPU syncpoint {} to reach {}",
+                            stall_ms, fence_id, target_value);
             }
             params.value.raw = target_value;
             return true;

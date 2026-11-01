@@ -222,6 +222,30 @@ protected:
      */
     void SignalPause();
 
+    /// Kinds of host-side audio trouble counted for the rate-limited diagnostic log
+    enum class SinkIssue {
+        Underrun,    ///< the callback found no queued buffer
+        ShortPop,    ///< a queued buffer had fewer samples in the ring than it promised
+        RingFull,    ///< the sample ring could not take all of an appended buffer
+        CallbackGap, ///< the host callback did not run for a long time
+    };
+
+    /**
+     * Pushes samples into the ring and then queues the buffer entry.
+     *
+     * @param buffer  - Audio buffer information to be queued.
+     * @param samples - Device-channel samples belonging to that buffer.
+     */
+    void PushAndQueue(SinkBuffer& buffer, std::span<const s16> samples);
+
+    /**
+     * Counts a host-side audio problem and logs a summary at most every 2 seconds.
+     *
+     * @param issue  - What went wrong.
+     * @param amount - Frames involved, or milliseconds for CallbackGap.
+     */
+    void NoteIssue(SinkIssue issue, u64 amount);
+
 protected:
     /// Core system
     Core::System& system;
@@ -257,6 +281,18 @@ private:
     u64 max_played_sample_count{};
     /// The time the two above tracking variables were last written to
     std::chrono::nanoseconds last_sample_count_update_time{};
+    /// Host-side trouble counters for the rate-limited diagnostic log (see NoteIssue)
+    std::atomic<u64> underrun_callbacks{};
+    std::atomic<u64> underrun_frames{};
+    std::atomic<u64> short_pops{};
+    std::atomic<u64> short_frames{};
+    std::atomic<u64> ring_full_pushes{};
+    std::atomic<u64> dropped_frames{};
+    std::atomic<u64> callback_gaps{};
+    std::atomic<u64> callback_gap_max_ms{};
+    std::atomic<s64> last_issue_log_ns{};
+    /// When the host callback last ran (touched by the callback thread only)
+    std::chrono::steady_clock::time_point last_callback_time{};
     /// Set by the audio render/in/out system which uses this stream
     f32 system_volume{1.0f};
     /// Set via IAudioDevice service calls

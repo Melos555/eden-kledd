@@ -15,6 +15,7 @@
 #include "audio_core/sink/sink_stream.h"
 #include "common/common_types.h"
 #include "common/fixed_point.h"
+#include "common/logging.h"
 #include "common/scope_exit.h"
 #include "common/settings.h"
 #include "core/core.h"
@@ -57,26 +58,32 @@ void SinkStream::AppendBuffer(SinkBuffer& buffer, std::span<s16> samples) {
             samples[w_offs + 1] = s16(std::clamp(s32(right * volume), min, max));
         }
 
-        queue.EmplaceWait(buffer);
-        samples_buffer.Push(samples.subspan(0, samples.size() / system_channels * device_channels));
+        PushAndQueue(buffer, samples.subspan(0, samples.size() / system_channels * device_channels));
     } else if (system_channels < device_channels) {
         std::vector<s16> new_samples(samples.size() / system_channels * device_channels);
         for (u32 r_offs = 0, w_offs = 0; r_offs < samples.size(); r_offs += system_channels, w_offs += device_channels)
             for (u32 channel = 0; channel < system_channels; ++channel)
                 new_samples[w_offs + channel] = s16(std::clamp(s32(f32(samples[r_offs + channel]) * volume), min, max));
 
-        queue.EmplaceWait(buffer);
-        samples_buffer.Push(new_samples);
+        PushAndQueue(buffer, new_samples);
     } else {
         if (volume != 1.0f) {
             for (u32 i = 0; i < samples.size(); ++i)
                 samples[i] = s16(std::clamp(s32(f32(samples[i]) * volume), min, max));
         }
 
-        queue.EmplaceWait(buffer);
-        samples_buffer.Push(samples);
+        PushAndQueue(buffer, samples);
     }
+}
 
+void SinkStream::PushAndQueue(SinkBuffer& buffer, std::span<const s16> samples) {
+    // Push the samples before the buffer entry, so the consumer can never dequeue an entry whose
+    // samples are not in the ring yet, and account for anything the ring could not take.
+    const size_t pushed = samples_buffer.Push(samples);
+    if (pushed < samples.size()) {
+        NoteIssue(SinkIssue::RingFull, (samples.size() - pushed) / device_channels);
+    }
+    queue.EmplaceWait(buffer);
     ++queued_buffers;
 }
 
@@ -171,6 +178,21 @@ void SinkStream::ProcessAudioOutAndRender(std::span<s16> output_buffer, std::siz
     size_t frames_written{0};
     size_t actual_frames_written{0};
 
+    {
+        // Diagnostic: a long gap between host callbacks means the backend thread was starved
+        // or the stream stalled, in which case the device replays whatever it last had.
+        const auto now = std::chrono::steady_clock::now();
+        if (last_callback_time.time_since_epoch().count() != 0) {
+            const auto gap_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                    now - last_callback_time)
+                                    .count();
+            if (gap_ms >= 50) {
+                NoteIssue(SinkIssue::CallbackGap, static_cast<u64>(gap_ms));
+            }
+        }
+        last_callback_time = now;
+    }
+
     if (system.IsPaused() || system.IsShuttingDown()) {
         if (system.IsShuttingDown()) {
             std::scoped_lock lk{release_mutex};
@@ -190,6 +212,7 @@ void SinkStream::ProcessAudioOutAndRender(std::span<s16> output_buffer, std::siz
                 lk.unlock();
                 for (size_t i = frames_written; i < num_frames; i++)
                     std::memcpy(&output_buffer[i * frame_size], last_frame.data(), frame_size_bytes);
+                NoteIssue(SinkIssue::Underrun, num_frames - frames_written);
                 frames_written = num_frames;
                 continue;
             }
@@ -201,7 +224,21 @@ void SinkStream::ProcessAudioOutAndRender(std::span<s16> output_buffer, std::siz
 
         const size_t frames_available = std::min<u64>(playing_buffer.frames - playing_buffer.frames_played, num_frames - frames_written);
 
-        samples_buffer.Pop(&output_buffer[frames_written * frame_size], frames_available * frame_size);
+        const size_t wanted_samples = frames_available * frame_size;
+        const size_t popped_samples =
+            samples_buffer.Pop(&output_buffer[frames_written * frame_size], wanted_samples);
+        if (popped_samples < wanted_samples) {
+            // The queue promised more samples than the ring holds. Hold the last good frame
+            // instead of leaving whatever the backend had in this buffer, which audibly loops.
+            const size_t popped_frames = popped_samples / frame_size;
+            const s16* hold = popped_frames > 0
+                                  ? &output_buffer[(frames_written + popped_frames - 1) * frame_size]
+                                  : last_frame.data();
+            for (size_t i = frames_written + popped_frames; i < frames_written + frames_available; i++) {
+                std::memcpy(&output_buffer[i * frame_size], hold, frame_size_bytes);
+            }
+            NoteIssue(SinkIssue::ShortPop, frames_available - popped_frames);
+        }
 
         frames_written += frames_available;
         actual_frames_written += frames_available;
@@ -219,6 +256,53 @@ void SinkStream::ProcessAudioOutAndRender(std::span<s16> output_buffer, std::siz
         min_played_sample_count = max_played_sample_count;
         max_played_sample_count += actual_frames_written;
     }
+}
+
+void SinkStream::NoteIssue(SinkIssue issue, u64 amount) {
+    // Diagnostic only. Each kind of host-side trouble is counted, and one summary line is
+    // logged at most every 2 seconds so a long stall does not flood the log.
+    if (type != StreamType::Render) {
+        return;
+    }
+    switch (issue) {
+    case SinkIssue::Underrun:
+        underrun_callbacks++;
+        underrun_frames += amount;
+        break;
+    case SinkIssue::ShortPop:
+        short_pops++;
+        short_frames += amount;
+        break;
+    case SinkIssue::RingFull:
+        ring_full_pushes++;
+        dropped_frames += amount;
+        break;
+    case SinkIssue::CallbackGap: {
+        callback_gaps++;
+        u64 prev = callback_gap_max_ms.load();
+        while (prev < amount && !callback_gap_max_ms.compare_exchange_weak(prev, amount)) {
+        }
+        break;
+    }
+    }
+
+    const s64 now_ns = std::chrono::steady_clock::now().time_since_epoch().count();
+    s64 last = last_issue_log_ns.load();
+    if (last != 0 && now_ns - last < 2000000000) {
+        return;
+    }
+    if (!last_issue_log_ns.compare_exchange_strong(last, now_ns)) {
+        return;
+    }
+    LOG_WARNING(Audio_Sink,
+                "{}: host audio trouble: {} underrun callbacks ({} ms), {} short pops ({} ms), "
+                "{} ring-full pushes ({} ms dropped), {} callback gaps (longest {} ms), "
+                "{} buffers queued",
+                name, underrun_callbacks.exchange(0),
+                underrun_frames.exchange(0) * 1000 / TargetSampleRate, short_pops.exchange(0),
+                short_frames.exchange(0) * 1000 / TargetSampleRate, ring_full_pushes.exchange(0),
+                dropped_frames.exchange(0) * 1000 / TargetSampleRate, callback_gaps.exchange(0),
+                callback_gap_max_ms.exchange(0), queued_buffers.load());
 }
 
 u64 SinkStream::GetExpectedPlayedSampleCount() {
@@ -241,7 +325,18 @@ void SinkStream::WaitFreeSpace(std::stop_token stop_token) {
     release_cv.wait_for(lk, std::chrono::milliseconds(7), can_continue);
 
     if (queued_buffers > max_queue_size + 3) {
+        const auto wait_start = std::chrono::steady_clock::now();
         release_cv.wait(lk, stop_token, can_continue);
+        // Diagnostic: the render thread sat here because the host callback was not draining.
+        const auto waited_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                   std::chrono::steady_clock::now() - wait_start)
+                                   .count();
+        if (waited_ms >= 100) {
+            LOG_WARNING(Audio_Sink,
+                        "{}: audio render thread waited {} ms for the host sink to drain "
+                        "({} buffers queued)",
+                        name, waited_ms, queued_buffers.load());
+        }
     }
 }
 
