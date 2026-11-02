@@ -22,6 +22,7 @@
 #include "common/fs/path_util.h"
 #include "common/kledd_mouse_gyro.h"
 #include "common/logging.h"
+#include "common/scm_rev.h"
 #include "common/settings.h"
 #include "core/perf_stats.h"
 
@@ -211,23 +212,33 @@ std::string PerfStats::KleddSaveFrames(std::size_t from, bool segment, std::int6
                           v.kledd_mouse_gyro_gravity.GetValue() ? "on" : "off")
             : std::string("off"));
 
-    const std::time_t t = std::time(nullptr);
-    std::ostringstream stamp;
-    stamp << std::put_time(std::localtime(&t), "%Y-%m-%d_%H-%M-%S");
-    if (segment && start_time != 0) {
-        // eden-kledd: segment files are named after when the recording started and stopped
-        const std::time_t st = static_cast<std::time_t>(start_time);
-        std::ostringstream span;
-        span << std::put_time(std::localtime(&st), "[%m-%d] [%H.%M.%S == ")
-             << std::put_time(std::localtime(&t), "%H.%M.%S]");
-        stamp.str(span.str());
+    // eden-kledd: which build made this recording, e.g. "smooth fd8e7be"
+    std::string build{Common::g_scm_branch};
+    if (build.rfind("kledd-lab-", 0) == 0) {
+        build.erase(0, 10);
     }
+    for (char& c : build) {
+        if (c == '/' || c == '\\' || c == ':' || c == '[' || c == ']') {
+            c = '-';
+        }
+    }
+    const std::string rev = std::string{Common::g_scm_rev}.substr(0, 7);
+    const std::string build_tag = build.empty() ? rev : fmt::format("{} {}", build, rev);
+
+    // Files read "kledd_frames [smooth fd8e7be] [11-02] [13.33.44 == 13.35.44].csv":
+    // the build, the day, and the stretch of time the recording covers
+    const std::time_t t = std::time(nullptr);
+    const std::time_t st = (segment && start_time != 0)
+                               ? static_cast<std::time_t>(start_time)
+                               : t - static_cast<std::time_t>(total_ms / 1000.0 + 0.5);
+    std::ostringstream span;
+    span << std::put_time(std::localtime(&st), "[%m-%d] [%H.%M.%S == ")
+         << std::put_time(std::localtime(&t), "%H.%M.%S]");
+    const std::string stamp = span.str();
     const auto dir = Common::FS::GetEdenPath(Common::FS::EdenPath::LogDir);
     const char* const prefix = segment ? "kledd_segment" : "kledd_frames";
-    // segment files read "kledd_segment [11-02] [11.46.03 == 11.47.21].csv"
-    const char* const sep = (segment && start_time != 0) ? " " : "_";
-    const auto csv_path = dir / fmt::format("{}{}{}.csv", prefix, sep, stamp.str());
-    const auto txt_path = dir / fmt::format("{}{}{}{}summary.txt", prefix, sep, stamp.str(), sep);
+    const auto csv_path = dir / fmt::format("{} [{}] {}.csv", prefix, build_tag, stamp);
+    const auto txt_path = dir / fmt::format("{} [{}] {} summary.txt", prefix, build_tag, stamp);
     if (!Common::FS::CreateParentDir(csv_path)) {
         return {};
     }
@@ -240,7 +251,9 @@ std::string PerfStats::KleddSaveFrames(std::size_t from, bool segment, std::int6
     }
 
     std::string txt;
-    txt += fmt::format("Eden Kledd frame recording, saved {}\n", stamp.str());
+    txt += fmt::format("Eden Kledd frame recording, {} {}\n", stamp,
+                       segment ? "(start/stop)" : "(last 2 minutes)");
+    txt += fmt::format("Build: {} ({})\n", build_tag, Common::g_build_fullname);
     txt += settings_line + "\n\n";
     txt += fmt::format("Length:        {:.1f} s ({} frames)\n", total_ms / 1000.0, count);
     txt += fmt::format("Average FPS:   {:.1f}\n", avg_fps);
@@ -258,7 +271,7 @@ std::string PerfStats::KleddSaveFrames(std::size_t from, bool segment, std::int6
     }
     txt += "\nPaste row for the test sheet (tab separated):\n";
     txt += fmt::format("{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.0f}\t{}\t{}\n",
-                       stamp.str(), total_ms / 1000.0, avg_fps, median_fps, p5_fps, low1, min_fps,
+                       fmt::format("{} {}", build_tag, stamp), total_ms / 1000.0, avg_fps, median_fps, p5_fps, low1, min_fps,
                        sorted.back(), over(100.0), settings_line);
 
     Common::FS::IOFile csv_file(csv_path, Common::FS::FileAccessMode::Write,
