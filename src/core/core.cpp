@@ -276,6 +276,11 @@ struct System::Impl {
         return !nvdec_active_channels.empty();
     }
 
+    bool IsNVDECActiveForProcess(u64 process_id) {
+        std::scoped_lock lock{nvdec_active_mutex};
+        return nvdec_active_channels.contains(process_id);
+    }
+
     void InitializeDebugger(System& system, u16 port) {
         debugger.emplace(system, port);
     }
@@ -617,6 +622,10 @@ void System::NotifyNVDECChannelClose(u64 process_id) {
 
 bool System::GetNVDECActive() {
     return impl->GetNVDECActive();
+}
+
+bool System::IsNVDECActiveForProcess(u64 process_id) {
+    return impl->IsNVDECActiveForProcess(process_id);
 }
 
 void System::InitializeDebugger() {
