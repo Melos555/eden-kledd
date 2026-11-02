@@ -201,9 +201,9 @@ void ConfigurePerGameAddons::AddCheatRows(QStandardItem* mod_item, const QString
     font.setItalic(true);
     for (const QString& path : files) {
         QStringList names;
-        QFile file(path);
-        if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-            QTextStream in(&file);
+        QFile cheat_file(path);
+        if (cheat_file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            QTextStream in(&cheat_file);
             while (!in.atEnd()) {
                 const QString line = in.readLine().trimmed();
                 if (line.startsWith(QLatin1Char('['))) {
