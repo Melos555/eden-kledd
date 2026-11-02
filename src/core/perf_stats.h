@@ -56,6 +56,10 @@ public:
     /// current settings) to the log folder. Returns the summary file path, or "" on failure.
     std::string KleddSaveFrameRecording();
 
+    /// eden-kledd: start / stop a recording of just the frames in between. Returns true when a
+    /// recording was started; when it stops, `saved_path` gets the summary path ("" on failure).
+    bool KleddToggleSegmentRecording(std::string& saved_path);
+
 private:
     mutable std::mutex object_mutex;
 
@@ -64,6 +68,12 @@ private:
     std::mutex kledd_mutex;
     std::array<s64, KleddRecordFrames> kledd_frames{};
     std::size_t kledd_count{0};
+    bool kledd_segment_active{false};
+    std::size_t kledd_segment_start{0};
+    std::int64_t kledd_segment_start_time{0}; // wall clock (time_t) when the recording started
+
+    /// Writes the recorded frames from frame number `from` (segment) or the last ~2 minutes.
+    std::string KleddSaveFrames(std::size_t from, bool segment, std::int64_t start_time = 0);
 
     /// Title ID for the game that is running. 0 if there is no game running yet
     u64 title_id{0};

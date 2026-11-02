@@ -1349,7 +1349,25 @@ void MainWindow::InitializeHotkeys() {
             QtCommon::system->GetRenderdocAPI().ToggleCapture();
         }
     });
-    connect_shortcut(QStringLiteral("[Kledd] Save Frame Recording"), [this] {
+    connect_shortcut(QStringLiteral("[Kledd] Start/Stop Frame Recording"), [this] {
+        if (QtCommon::system == nullptr || !QtCommon::system->IsPoweredOn()) {
+            return;
+        }
+        std::string path;
+        if (QtCommon::system->GetPerfStats().KleddToggleSegmentRecording(path)) {
+            QApplication::beep();
+            statusBar()->showMessage(
+                tr("[Kledd] Frame recording started, press the hotkey again to stop and save"),
+                8000);
+            return;
+        }
+        QApplication::beep();
+        statusBar()->showMessage(
+            path.empty() ? tr("[Kledd] Frame recording: too short to save")
+                         : tr("[Kledd] Frame recording saved: %1").arg(QString::fromStdString(path)),
+            8000);
+    });
+    connect_shortcut(QStringLiteral("[Kledd] Save Last 2 Minutes"), [this] {
         if (QtCommon::system == nullptr || !QtCommon::system->IsPoweredOn()) {
             return;
         }

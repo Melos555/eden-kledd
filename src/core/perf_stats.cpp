@@ -107,13 +107,38 @@ void PerfStats::EndGameFrame() {
 }
 
 std::string PerfStats::KleddSaveFrameRecording() {
+    return KleddSaveFrames(0, false);
+}
+
+bool PerfStats::KleddToggleSegmentRecording(std::string& saved_path) {
+    std::size_t from{};
+    std::int64_t start_time{};
+    {
+        std::scoped_lock lock{kledd_mutex};
+        if (!kledd_segment_active) {
+            kledd_segment_active = true;
+            kledd_segment_start = kledd_count;
+            kledd_segment_start_time = static_cast<std::int64_t>(std::time(nullptr));
+            return true;
+        }
+        kledd_segment_active = false;
+        from = kledd_segment_start;
+        start_time = kledd_segment_start_time;
+    }
+    saved_path = KleddSaveFrames(from, true, start_time);
+    return false;
+}
+
+std::string PerfStats::KleddSaveFrames(std::size_t from, bool segment, std::int64_t start_time) {
     constexpr double KeepSeconds = 120.0;
     std::vector<s64> stamps;
     {
         std::scoped_lock lock{kledd_mutex};
         const std::size_t n = (std::min)(kledd_count, KleddRecordFrames);
-        stamps.reserve(n);
-        for (std::size_t i = kledd_count - n; i < kledd_count; ++i) {
+        // a segment longer than the ring buffer keeps its most recent frames
+        const std::size_t begin = segment ? (std::max)(kledd_count - n, from) : kledd_count - n;
+        stamps.reserve(kledd_count - begin);
+        for (std::size_t i = begin; i < kledd_count; ++i) {
             stamps.push_back(kledd_frames[i % KleddRecordFrames]);
         }
     }
@@ -123,7 +148,7 @@ std::string PerfStats::KleddSaveFrameRecording() {
     const s64 last = stamps.back();
     const s64 keep_ns = static_cast<s64>(KeepSeconds * 1e9);
     std::size_t first = 0;
-    while (first + 2 < stamps.size() && last - stamps[first] > keep_ns) {
+    while (!segment && first + 2 < stamps.size() && last - stamps[first] > keep_ns) {
         ++first;
     }
 
@@ -189,9 +214,18 @@ std::string PerfStats::KleddSaveFrameRecording() {
     const std::time_t t = std::time(nullptr);
     std::ostringstream stamp;
     stamp << std::put_time(std::localtime(&t), "%Y-%m-%d_%H-%M-%S");
+    if (segment && start_time != 0) {
+        // eden-kledd: segment files are named after when the recording started and stopped
+        const std::time_t st = static_cast<std::time_t>(start_time);
+        std::ostringstream span;
+        span << std::put_time(std::localtime(&st), "%Y-%m-%d_%H-%M-%S") << "_to_"
+             << std::put_time(std::localtime(&t), "%H-%M-%S");
+        stamp.str(span.str());
+    }
     const auto dir = Common::FS::GetEdenPath(Common::FS::EdenPath::LogDir);
-    const auto csv_path = dir / fmt::format("kledd_frames_{}.csv", stamp.str());
-    const auto txt_path = dir / fmt::format("kledd_frames_{}_summary.txt", stamp.str());
+    const char* const prefix = segment ? "kledd_segment" : "kledd_frames";
+    const auto csv_path = dir / fmt::format("{}_{}.csv", prefix, stamp.str());
+    const auto txt_path = dir / fmt::format("{}_{}_summary.txt", prefix, stamp.str());
     if (!Common::FS::CreateParentDir(csv_path)) {
         return {};
     }
