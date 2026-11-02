@@ -212,13 +212,13 @@ std::string PerfStats::KleddSaveFrames(std::size_t from, bool segment, std::int6
         // eden-kledd: segment files are named after when the recording started and stopped
         const std::time_t st = static_cast<std::time_t>(start_time);
         std::ostringstream span;
-        span << std::put_time(std::localtime(&st), "D (%m-%d) T (%H.%M.%S == ")
-             << std::put_time(std::localtime(&t), "%H.%M.%S)");
+        span << std::put_time(std::localtime(&st), "[%m-%d] [%H.%M.%S == ")
+             << std::put_time(std::localtime(&t), "%H.%M.%S]");
         stamp.str(span.str());
     }
     const auto dir = Common::FS::GetEdenPath(Common::FS::EdenPath::LogDir);
     const char* const prefix = segment ? "kledd_segment" : "kledd_frames";
-    // segment files read "kledd_segment D (11-02) T (11.46.03 == 11.47.21).csv"
+    // segment files read "kledd_segment [11-02] [11.46.03 == 11.47.21].csv"
     const char* const sep = (segment && start_time != 0) ? " " : "_";
     const auto csv_path = dir / fmt::format("{}{}{}.csv", prefix, sep, stamp.str());
     const auto txt_path = dir / fmt::format("{}{}{}{}summary.txt", prefix, sep, stamp.str(), sep);
