@@ -32,7 +32,7 @@ class ConfigurePerGameAddons : public QWidget {
     Q_OBJECT
 
 public:
-    enum PatchData { NUMERIC_VERSION = Qt::UserRole, PATCH_LOCATION };
+    enum PatchData { NUMERIC_VERSION = Qt::UserRole, PATCH_LOCATION, CHEAT_FILE };
 
     explicit ConfigurePerGameAddons(Core::System& system_, QWidget* parent = nullptr);
     ~ConfigurePerGameAddons() override;
@@ -63,6 +63,14 @@ private:
     void LoadConfiguration();
     void OnItemChanged(QStandardItem* item);
 
+    // eden-kledd: Active / Inactive groups and cheat rows
+    QStandardItem* MakeGroupItem(const QString& title) const;
+    void UpdateGroupTitles();
+    void RegroupItems();
+    void AddCheatRows(QStandardItem* mod_item, const QString& location);
+    void OnItemDoubleClicked(const QModelIndex& index);
+    void OnItemClicked(const QModelIndex& index);
+
     std::unique_ptr<Ui::ConfigurePerGameAddons> ui;
     FileSys::VirtualFile file;
     u64 title_id;
@@ -73,6 +81,10 @@ private:
 
     std::vector<QList<QStandardItem*>> list_items;
     std::vector<QStandardItem*> update_items;
+
+    QStandardItem* active_group{};
+    QStandardItem* inactive_group{};
+    bool regroup_pending{};
 
     Core::System& system;
 };

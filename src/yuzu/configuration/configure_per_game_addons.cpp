@@ -11,6 +11,14 @@
 #include <fmt/format.h>
 
 #include <QDesktopServices>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QFont>
+#include <QPersistentModelIndex>
+#include <QProcess>
+#include <QTextStream>
+#include <QUrl>
 #include <QHeaderView>
 #include <QMenu>
 #include <QStandardItemModel>
@@ -47,7 +55,8 @@ ConfigurePerGameAddons::ConfigurePerGameAddons(Core::System& system_, QWidget* p
     tree_view->setSelectionBehavior(QHeaderView::SelectRows);
     tree_view->setVerticalScrollMode(QHeaderView::ScrollPerPixel);
     tree_view->setHorizontalScrollMode(QHeaderView::ScrollPerPixel);
-    tree_view->setSortingEnabled(true);
+    // eden-kledd: rows are kept sorted inside the Active / Inactive groups instead
+    tree_view->setSortingEnabled(false);
     tree_view->setEditTriggers(QHeaderView::NoEditTriggers);
     tree_view->setUniformRowHeights(true);
     tree_view->setContextMenuPolicy(Qt::CustomContextMenu);
@@ -82,6 +91,9 @@ ConfigurePerGameAddons::ConfigurePerGameAddons(Core::System& system_, QWidget* p
 
     connect(tree_view, &QTreeView::customContextMenuRequested, this,
             &ConfigurePerGameAddons::showContextMenu);
+    connect(tree_view, &QTreeView::doubleClicked, this,
+            &ConfigurePerGameAddons::OnItemDoubleClicked);
+    connect(tree_view, &QTreeView::clicked, this, &ConfigurePerGameAddons::OnItemClicked);
 }
 
 ConfigurePerGameAddons::~ConfigurePerGameAddons() = default;
@@ -101,6 +113,150 @@ void ConfigurePerGameAddons::OnItemChanged(QStandardItem* item) {
             }
         }
     }
+
+    // eden-kledd: a ticked / unticked add-on moves to the Active / Inactive group. Done after
+    // the signal returns so the model is not changed while it is still notifying.
+    if (item->isCheckable() && !regroup_pending) {
+        regroup_pending = true;
+        QTimer::singleShot(0, this, [this] { RegroupItems(); });
+    }
+}
+
+QStandardItem* ConfigurePerGameAddons::MakeGroupItem(const QString& title) const {
+    auto* const group = new QStandardItem(title);
+    group->setEditable(false);
+    group->setSelectable(false);
+    group->setCheckable(false);
+    QFont font = group->font();
+    font.setBold(true);
+    group->setFont(font);
+    return group;
+}
+
+void ConfigurePerGameAddons::UpdateGroupTitles() {
+    if (active_group == nullptr || inactive_group == nullptr) {
+        return;
+    }
+    const auto title = [](const QString& name, int count) {
+        return QStringLiteral("%1 (%2)").arg(name).arg(count);
+    };
+    if (const auto t = title(tr("Active"), active_group->rowCount()); active_group->text() != t) {
+        active_group->setText(t);
+    }
+    if (const auto t = title(tr("Inactive"), inactive_group->rowCount());
+        inactive_group->text() != t) {
+        inactive_group->setText(t);
+    }
+}
+
+void ConfigurePerGameAddons::RegroupItems() {
+    regroup_pending = false;
+    if (active_group == nullptr || inactive_group == nullptr) {
+        return;
+    }
+    for (QStandardItem* group : {active_group, inactive_group}) {
+        for (int row = group->rowCount() - 1; row >= 0; --row) {
+            QStandardItem* const item = group->child(row, 0);
+            if (item == nullptr || !item->isCheckable()) {
+                continue;
+            }
+            QStandardItem* const target =
+                item->checkState() == Qt::Checked ? active_group : inactive_group;
+            if (target == group) {
+                continue;
+            }
+            const bool was_expanded = tree_view->isExpanded(item->index());
+            const QList<QStandardItem*> taken = group->takeRow(row);
+            target->appendRow(taken);
+            if (was_expanded) {
+                tree_view->expand(taken.front()->index());
+            }
+        }
+    }
+    active_group->sortChildren(0);
+    inactive_group->sortChildren(0);
+    UpdateGroupTitles();
+}
+
+void ConfigurePerGameAddons::AddCheatRows(QStandardItem* mod_item, const QString& location) {
+    // A mod folder keeps its cheats in a "cheats" subfolder; a loose cheat_* file is one file.
+    QStringList files;
+    const QFileInfo info(location);
+    if (info.isFile()) {
+        files << info.absoluteFilePath();
+    } else if (info.isDir()) {
+        const QDir mod_dir(location);
+        for (const QFileInfo& sub : mod_dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+            if (sub.fileName().compare(QStringLiteral("cheats"), Qt::CaseInsensitive) != 0) {
+                continue;
+            }
+            for (const QFileInfo& f :
+                 QDir(sub.absoluteFilePath()).entryInfoList(QDir::Files, QDir::Name)) {
+                files << f.absoluteFilePath();
+            }
+        }
+    }
+
+    QFont font = mod_item->font();
+    font.setItalic(true);
+    for (const QString& path : files) {
+        QStringList names;
+        QFile file(path);
+        if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            QTextStream in(&file);
+            while (!in.atEnd()) {
+                const QString line = in.readLine().trimmed();
+                if (line.startsWith(QLatin1Char('['))) {
+                    const auto end = line.indexOf(QLatin1Char(']'));
+                    const QString name = line.mid(1, end > 0 ? end - 1 : -1).trimmed();
+                    if (!name.isEmpty()) {
+                        names << name;
+                    }
+                } else if (line.startsWith(QLatin1Char('{'))) {
+                    names << tr("Master code");
+                }
+            }
+        }
+        if (names.isEmpty()) {
+            names << QFileInfo(path).fileName();
+        }
+        for (const QString& name : names) {
+            auto* const cheat = new QStandardItem(QStringLiteral("\u21B3 %1").arg(name));
+            cheat->setEditable(false);
+            cheat->setFont(font);
+            cheat->setData(path, CHEAT_FILE);
+            cheat->setToolTip(tr("Double-click to show this cheat file"));
+            auto* const kind = new QStandardItem(tr("Cheat (%1)").arg(QFileInfo(path).fileName()));
+            kind->setEditable(false);
+            kind->setFont(font);
+            kind->setData(path, CHEAT_FILE);
+            mod_item->appendRow(QList<QStandardItem*>{cheat, kind});
+        }
+    }
+}
+
+void ConfigurePerGameAddons::OnItemClicked(const QModelIndex& index) {
+    // Clicking the type cell ("IPSwitch, Cheats") of a mod with cheats shows / hides them.
+    if (!index.isValid() || index.column() != 1) {
+        return;
+    }
+    const QModelIndex first = index.siblingAtColumn(0);
+    if (item_model->hasChildren(first) && first.parent().isValid()) {
+        tree_view->setExpanded(first, !tree_view->isExpanded(first));
+    }
+}
+
+void ConfigurePerGameAddons::OnItemDoubleClicked(const QModelIndex& index) {
+    const QString path = index.siblingAtColumn(0).data(CHEAT_FILE).toString();
+    if (path.isEmpty()) {
+        return;
+    }
+#ifdef _WIN32
+    QProcess::startDetached(QStringLiteral("explorer.exe"),
+                            {QStringLiteral("/select,"), QDir::toNativeSeparators(path)});
+#else
+    QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(path).absolutePath()));
+#endif
 }
 
 void ConfigurePerGameAddons::ApplyConfiguration() {
@@ -254,7 +410,7 @@ void ConfigurePerGameAddons::showContextMenu(const QPoint& pos) {
     const QModelIndex index = tree_view->indexAt(pos);
     auto selected = tree_view->selectionModel()->selectedRows();
     if (index.isValid() && selected.empty()) {
-        QModelIndex idx = item_model->index(index.row(), 0);
+        QModelIndex idx = index.siblingAtColumn(0);
         if (idx.isValid())
             selected << idx;
     }
@@ -270,6 +426,13 @@ void ConfigurePerGameAddons::showContextMenu(const QPoint& pos) {
 
     if (selected.length() == 1) {
         auto loc = selected.at(0).data(PATCH_LOCATION).toString();
+        if (loc.isEmpty()) {
+            // eden-kledd: a cheat row opens the folder that holds its cheat file
+            const auto cheat = selected.at(0).data(CHEAT_FILE).toString();
+            if (!cheat.isEmpty()) {
+                loc = QFileInfo(cheat).absolutePath();
+            }
+        }
         if (QFileInfo::exists(loc)) {
             QAction* open = menu.addAction(tr("&Open in File Manager"));
             connect(open, &QAction::triggered, this,
@@ -293,6 +456,9 @@ void ConfigurePerGameAddons::RetranslateUI() {
 }
 
 void ConfigurePerGameAddons::LoadConfiguration() {
+    // eden-kledd: the old groups are gone once the rows are cleared
+    active_group = nullptr;
+    inactive_group = nullptr;
     if (file == nullptr) {
         return;
     }
@@ -309,6 +475,11 @@ void ConfigurePerGameAddons::LoadConfiguration() {
     update_items.clear();
     list_items.clear();
     item_model->removeRows(0, item_model->rowCount());
+
+    // eden-kledd: Active / Inactive groups. Titles are set before the groups enter the model so
+    // opening the dialog does not count as a change.
+    active_group = MakeGroupItem(tr("Active"));
+    inactive_group = MakeGroupItem(tr("Inactive"));
 
     std::vector<FileSys::Patch> patches = pm.GetPatches(update_raw);
 
@@ -360,8 +531,24 @@ void ConfigurePerGameAddons::LoadConfiguration() {
 
         list_items.push_back(QList<QStandardItem*>{
             first_item, new QStandardItem{QString::fromStdString(patch.version)}});
-        item_model->appendRow(list_items.back());
+        if (is_mod && patch.version.find("Cheats") != std::string::npos) {
+            AddCheatRows(first_item, QString::fromStdString(patch.location));
+            list_items.back().back()->setToolTip(tr("Click to show the cheats in this mod"));
+        }
+        (should_enable ? active_group : inactive_group)->appendRow(list_items.back());
     }
+
+    active_group->sortChildren(0);
+    inactive_group->sortChildren(0);
+    active_group->setText(QStringLiteral("%1 (%2)").arg(tr("Active")).arg(active_group->rowCount()));
+    inactive_group->setText(
+        QStringLiteral("%1 (%2)").arg(tr("Inactive")).arg(inactive_group->rowCount()));
+    item_model->appendRow(QList<QStandardItem*>{active_group, MakeGroupItem(QString{})});
+    item_model->appendRow(QList<QStandardItem*>{inactive_group, MakeGroupItem(QString{})});
+    tree_view->setFirstColumnSpanned(0, QModelIndex(), true);
+    tree_view->setFirstColumnSpanned(1, QModelIndex(), true);
+    tree_view->expand(active_group->index());
+    tree_view->expand(inactive_group->index());
 
     tree_view->resizeColumnToContents(1);
 }
