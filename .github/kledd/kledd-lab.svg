@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="body" cx="42%" cy="36%" r="70%">
+      <stop offset="0" stop-color="#4a6fa8"/>
+      <stop offset="0.55" stop-color="#25407a"/>
+      <stop offset="1" stop-color="#121f45"/>
+    </radialGradient>
+    <radialGradient id="choc" cx="50%" cy="30%" r="80%">
+      <stop offset="0" stop-color="#9a5cb8"/>
+      <stop offset="0.55" stop-color="#5e3a8c"/>
+      <stop offset="1" stop-color="#2f1d55"/>
+    </radialGradient>
+    <linearGradient id="bow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7be08a"/>
+      <stop offset="1" stop-color="#3fae55"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <clipPath id="splat">
+      <path d="M256 92 C300 92 318 64 344 78 C370 92 352 124 380 140 C412 158 444 146 452 178 C460 210 424 222 428 254 C432 288 470 300 456 334 C442 366 404 350 384 378 C366 404 380 440 346 446 C312 452 300 420 256 420 C212 420 200 452 166 446 C132 440 146 404 128 378 C108 350 70 366 56 334 C42 300 80 288 84 254 C88 222 52 210 60 178 C68 146 100 158 132 140 C160 124 142 92 168 78 C194 64 212 92 256 92 Z"/>
+    </clipPath>
+  </defs>
+
+  <!-- shadow -->
+  <ellipse cx="256" cy="448" rx="150" ry="22" fill="#000" opacity="0.22"/>
+
+  <!-- gooey splat body, midnight blue with a cyan scan glow -->
+  <path fill="url(#body)" stroke="#4fd8ff" stroke-width="6" stroke-linejoin="round" filter="url(#glow)" d="
+    M256 92
+    C300 92 318 64 344 78 C370 92 352 124 380 140
+    C412 158 444 146 452 178 C460 210 424 222 428 254
+    C432 288 470 300 456 334 C442 366 404 350 384 378
+    C366 404 380 440 346 446 C312 452 300 420 256 420
+    C212 420 200 452 166 446 C132 440 146 404 128 378
+    C108 350 70 366 56 334 C42 300 80 288 84 254
+    C88 222 52 210 60 178 C68 146 100 158 132 140
+    C160 124 142 92 168 78 C194 64 212 92 256 92 Z"/>
+
+  <!-- faint scanlines inside the body -->
+  <g clip-path="url(#splat)" opacity="0.13" stroke="#9fe9ff" stroke-width="2">
+    <line x1="40" y1="180" x2="472" y2="180"/><line x1="40" y1="200" x2="472" y2="200"/>
+    <line x1="40" y1="220" x2="472" y2="220"/><line x1="40" y1="340" x2="472" y2="340"/>
+    <line x1="40" y1="360" x2="472" y2="360"/><line x1="40" y1="380" x2="472" y2="380"/>
+    <line x1="40" y1="400" x2="472" y2="400"/>
+  </g>
+
+  <!-- chocolate goo drip on top -->
+  <path fill="url(#choc)" d="
+    M176 120 C200 104 230 110 256 108 C284 106 312 104 336 120
+    C346 128 340 140 330 140 C322 140 322 160 312 162 C300 164 302 146 292 146
+    C282 146 284 176 270 178 C256 180 260 150 248 150 C236 150 238 168 226 168
+    C214 168 218 146 206 146 C196 146 198 158 188 156 C176 154 170 128 176 120 Z"/>
+  <ellipse cx="236" cy="122" rx="20" ry="6" fill="#f0c6ff" opacity="0.35"/>
+
+  <!-- bow (stays green, it's her) -->
+  <g transform="translate(344 118) rotate(18)">
+    <path d="M0 0 C-30 -26 -52 -10 -48 8 C-44 26 -22 22 0 0 Z" fill="url(#bow)" stroke="#2c7a3d" stroke-width="4"/>
+    <path d="M0 0 C30 -26 52 -10 48 8 C44 26 22 22 0 0 Z" fill="url(#bow)" stroke="#2c7a3d" stroke-width="4"/>
+    <circle r="10" fill="#4cc463" stroke="#2c7a3d" stroke-width="4"/>
+  </g>
+
+  <!-- brows: left one shot way up, right one flat and suspicious -->
+  <path d="M174 196 C186 164 214 156 238 174" fill="none" stroke="#e8f6ff" stroke-width="10" stroke-linecap="round"/>
+  <path d="M280 222 C298 218 318 220 338 226" fill="none" stroke="#e8f6ff" stroke-width="10" stroke-linecap="round"/>
+
+  <!-- eyes: left wide open, right narrowed -->
+  <g filter="url(#glow)">
+    <ellipse cx="208" cy="256" rx="29" ry="35" fill="none" stroke="#e8f6ff" stroke-opacity="0.95" stroke-width="3.5"/>
+    <ellipse cx="208" cy="256" rx="22" ry="28" fill="#e8f6ff" fill-opacity="0.62"/>
+  </g>
+  <g filter="url(#glow)">
+    <ellipse cx="306" cy="262" rx="26" ry="24" fill="none" stroke="#e8f6ff" stroke-opacity="0.95" stroke-width="3.5"/>
+    <ellipse cx="306" cy="262" rx="19" ry="17" fill="#e8f6ff" fill-opacity="0.62"/>
+  </g>
+
+  <!-- blush, cooler pink against blue -->
+  <ellipse cx="160" cy="304" rx="24" ry="13" fill="#ff7aa8" opacity="0.45"/>
+  <ellipse cx="352" cy="304" rx="24" ry="13" fill="#ff7aa8" opacity="0.45"/>
+
+  <!-- shocked little O -->
+  <ellipse cx="258" cy="322" rx="15" ry="19" fill="#0a1226" stroke="#e8f6ff" stroke-width="4"/>
+
+  <!-- sweat drop -->
+  <path d="M378 196 C372 210 366 218 366 226 C366 234 372 240 380 240 C388 240 394 234 394 226 C394 218 386 210 378 196 Z" fill="#9fe9ff" opacity="0.9"/>
+
+  <!-- tiny arm holding the scan-visor reticle, now glowing -->
+  <path d="M420 300 C446 292 458 270 462 252" fill="none" stroke="#25407a" stroke-width="16" stroke-linecap="round"/>
+  <g transform="translate(466 220)" filter="url(#glow)">
+    <rect x="-30" y="-30" width="60" height="60" rx="6" fill="#06101c" opacity="0.92"/>
+    <path d="M-22 -10 L-22 -22 L-10 -22 M10 -22 L22 -22 L22 -10 M22 10 L22 22 L10 22 M-10 22 L-22 22 L-22 10"
+          fill="none" stroke="#4fd8ff" stroke-width="5" stroke-linecap="round"/>
+    <rect x="-7" y="-7" width="14" height="14" fill="#4fd8ff" opacity="0.9"/>
+  </g>
+</svg>
