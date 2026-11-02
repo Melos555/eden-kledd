@@ -7,6 +7,7 @@
 #include <optional>
 
 #include <boost/container/small_vector.hpp>
+#include "common/settings.h"
 
 #include "core/hle/service/nvdrv/devices/nvdisp_disp0.h"
 #include "core/hle/service/nvnflinger/buffer_item.h"
@@ -72,6 +73,11 @@ u32 HardwareComposer::ComposeLocked(f32* out_speed_scale, Display& display,
 
     // Wait for the previous composite, bounding the number of in-flight composites.
     nvdisp.WaitForComposite();
+    // eden-kledd: older timing (before #4548), buffers come back on the next compose
+    const bool early_release = Settings::values.kledd_early_buffer_release.GetValue();
+    if (!early_release) {
+        this->ReleaseFramebuffersLocked(display);
+    }
 
     // Determine the number of vsync periods to wait before composing again.
     std::optional<s32> swap_interval{};
@@ -170,7 +176,9 @@ u32 HardwareComposer::ComposeLocked(f32* out_speed_scale, Display& display,
     // the advanced counter), so the producer gets its buffers back immediately instead of
     // losing a queue slot for a whole frame.
     // TODO: support release fences; releasing before the composite has finished can tear.
-    this->ReleaseFramebuffersLocked(display);
+    if (early_release) {
+        this->ReleaseFramebuffersLocked(display);
+    }
 
     return 1;
 }

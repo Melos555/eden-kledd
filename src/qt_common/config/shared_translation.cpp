@@ -277,6 +277,14 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
     INSERT(Settings, kledd_gentle_gc, tr("[Kledd] Gentle texture cleanup"),
            tr("When texture memory is high, only delete textures that have not been used for a "
               "few seconds, instead of a few frames.\nExperimental: may use more VRAM."));
+    INSERT(Settings, kledd_delta_upload, tr("[Kledd] Delta texture upload (okboomerxd)"),
+           tr("For huge streamed textures, upload only the parts the game changed, right away.\n"
+              "Off: big textures go through the normal path (and forrest's async unswizzle).\n"
+              "Takes effect after restarting the game."));
+    INSERT(Settings, kledd_early_buffer_release, tr("[Kledd] Early frame buffer release (#4548)"),
+           tr("Give the game its frame buffer back right after compose.\n"
+              "Off: the older timing, where the game can't queue frames as far ahead "
+              "(may feel more responsive)."));
     INSERT(Settings, kledd_descriptor_stride_fix,
            tr("[Kledd] Descriptor stride fix (Amicuchu, PR #4549)"),
            tr("Indexes texture handle arrays inside structs by their real stride instead of the "

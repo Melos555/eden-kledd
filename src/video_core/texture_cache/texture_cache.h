@@ -1715,6 +1715,10 @@ bool TextureCache<P>::KleddTryDeltaUpload(Image& image, ImageId image_id) {
     const u64 guest_bytes = image.guest_size_bytes;
     KleddWatch* watch = KleddFindWatch(image_id);
     if (!watch) {
+        // eden-kledd: switched off, no new images are watched and everything takes the old path
+        if (!Settings::values.kledd_delta_upload.GetValue()) {
+            return false;
+        }
         if (guest_bytes < min_bytes) {
             return false;
         }

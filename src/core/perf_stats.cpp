@@ -196,7 +196,7 @@ std::string PerfStats::KleddSaveFrames(std::size_t from, bool segment, std::int6
     const auto& v = Settings::values;
     const std::string settings_line = fmt::format(
         "GPU mode={} | ASTC decode={} | ASTC recompression={} | VRAM mode={} | Resolution={} | "
-        "Async shaders={} | DMA fix={} | Gentle cleanup={} | Keep seconds={} | Descriptor fix={} | Max descriptors={} | GPU BC7={} | Long frame log={} | Mouse gyro={}",
+        "Async shaders={} | DMA fix={} | Gentle cleanup={} | Keep seconds={} | Descriptor fix={} | Max descriptors={} | GPU BC7={} | Long frame log={} | Delta upload={} | Early buffer release={} | Mouse gyro={}",
         v.gpu_accuracy.ToString(), v.accelerate_astc.ToString(), v.astc_recompression.ToString(),
         v.vram_usage_mode.ToString(), v.resolution_setup.ToString(),
         v.use_asynchronous_shaders.GetValue() ? "on" : "off",
@@ -205,6 +205,8 @@ std::string PerfStats::KleddSaveFrames(std::size_t from, bool segment, std::int6
         v.kledd_descriptor_stride_fix.GetValue() ? "on" : "off", v.kledd_descriptor_max.GetValue(),
         v.kledd_gpu_bc7.GetValue() ? "on" : "off",
         v.kledd_frame_log.GetValue() ? "on" : "off",
+        v.kledd_delta_upload.GetValue() ? "on" : "off",
+        v.kledd_early_buffer_release.GetValue() ? "on" : "off",
         v.kledd_mouse_gyro.GetValue()
             ? fmt::format("on (yaw {}, smoothing {}, gravity {})",
                           v.kledd_mouse_gyro_yaw_z.GetValue() ? "Z" : "Y",

@@ -661,6 +661,14 @@ struct Values {
     // eden-kledd: keep recently used textures longer before the garbage collector deletes them
     SwitchableSetting<bool> kledd_gentle_gc{linkage, false, "kledd_gentle_gc",
                                             Category::RendererHacks};
+    // eden-kledd: okboomerxd's z-group delta upload for big streamed textures (Prime 4)
+    SwitchableSetting<bool> kledd_delta_upload{linkage, true, "kledd_delta_upload",
+                                               Category::RendererHacks};
+    // eden-kledd: hand the frame buffer back right after compose (Eden #4548) instead of on the
+    // next compose. Off = the older behaviour, where the game can't queue frames as far ahead.
+    SwitchableSetting<bool> kledd_early_buffer_release{linkage, true,
+                                                       "kledd_early_buffer_release",
+                                                       Category::RendererHacks};
     // eden-kledd: descriptor stride fix by Amicuchu (Eden PR #4549), as a toggle for testing
     SwitchableSetting<bool> kledd_descriptor_stride_fix{linkage, false,
                                                         "kledd_descriptor_stride_fix",
