@@ -1,0 +1,81 @@
+# Contributing
+
+Eden has lots of different ways that you can contribute to its efforts, even without knowing how to write code:
+
+- Donate! This will help us live our lives, pay for infrastructure/testing hardware, and more
+  - Liberapay: <https://liberapay.com/crueter>
+  - PayPal: `business@eden-emu.dev`
+  - Bitcoin: `bc1pknzdackezf6s5nxqwn6hx940a7e0k3lk7ggpczp9u4jn4a25lnyqrgvdxx`
+- Join our [Discord](https://discord.gg/HstXbPch7X) community
+- Submit [bug reports or feature requests](https://github.com/eden-emulator/Issue-Reports/issues), or on [Codeberg](https://codeberg.org/eden-emu/eden/issues)
+- Contribute to our [translation efforts](./dist/languages/README.md)
+
+## Code Contributions
+
+Eden is free, open-source, copyleft software, licensed under the terms of the [GPLv3](https://www.gnu.org/licenses/gpl-3.0.en.html). You would do well to familiarize yourself with the GPL, [its FAQ](https://www.gnu.org/licenses/gpl-faq.html), and [free software as a concept](https://www.gnu.org/philosophy/free-sw.html) before contributing. If these terms are not acceptable to you, then you shouldn't contribute.
+
+### Policies
+
+- AI usage is allowed, but we reserve the right to close and rework your PR if you don't fully understand the changes you're making. Additionally:
+  - As a common courtesy, please disclose your AI usage under the PR description, as `Assisted-by: <AI model> (<how it helped>)`.
+  - All PR descriptions, issue bodies, and comments **must** be written by you, in your own words.
+    - AI-written comments/descriptions/bodies are not only difficult for us to read, they also indicate to us that you did not put in the effort to actually understand your changes. These will be closed, deleted, or hidden without warning.
+  - Spamming of low-effort AI-generated pull requests or issues is considered a [Human Effort Denial of Service](https://tiangolo.com/open-source/contributing/#human-effort-denial-of-service), and will result in the immediate suspension of your Forgejo account, or you getting blocked from the organization on other platforms.
+- Usage of any form of profanity or otherwise unsavory language is discouraged but not strictly disallowed.
+- New code must follow the same style as the surrounding codebase. Exceptions may be granted in certain cases.
+- Maintainers reserve the right to change your patches and pull requests at will. We will try to avoid this.
+  - You should generally respect all decisions made by the [code owners](docs/CODEOWNERS) in your particular subsystem.
+  - However, if you feel they are overstepping or are incorrect, don't be afraid to stand your ground! Maintainers are not always correct.
+- While we do *not* adhere to the terms of a formal code of conduct, you are expected to treat other developers, contributors, and community members respectfully.
+- You **must** have basic knowledge of [Git](https://git-scm.com/learn). Knowing how to manage your branches and follow proper fork policies is a necessity.
+
+### Pull Requests
+
+Pull requests are only to be merged by core developers when properly tested and discussions conclude on Discord or other communication channels. Labels are recommended but not required. However, all PRs MUST be namespaced and optionally typed:
+
+```txt
+[cmake] refactor: CPM over submodules
+[desktop] feat: implement firmware install from ZIP
+[hle] stub fw20 functions
+[core] test: raise maximum CPU cores to 6
+[cmake, core] Unbreak FreeBSD Building Process
+```
+
+- The level of namespacing is generally left to the committer's choice.
+- However, we never recommend going more than two levels *except* in `hle`, in which case you may go as many as four levels depending on the specificity of your changes.
+- Ocassionally, up to two additional namespaces may be provided for more clarity.
+  - Changes that affect the entire project (sans CMake changes) should be namespaced as `meta`.
+- Maintainers are permitted to change namespaces at will.
+- Commits within PRs are not required to be namespaced, but it is highly recommended.
+
+### Where do I start?
+
+Anywhere you like! If you are facing an issue and want to fix it, go ahead. For new features, you are heavily encouraged to open a feature request on GitHub, Codeberg, or Forgejo first, discussing the motivations, potential implementation, and user flow of your desired feature. Our UI/UX designers will work with you to refine your feature before you actually choose to implement it.
+
+You may also search for open issues on [GitHub](https://github.com/eden-emulator/Issue-Reports/issues), [Codeberg](https://codeberg.org/eden-emu/eden/issues), or [Forgejo](https://git.eden-emu.dev/eden-emu/eden/issues). For larger features/refactors, you should first express your interest in the issue to ensure another developer isn't already working on it.
+
+### Great! Can I contribute already?
+
+There are five primary ways to contribute.
+
+- Submit pull requests directly to our source tree
+  - You must first [create an account](https://git.eden-emu.dev/user/sign_up).
+  - You may use an internal account, or you may use a GitHub/Codeberg account linked to our instance.
+  - Please make sure to read our [site policy](https://git.eden-emu.dev/eden-emu/site-policy/src/branch/master).
+  - Both your account and your associated fork must be public, *not* limited/private, otherwise our CI workflow will not work on your pull requests.
+- Submit pull requests to our [GitHub mirror](https://github.com/eden-emulator/Issue-Reports)
+  - Note that this is subject to being removed by DMCA, so don't rely on this.
+- Submit pull requests to our [Codeberg mirror](https://codeberg.org/eden-emu/eden)
+  - Codeberg is not subject to draconian DMCA laws, but they have been hostile to emulators such as Torzu in the past. Thus, you shouldn't rely on this either.
+- Submit patches to [`patch@eden-emu.dev`](mailto:patch@eden-emu.dev)
+  - These **must** be in `git format-patch` format. You should familiarize yourself with the [art of patching](https://www.gitkraken.com/learn/git/git-patch) beforehand.
+  - Alongside the contents of your email, please attach the patch/diff file itself for easy access and use.
+- Email our developers at [`developers@eden-emu.dev`](mailto:developers@eden-emu.dev) with any of your relevant findings or code changes.
+
+To test your changes, ensure to read the [build documentation](./docs/Build.md) for your specific platform(s) to ensure everything compiles and works properly. You should also make sure that your branch is up-to-date with the upstream `master` branch before opening a pull request. **You** are responsible for ensuring that your contribution does what it says and doesn't break everything else horribly.
+
+## Non-code Contributions
+
+Alongside the other contribution methods listed up top, you can also choose to contribute through documentation, organization, or community guides. These can be done either through the code contribution methods described above, or created externally and shared via our Discord community.
+
+If you have an external tool/page that you believe would be handy to integrate/link into Eden, please additionally email our developers at [`developers@eden-emu.dev`](mailto:developers@eden-emu.dev).

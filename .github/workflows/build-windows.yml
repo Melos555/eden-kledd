@@ -1,0 +1,88 @@
+name: Build Eden (Windows)
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 340
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Vulkan SDK
+        shell: pwsh
+        run: ./tools/windows/install-vulkan-sdk.ps1
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install Ninja and check clang-cl
+        shell: pwsh
+        run: |
+          choco install ninja -y --no-progress
+          if (-not (Get-Command clang-cl -ErrorAction SilentlyContinue)) { choco install llvm -y --no-progress }
+          clang-cl --version
+
+      - name: Install Qt (built with the same Visual Studio as this runner)
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          host: 'windows'
+          target: 'desktop'
+          arch: 'win64_msvc2022_64'
+          modules: 'qtcharts'
+          cache: true
+
+      - name: Cache downloaded dependencies
+        uses: actions/cache@v4
+        with:
+          path: .cache/cpm
+          key: cpm-${{ hashFiles('cpmfile.json', '**/cpmfile.json') }}
+          restore-keys: cpm-
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl -DYUZU_USE_BUNDLED_QT=OFF "-DQt6_DIR=$env:QT_ROOT_DIR/lib/cmake/Qt6" -DYUZU_TESTS=OFF -DENABLE_UPDATE_CHECKER=OFF 2>&1 | Tee-Object -FilePath configure.log
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            $msg = ((Get-Content configure.log | Select-Object -Last 50) -join "`n").Replace('%','%25').Replace("`r",'').Replace("`n",'%0A')
+            Write-Output "::error title=Configure failed::$msg"
+            exit $code
+          }
+          $warn = ((Get-Content configure.log | Select-String -Pattern 'CMake Warning|CMake Error|Could NOT' | Select-Object -First 20 | ForEach-Object { $_.Line }) -join "`n").Replace('%','%25').Replace("`r",'').Replace("`n",'%0A')
+          if ($warn) { Write-Output "::warning title=Configure notes::$warn" }
+
+      - name: Build
+        shell: pwsh
+        run: |
+          cmake --build build 2>&1 | Tee-Object -FilePath build.log
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            $lines = Get-Content build.log
+            $errs = $lines | Select-String -Pattern 'error|FAILED' | Select-Object -First 25 | ForEach-Object { $_.Line }
+            $tail = $lines | Select-Object -Last 40
+            $msg = (@('ERRORS:') + $errs + @('TAIL:') + $tail) -join "`n"
+            $msg = $msg.Replace('%','%25').Replace("`r",'').Replace("`n",'%0A')
+            Write-Output "::error title=Build failed::$msg"
+            exit $code
+          }
+
+      - name: Collect files
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path out | Out-Null
+          Copy-Item -Recurse build/bin/* out/
+          Get-ChildItem out -Recurse -Include *.pdb,*.ilk,*.lib,*.exp | Remove-Item -Force
+          Get-ChildItem out
+
+      - name: Upload Eden
+        uses: actions/upload-artifact@v4
+        with:
+          name: eden-scanfix-upstream-windows
+          path: out/
+          retention-days: 30
