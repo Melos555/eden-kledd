@@ -7,8 +7,11 @@
 #include <atomic>
 #include <chrono>
 #include <cstddef>
+#include <ctime>
+#include <filesystem>
 #include <mutex>
 #include <string>
+#include <vector>
 #include "common/common_types.h"
 
 namespace Core {
@@ -52,12 +55,13 @@ public:
      */
     double GetLastFrameTimeScale() const;
 
-    /// eden-kledd frame recorder, Action Replay style: off until switched on. Returns the new
-    /// state (true = on). Switching it off drops frames that were not saved yet.
-    bool KleddToggleRecorder();
+    /// eden-kledd frame recorder: off until switched on. One file per session. Returns the new
+    /// state (true = on). Switching it off closes the last checkpoint and writes the file
+    /// (`saved_path`, "" if there was nothing to save).
+    bool KleddToggleRecorder(std::string& saved_path);
 
-    /// eden-kledd: saves the frames since the recorder was switched on or since the last save,
-    /// and keeps recording. Returns the summary path, "" when there is too little to save.
+    /// eden-kledd: closes a checkpoint (the stretch since the last one) and rewrites the session
+    /// file. Keeps recording. Returns the file path, "" when there is too little to save.
     std::string KleddSaveRecording();
 
     /// eden-kledd: true while the recorder is on
@@ -71,10 +75,12 @@ private:
     std::vector<s64> kledd_frames;
     s64 kledd_last_frame_ns{0};
     bool kledd_segment_active{false};
-    std::int64_t kledd_segment_start_time{0}; // wall clock (time_t) when the recording started
+    std::vector<std::size_t> kledd_cuts;       // frame index of each checkpoint (first = 0)
+    std::vector<std::time_t> kledd_cut_times;  // wall clock of each checkpoint
+    std::vector<std::filesystem::path> kledd_session_files; // current files of this session
 
-    /// Writes a finished recording (plus a summary and the current settings) to the log folder.
-    std::string KleddSaveFrames(std::vector<s64> stamps, std::int64_t start_time);
+    /// Writes the session file (all checkpoints + summary). kledd_mutex must be held.
+    std::string KleddWriteSession();
 
     /// Title ID for the game that is running. 0 if there is no game running yet
     u64 title_id{0};

@@ -1353,17 +1353,21 @@ void MainWindow::InitializeHotkeys() {
         if (QtCommon::system == nullptr || !QtCommon::system->IsPoweredOn()) {
             return;
         }
-        if (QtCommon::system->GetPerfStats().KleddToggleRecorder()) {
+        std::string path;
+        if (QtCommon::system->GetPerfStats().KleddToggleRecorder(path)) {
             QApplication::beep();
             // stays up while the recorder is on (0 = no timeout)
             statusBar()->showMessage(
-                tr("[Kledd] \u25CF REC: frame recorder on. Save Frame Recording saves what it has"),
+                tr("[Kledd] \u25CF REC: frame recorder on. Save Frame Recording adds a checkpoint"),
                 0);
             return;
         }
         QApplication::beep();
         QApplication::beep();
-        statusBar()->showMessage(tr("[Kledd] Frame recorder off"), 4000);
+        statusBar()->showMessage(
+            path.empty() ? tr("[Kledd] Frame recorder off (nothing to save)")
+                         : tr("[Kledd] Frame recorder off, saved: %1").arg(QString::fromStdString(path)),
+            8000);
     });
     connect_shortcut(QStringLiteral("[Kledd] Save Frame Recording"), [this] {
         if (QtCommon::system == nullptr || !QtCommon::system->IsPoweredOn()) {
@@ -1380,7 +1384,7 @@ void MainWindow::InitializeHotkeys() {
         QApplication::beep();
         statusBar()->showMessage(
             path.empty() ? tr("[Kledd] \u25CF REC: nothing new to save yet")
-                         : tr("[Kledd] \u25CF REC: saved %1, still recording")
+                         : tr("[Kledd] \u25CF REC: checkpoint saved to %1, still recording")
                                .arg(QString::fromStdString(path)),
             0);
     });
