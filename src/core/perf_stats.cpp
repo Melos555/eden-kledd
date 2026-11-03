@@ -108,67 +108,65 @@ void PerfStats::EndGameFrame() {
     }
 }
 
-bool PerfStats::KleddIsRecording() {
-    std::scoped_lock lock{kledd_mutex};
-    return kledd_segment_active;
+
+namespace {
+
+/// eden-kledd: the settings that matter for frame pacing, as label=value pairs
+std::vector<std::string> KleddSettingsPairs() {
+    const auto& v = Settings::values;
+    const auto on = [](bool b) { return std::string(b ? "on" : "off"); };
+    return {
+        fmt::format("GPU mode={}", v.gpu_accuracy.ToString()),
+        fmt::format("ASTC decode={}", v.accelerate_astc.ToString()),
+        fmt::format("ASTC recompression={}", v.astc_recompression.ToString()),
+        fmt::format("VRAM mode={}", v.vram_usage_mode.ToString()),
+        fmt::format("Resolution={}", v.resolution_setup.ToString()),
+        fmt::format("Async shaders={}", on(v.use_asynchronous_shaders.GetValue())),
+        "DMA fix=on", // the scan readback fix is always on
+        fmt::format("Gentle cleanup={}", on(v.kledd_gentle_gc.GetValue())),
+        fmt::format("Keep seconds={}", v.kledd_gc_seconds.GetValue()),
+        fmt::format("Descriptor fix={}", on(v.kledd_descriptor_stride_fix.GetValue())),
+        fmt::format("Max descriptors={}", v.kledd_descriptor_max.GetValue()),
+        fmt::format("GPU BC7={}", on(v.kledd_gpu_bc7.GetValue())),
+        fmt::format("Long frame log={}", on(v.kledd_frame_log.GetValue())),
+        fmt::format("Mouse gyro={}",
+                    v.kledd_mouse_gyro.GetValue()
+                        ? fmt::format("on (yaw {}, smoothing {}, gravity {})",
+                                      v.kledd_mouse_gyro_yaw_z.GetValue() ? "Z" : "Y",
+                                      v.kledd_mouse_gyro_smoothing.GetValue(),
+                                      on(v.kledd_mouse_gyro_gravity.GetValue()))
+                        : std::string("off")),
+    };
 }
 
-bool PerfStats::KleddToggleRecorder() {
-    std::scoped_lock lock{kledd_mutex};
-    kledd_segment_active = !kledd_segment_active;
-    kledd_frames.clear();
-    if (kledd_segment_active) {
-        kledd_frames.reserve(65536);
-        kledd_segment_start_time = static_cast<std::int64_t>(std::time(nullptr));
-    }
-    return kledd_segment_active;
-}
+struct KleddStretchStats {
+    double seconds{};
+    std::size_t frames{};
+    double avg{}, median{}, p5{}, low1{}, low01{}, min{}, worst_ms{};
+    std::ptrdiff_t over50{}, over100{}, over250{}, over1000{};
+};
 
-std::string PerfStats::KleddSaveRecording() {
-    std::vector<s64> stamps;
-    std::int64_t start_time{};
-    {
-        std::scoped_lock lock{kledd_mutex};
-        if (!kledd_segment_active || kledd_frames.size() < 3) {
-            return {};
-        }
-        stamps.swap(kledd_frames);
-        // the next save starts where this one ended, so saves never overlap
-        kledd_frames.reserve(65536);
-        kledd_frames.push_back(stamps.back());
-        start_time = kledd_segment_start_time;
-        kledd_segment_start_time = static_cast<std::int64_t>(std::time(nullptr));
-    }
-    return KleddSaveFrames(std::move(stamps), start_time);
-}
-
-std::string PerfStats::KleddSaveFrames(std::vector<s64> stamps, std::int64_t start_time) {
-    if (stamps.size() < 3) {
-        return {};
-    }
-    const s64 last = stamps.back();
-    const std::size_t first = 0;
-
-    // Frame times in ms, with seconds-before-save for each frame
+/// Frame statistics for stamps[begin..end] (inclusive), at least 3 stamps
+KleddStretchStats KleddStats(const std::vector<s64>& stamps, std::size_t begin, std::size_t end) {
     std::vector<double> ft;
-    std::vector<double> ago;
-    for (std::size_t i = first + 1; i < stamps.size(); ++i) {
+    ft.reserve(end - begin);
+    for (std::size_t i = begin + 1; i <= end; ++i) {
         ft.push_back(static_cast<double>(stamps[i] - stamps[i - 1]) / 1e6);
-        ago.push_back(static_cast<double>(stamps[i] - stamps[first]) / 1e9);
     }
-    const std::size_t count = ft.size();
+    KleddStretchStats r;
+    r.frames = ft.size();
     const double total_ms = std::accumulate(ft.begin(), ft.end(), 0.0);
-
+    r.seconds = total_ms / 1000.0;
     std::vector<double> sorted = ft;
     std::sort(sorted.begin(), sorted.end());
+    const std::size_t count = sorted.size();
     const auto pct = [&](double p) {
-        const std::size_t idx =
-            (std::min)(count - 1, static_cast<std::size_t>(p * static_cast<double>(count - 1)));
-        return sorted[idx];
+        return sorted[(std::min)(count - 1,
+                                 static_cast<std::size_t>(p * static_cast<double>(count - 1)))];
     };
     const auto low_avg_fps = [&](double fraction) {
-        const std::size_t k = (std::max)(std::size_t{1},
-                                     static_cast<std::size_t>(fraction * static_cast<double>(count)));
+        const std::size_t k = (std::max)(
+            std::size_t{1}, static_cast<std::size_t>(fraction * static_cast<double>(count)));
         const double sum = std::accumulate(sorted.end() - static_cast<std::ptrdiff_t>(k),
                                            sorted.end(), 0.0);
         return 1000.0 / (sum / static_cast<double>(k));
@@ -176,37 +174,75 @@ std::string PerfStats::KleddSaveFrames(std::vector<s64> stamps, std::int64_t sta
     const auto over = [&](double ms) {
         return std::count_if(ft.begin(), ft.end(), [ms](double v) { return v > ms; });
     };
+    r.avg = 1000.0 * static_cast<double>(count) / total_ms;
+    r.median = 1000.0 / pct(0.5);
+    r.p5 = 1000.0 / pct(0.95);
+    r.low1 = low_avg_fps(0.01);
+    r.low01 = low_avg_fps(0.001);
+    r.worst_ms = sorted.back();
+    r.min = 1000.0 / r.worst_ms;
+    r.over50 = over(50.0);
+    r.over100 = over(100.0);
+    r.over250 = over(250.0);
+    r.over1000 = over(1000.0);
+    return r;
+}
 
-    const double avg_fps = 1000.0 * static_cast<double>(count) / total_ms;
-    const double median_fps = 1000.0 / pct(0.5);
-    const double p5_fps = 1000.0 / pct(0.95);
-    const double low1 = low_avg_fps(0.01);
-    const double low01 = low_avg_fps(0.001);
-    const double min_fps = 1000.0 / sorted.back();
+std::string KleddClock(std::time_t t, const char* format) {
+    std::ostringstream out;
+    out << std::put_time(std::localtime(&t), format);
+    return out.str();
+}
 
-    // Worst freezes
-    std::vector<std::size_t> order(count);
-    std::iota(order.begin(), order.end(), std::size_t{0});
-    std::sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) { return ft[a] > ft[b]; });
+} // namespace
 
-    const auto& v = Settings::values;
-    const std::string settings_line = fmt::format(
-        "GPU mode={} | ASTC decode={} | ASTC recompression={} | VRAM mode={} | Resolution={} | "
-        "Async shaders={} | DMA fix={} | Gentle cleanup={} | Keep seconds={} | Descriptor fix={} | Max descriptors={} | GPU BC7={} | Long frame log={} | Mouse gyro={}",
-        v.gpu_accuracy.ToString(), v.accelerate_astc.ToString(), v.astc_recompression.ToString(),
-        v.vram_usage_mode.ToString(), v.resolution_setup.ToString(),
-        v.use_asynchronous_shaders.GetValue() ? "on" : "off",
-        "on", // the scan readback fix is always on
-        v.kledd_gentle_gc.GetValue() ? "on" : "off", v.kledd_gc_seconds.GetValue(),
-        v.kledd_descriptor_stride_fix.GetValue() ? "on" : "off", v.kledd_descriptor_max.GetValue(),
-        v.kledd_gpu_bc7.GetValue() ? "on" : "off",
-        v.kledd_frame_log.GetValue() ? "on" : "off",
-        v.kledd_mouse_gyro.GetValue()
-            ? fmt::format("on (yaw {}, smoothing {}, gravity {})",
-                          v.kledd_mouse_gyro_yaw_z.GetValue() ? "Z" : "Y",
-                          v.kledd_mouse_gyro_smoothing.GetValue(),
-                          v.kledd_mouse_gyro_gravity.GetValue() ? "on" : "off")
-            : std::string("off"));
+bool PerfStats::KleddToggleRecorder(std::string& saved_path) {
+    std::scoped_lock lock{kledd_mutex};
+    if (!kledd_segment_active) {
+        kledd_frames.clear();
+        kledd_frames.reserve(65536);
+        kledd_cuts.assign(1, 0);
+        kledd_cut_times.assign(1, std::time(nullptr));
+        kledd_session_files.clear();
+        kledd_segment_active = true;
+        return true;
+    }
+    // switching off closes the last stretch as a final checkpoint
+    if (kledd_frames.size() >= kledd_cuts.back() + 3) {
+        kledd_cuts.push_back(kledd_frames.size() - 1);
+        kledd_cut_times.push_back(std::time(nullptr));
+    }
+    saved_path = KleddWriteSession();
+    kledd_segment_active = false;
+    kledd_frames.clear();
+    return false;
+}
+
+std::string PerfStats::KleddSaveRecording() {
+    std::scoped_lock lock{kledd_mutex};
+    if (!kledd_segment_active || kledd_frames.size() < kledd_cuts.back() + 3) {
+        return {};
+    }
+    kledd_cuts.push_back(kledd_frames.size() - 1);
+    kledd_cut_times.push_back(std::time(nullptr));
+    return KleddWriteSession();
+}
+
+bool PerfStats::KleddIsRecording() {
+    std::scoped_lock lock{kledd_mutex};
+    return kledd_segment_active;
+}
+
+std::string PerfStats::KleddWriteSession() {
+    // called with kledd_mutex held; one file per recorder session, rewritten at every checkpoint
+    const std::vector<s64>& stamps = kledd_frames;
+    const std::size_t checkpoints = kledd_cuts.size() - 1;
+    if (checkpoints == 0) {
+        return {};
+    }
+    const std::size_t last = kledd_cuts.back();
+    const std::time_t start_time = kledd_cut_times.front();
+    const std::time_t end_time = kledd_cut_times.back();
 
     // eden-kledd: which build made this recording, e.g. "smooth fd8e7be"
     std::string build{Common::g_scm_branch};
@@ -220,55 +256,125 @@ std::string PerfStats::KleddSaveFrames(std::vector<s64> stamps, std::int64_t sta
     }
     const std::string rev = std::string{Common::g_scm_rev}.substr(0, 7);
     const std::string build_tag = build.empty() ? rev : fmt::format("{} {}", build, rev);
+    const std::string span = fmt::format("[{}] [{} == {}]", KleddClock(start_time, "%m-%d"),
+                                         KleddClock(start_time, "%H.%M.%S"),
+                                         KleddClock(end_time, "%H.%M.%S"));
 
-    // Files read "kledd_frames [smooth fd8e7be] [11-02] [13.33.44 == 13.35.44].csv":
-    // the build, the day, and the stretch of time the recording covers
-    const std::time_t t = std::time(nullptr);
-    const std::time_t st = (start_time != 0)
-                               ? static_cast<std::time_t>(start_time)
-                               : t - static_cast<std::time_t>(total_ms / 1000.0 + 0.5);
-    std::ostringstream span;
-    span << std::put_time(std::localtime(&st), "[%m-%d] [%H.%M.%S == ")
-         << std::put_time(std::localtime(&t), "%H.%M.%S]");
-    const std::string stamp = span.str();
+    // "kledd_frames [smooth fd8e7be] [11-03] [10.59.39 == 11.02.28].txt"; the end time moves with
+    // every checkpoint, so the previous version of this session's files is removed first
     const auto dir = Common::FS::GetEdenPath(Common::FS::EdenPath::LogDir);
-    const char* const prefix = "kledd_frames";
-    const auto csv_path = dir / fmt::format("{} [{}] {}.csv", prefix, build_tag, stamp);
-    const auto txt_path = dir / fmt::format("{} [{}] {} summary.txt", prefix, build_tag, stamp);
-    if (!Common::FS::CreateParentDir(csv_path)) {
+    const auto txt_path = dir / fmt::format("kledd_frames [{}] {}.txt", build_tag, span);
+    const auto csv_path = dir / fmt::format("kledd_frames [{}] {}.csv", build_tag, span);
+    if (!Common::FS::CreateParentDir(txt_path)) {
         return {};
     }
-
-    std::string csv;
-    csv.reserve(count * 24 + 256);
-    csv += "frame,seconds_into_recording,frametime_ms\n";
-    for (std::size_t i = 0; i < count; ++i) {
-        csv += fmt::format("{},{:.3f},{:.3f}\n", i, ago[i], ft[i]);
+    for (const auto& old : kledd_session_files) {
+        if (old != txt_path && old != csv_path) {
+            void(Common::FS::RemoveFile(old));
+        }
     }
+    kledd_session_files = {txt_path, csv_path};
 
     std::string txt;
-    txt += fmt::format("Eden Kledd frame recording, {} {}\n", stamp,
-                       "(Kledd frame recorder)");
-    txt += fmt::format("Build: {} ({})\n", build_tag, Common::g_build_fullname);
-    txt += settings_line + "\n\n";
-    txt += fmt::format("Length:        {:.1f} s ({} frames)\n", total_ms / 1000.0, count);
-    txt += fmt::format("Average FPS:   {:.1f}\n", avg_fps);
-    txt += fmt::format("Median FPS:    {:.1f}\n", median_fps);
-    txt += fmt::format("P5 FPS:        {:.1f}\n", p5_fps);
-    txt += fmt::format("1% low FPS:    {:.1f}\n", low1);
-    txt += fmt::format("0.1% low FPS:  {:.1f}\n", low01);
-    txt += fmt::format("Min FPS:       {:.1f}  (worst frame {:.0f} ms)\n", min_fps, sorted.back());
+    txt += "Eden Kledd frame recording,\n";
+    txt += span + fmt::format(" ({} checkpoint{})\n", checkpoints, checkpoints == 1 ? "" : "s");
+    txt += fmt::format("[Build] {} (Eden {})\n\n", build_tag, Common::g_build_fullname);
+
+    txt += "--:[Settings]:--\n\n";
+    const auto pairs = KleddSettingsPairs();
+    std::size_t width = 0;
+    for (std::size_t i = 0; i < pairs.size(); i += 2) {
+        width = (std::max)(width, pairs[i].size());
+    }
+    for (std::size_t i = 0; i < pairs.size(); i += 2) {
+        if (i + 1 < pairs.size()) {
+            txt += fmt::format("[{:<{}} | {}\n", pairs[i], width, pairs[i + 1]);
+        } else {
+            txt += fmt::format("[{}\n", pairs[i]);
+        }
+    }
+
+    txt += "\n--:[Legend]:--\n";
+    txt += "APS    = Average FPS\n";
+    txt += "MPS    = Median FPS\n";
+    txt += "P5     = P5 FPS (95% of frames are faster than this)\n";
+    txt += "1%     = 1% low FPS\n";
+    txt += "0.1    = 0.1% low FPS\n";
+    txt += "MinFPS = Min FPS (the single slowest frame)\n";
+    txt += "Hitch  = frames over 100 ms\n";
+
+    const auto stats_block = [](const KleddStretchStats& st) {
+        return fmt::format("APS:    {:.1f}\nMPS:    {:.1f}\nP5:     {:.1f}\n1%:     {:.1f}\n"
+                           "0.1:    {:.1f}\nMinFPS: {:.1f}  (worst frame {:.0f} ms)\n"
+                           "Hitch:  {}\n",
+                           st.avg, st.median, st.p5, st.low1, st.low01, st.min, st.worst_ms,
+                           st.over100);
+    };
+    for (std::size_t c = 0; c < checkpoints; ++c) {
+        const auto st = KleddStats(stamps, kledd_cuts[c], kledd_cuts[c + 1]);
+        txt += fmt::format("\n\n[{} == {}]     {:.1f} s ({} frames)\n",
+                           KleddClock(kledd_cut_times[c], "%H.%M.%S"),
+                           KleddClock(kledd_cut_times[c + 1], "%H.%M.%S"), st.seconds, st.frames);
+        txt += stats_block(st);
+    }
+
+    const auto all = KleddStats(stamps, 0, last);
+    txt += fmt::format("\n--:[Summary of all checkpoints]:--     {:.1f} s ({} frames)\n",
+                       all.seconds, all.frames);
+    txt += fmt::format("Average FPS:   {:.1f}\n", all.avg);
+    txt += fmt::format("Median FPS:    {:.1f}\n", all.median);
+    txt += fmt::format("P5 FPS:        {:.1f}\n", all.p5);
+    txt += fmt::format("1% low FPS:    {:.1f}\n", all.low1);
+    txt += fmt::format("0.1% low FPS:  {:.1f}\n", all.low01);
+    txt += fmt::format("Min FPS:       {:.1f}  (worst frame {:.0f} ms)\n", all.min, all.worst_ms);
     txt += fmt::format("Frames over 50 ms: {} | over 100 ms: {} | over 250 ms: {} | over 1 s: {}\n\n",
-                       over(50.0), over(100.0), over(250.0), over(1000.0));
-    txt += "Worst freezes (how long, and how many seconds into the recording):\n";
-    for (std::size_t i = 0; i < (std::min)(std::size_t{10}, count); ++i) {
-        const std::size_t f = order[i];
-        txt += fmt::format("  {:>7.0f} ms   at {:>6.1f} s\n", ft[f], ago[f]);
+                       all.over50, all.over100, all.over250, all.over1000);
+
+    // Worst freezes with the clock time and the checkpoint they fell in
+    std::vector<std::size_t> order;
+    order.reserve(last);
+    for (std::size_t i = 1; i <= last; ++i) {
+        order.push_back(i);
+    }
+    const auto ft_of = [&](std::size_t i) {
+        return static_cast<double>(stamps[i] - stamps[i - 1]) / 1e6;
+    };
+    const std::size_t top = (std::min)(std::size_t{10}, order.size());
+    std::partial_sort(order.begin(), order.begin() + static_cast<std::ptrdiff_t>(top), order.end(),
+                      [&](std::size_t a, std::size_t b) { return ft_of(a) > ft_of(b); });
+    txt += "Worst freezes (how long, when, and in which checkpoint):\n";
+    for (std::size_t n = 0; n < top; ++n) {
+        const std::size_t i = order[n];
+        const auto at = start_time + static_cast<std::time_t>(
+                                         static_cast<double>(stamps[i] - stamps[0]) / 1e9);
+        std::size_t cp = 1;
+        while (cp < checkpoints && i > kledd_cuts[cp]) {
+            ++cp;
+        }
+        txt += fmt::format("  {:>7.0f} ms   at {}   (checkpoint {})\n", ft_of(i),
+                           KleddClock(at, "%H.%M.%S"), cp);
+    }
+
+    std::string settings_line;
+    for (const auto& pair : pairs) {
+        settings_line += (settings_line.empty() ? "" : " | ") + pair;
     }
     txt += "\nPaste row for the test sheet (tab separated):\n";
-    txt += fmt::format("{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.0f}\t{}\t{}\n",
-                       fmt::format("{} {}", build_tag, stamp), total_ms / 1000.0, avg_fps, median_fps, p5_fps, low1, min_fps,
-                       sorted.back(), over(100.0), settings_line);
+    txt += fmt::format("{} {}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.0f}\t{}\t{}\n",
+                       build_tag, span, all.seconds, all.avg, all.median, all.p5, all.low1,
+                       all.min, all.worst_ms, all.over100, settings_line);
+
+    std::string csv;
+    csv.reserve(last * 32 + 64);
+    csv += "frame,checkpoint,seconds_into_recording,frametime_ms\n";
+    std::size_t cp = 1;
+    for (std::size_t i = 1; i <= last; ++i) {
+        while (cp < checkpoints && i > kledd_cuts[cp]) {
+            ++cp;
+        }
+        csv += fmt::format("{},{},{:.3f},{:.3f}\n", i - 1, cp,
+                           static_cast<double>(stamps[i] - stamps[0]) / 1e9, ft_of(i));
+    }
 
     Common::FS::IOFile csv_file(csv_path, Common::FS::FileAccessMode::Write,
                                 Common::FS::FileType::TextFile);
