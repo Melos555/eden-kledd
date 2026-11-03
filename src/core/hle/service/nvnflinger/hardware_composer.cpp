@@ -74,7 +74,7 @@ u32 HardwareComposer::ComposeLocked(f32* out_speed_scale, Display& display,
     // Wait for the previous composite, bounding the number of in-flight composites.
     nvdisp.WaitForComposite();
     // eden-kledd: older timing (before #4548), buffers come back on the next compose
-    const bool early_release = Settings::values.kledd_early_buffer_release.GetValue();
+    constexpr bool early_release = false; // eden-kledd D preset: locked off (more responsive)
     if (!early_release) {
         this->ReleaseFramebuffersLocked(display);
     }

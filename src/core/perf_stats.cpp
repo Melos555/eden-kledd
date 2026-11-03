@@ -124,13 +124,14 @@ std::vector<std::string> KleddSettingsPairs() {
         fmt::format("Async shaders={}", on(v.use_asynchronous_shaders.GetValue())),
         "DMA fix=on", // the scan readback fix is always on
         fmt::format("Gentle cleanup={}", on(v.kledd_gentle_gc.GetValue())),
-        fmt::format("Keep seconds={}", v.kledd_gc_seconds.GetValue()),
+        "Keep seconds=5 (locked)",
         fmt::format("Descriptor fix={}", on(v.kledd_descriptor_stride_fix.GetValue())),
         fmt::format("Max descriptors={}", v.kledd_descriptor_max.GetValue()),
         fmt::format("GPU BC7={}", on(v.kledd_gpu_bc7.GetValue())),
         fmt::format("Long frame log={}", on(v.kledd_frame_log.GetValue())),
-        fmt::format("Delta upload={}", on(v.kledd_delta_upload.GetValue())),
-        fmt::format("Early buffer release={}", on(v.kledd_early_buffer_release.GetValue())),
+        "Delta upload=on (locked)",
+        "Early buffer release=off (locked)",
+        "Async unswizzle=GPU / Normal (locked)",
         fmt::format("Mouse gyro={}",
                     v.kledd_mouse_gyro.GetValue()
                         ? fmt::format("on (yaw {}, smoothing {}, gravity {})",

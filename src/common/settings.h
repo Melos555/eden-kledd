@@ -661,25 +661,28 @@ struct Values {
     // eden-kledd: keep recently used textures longer before the garbage collector deletes them
     SwitchableSetting<bool> kledd_gentle_gc{linkage, false, "kledd_gentle_gc",
                                             Category::RendererHacks};
+    // eden-kledd "D" preset (Nov 3 2026 tests): delta upload on, early buffer release off,
+    // texture cleanup keep 5 s, async unswizzle GPU / Normal are locked in code. Their settings
+    // stay defined (hidden in the UI) only so existing config files still load cleanly.
     // eden-kledd: okboomerxd's z-group delta upload for big streamed textures (Prime 4)
     SwitchableSetting<bool> kledd_delta_upload{linkage, true, "kledd_delta_upload",
                                                Category::RendererHacks};
     // eden-kledd: hand the frame buffer back right after compose (Eden #4548) instead of on the
     // next compose. Off = the older behaviour, where the game can't queue frames as far ahead.
-    SwitchableSetting<bool> kledd_early_buffer_release{linkage, true,
+    SwitchableSetting<bool> kledd_early_buffer_release{linkage, false,
                                                        "kledd_early_buffer_release",
                                                        Category::RendererHacks};
     // eden-kledd: descriptor stride fix by Amicuchu (Eden PR #4549), as a toggle for testing
-    SwitchableSetting<bool> kledd_descriptor_stride_fix{linkage, false,
+    SwitchableSetting<bool> kledd_descriptor_stride_fix{linkage, true,
                                                         "kledd_descriptor_stride_fix",
                                                         Category::RendererHacks};
     // eden-kledd: max descriptors per dynamically indexed array (Eden default 1024)
-    SwitchableSetting<u32, true> kledd_descriptor_max{linkage,           1024, 32, 1024,
+    SwitchableSetting<u32, true> kledd_descriptor_max{linkage,           256, 32, 1024,
                                                       "kledd_descriptor_max",
                                                       Category::RendererHacks,
                                                       Specialization::Countable};
     // eden-kledd: keep unused textures at least this many seconds (0 = off, count frames)
-    SwitchableSetting<u32, true> kledd_gc_seconds{linkage,           0,   0, 120,
+    SwitchableSetting<u32, true> kledd_gc_seconds{linkage,           5,   0, 120,
                                                   "kledd_gc_seconds", Category::RendererHacks,
                                                   Specialization::Countable};
     // eden-kledd: with BC7 recompression + GPU ASTC decoding, encode BC7 on the GPU
@@ -693,13 +696,13 @@ struct Values {
                                                      Category::RendererHacks};
 
     SwitchableSetting<GpuUnswizzleChunk> gpu_unswizzle_chunk_size{linkage,
-                                                  GpuUnswizzleChunk::VeryLow,
+                                                  GpuUnswizzleChunk::Normal,
                                                   "gpu_unswizzle_chunk_size",
                                                   Category::RendererHacks,
                                                   Specialization::Default};
 
     SwitchableSetting<AsyncUnswizzleMode> async_unswizzle_mode{linkage,
-                                                  AsyncUnswizzleMode::Off,
+                                                  AsyncUnswizzleMode::Gpu,
                                                   "async_unswizzle_mode",
                                                   Category::RendererHacks,
                                                   Specialization::Default};

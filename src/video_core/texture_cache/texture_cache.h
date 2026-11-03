@@ -88,21 +88,10 @@ TextureCache<P>::TextureCache(Runtime& runtime_, Tegra::MaxwellDeviceMemoryManag
         minimum_memory = 0;
     }
 
-    async_unswizzle_mode = Settings::values.async_unswizzle_mode.GetValue();
+    // eden-kledd D preset: async unswizzle locked to GPU, chunk Normal (128 slices)
+    async_unswizzle_mode = Settings::AsyncUnswizzleMode::Gpu;
 
-    if (async_unswizzle_mode != Settings::AsyncUnswizzleMode::Off) {
-        switch (Settings::values.gpu_unswizzle_chunk_size.GetValue()) {
-            case Settings::GpuUnswizzleChunk::VeryLow: async_unswizzle_slices_per_batch = 32; break;
-            case Settings::GpuUnswizzleChunk::Low:     async_unswizzle_slices_per_batch = 64; break;
-            case Settings::GpuUnswizzleChunk::Normal:  async_unswizzle_slices_per_batch = 128; break;
-            case Settings::GpuUnswizzleChunk::Medium:  async_unswizzle_slices_per_batch = 256; break;
-            case Settings::GpuUnswizzleChunk::High:    async_unswizzle_slices_per_batch = 512; break;
-            case Settings::GpuUnswizzleChunk::Off:     async_unswizzle_slices_per_batch = 0; break;
-            default:                                   async_unswizzle_slices_per_batch = 32;
-        }
-    } else {
-        async_unswizzle_slices_per_batch = 0;
-    }
+    async_unswizzle_slices_per_batch = 128; // Normal
 }
 
 template <class P>
@@ -120,7 +109,7 @@ void TextureCache<P>::RunGarbageCollector() {
             // deletes and re-uploads the same textures (thrashing). Keep them a few seconds.
             ticks_to_destroy = aggressive_mode ? 240ULL : high_priority_mode ? 480ULL : 900ULL;
         }
-        if (const u32 seconds = Settings::values.kledd_gc_seconds.GetValue(); seconds > 0) {
+        if (const u32 seconds = 5U; seconds > 0) { // eden-kledd D preset: keep 5 s, locked
             // eden-kledd: count real seconds instead of frames, so the frame rate (60 vs 120)
             // and long pauses like the scan text don't change how long textures survive.
             ticks_to_destroy = KleddTicksForSeconds(aggressive_mode     ? seconds
@@ -1715,10 +1704,7 @@ bool TextureCache<P>::KleddTryDeltaUpload(Image& image, ImageId image_id) {
     const u64 guest_bytes = image.guest_size_bytes;
     KleddWatch* watch = KleddFindWatch(image_id);
     if (!watch) {
-        // eden-kledd: switched off, no new images are watched and everything takes the old path
-        if (!Settings::values.kledd_delta_upload.GetValue()) {
-            return false;
-        }
+        // eden-kledd D preset: delta upload is always on (setting kept only for old configs)
         if (guest_bytes < min_bytes) {
             return false;
         }

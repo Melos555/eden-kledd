@@ -237,16 +237,10 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
     INSERT(Settings, gpu_clock, tr("GPU Clocks"),
            tr("Makes the game believe GPU work finishes faster than it does, so it stops lowering "
               "resolution and render distance to fit the Switch's clocks."));
-    INSERT(Settings, gpu_unswizzle_chunk_size, tr("Async Unswizzle Chunk Size"),
-           tr("Determines the number of depth slices processed in a single dispatch.\n"
-              "Increasing this can improve throughput on high-end GPUs but may cause TDR or driver "
-              "timeouts on weaker hardware."));
-    INSERT(Settings, async_unswizzle_mode, tr("Async Unswizzle Mode"),
-           tr("This option controls how chunked texture uploads are unswizzled.\n"
-              "Off: Disables asynchronous texture unswizzling.\n"
-              "CPU: Uses the CPU for asynchronous unswizzling.\n"
-              "GPU: Accelerates BCn 3D texture decoding using GPU compute (recommended).\n"
-              "Change to CPU or Off if VRAM is limited."));
+    // eden-kledd D preset: locked in code, hidden
+    INSERT(Settings, gpu_unswizzle_chunk_size, QString(), QString());
+    // eden-kledd D preset: locked in code, hidden
+    INSERT(Settings, async_unswizzle_mode, QString(), QString());
 
     INSERT(Settings, use_vulkan_driver_pipeline_cache, tr("Use Vulkan pipeline cache"),
            tr("Enables GPU vendor-specific pipeline cache.\nThis option can improve shader loading "
@@ -277,14 +271,10 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
     INSERT(Settings, kledd_gentle_gc, tr("[Kledd] Gentle texture cleanup"),
            tr("When texture memory is high, only delete textures that have not been used for a "
               "few seconds, instead of a few frames.\nExperimental: may use more VRAM."));
-    INSERT(Settings, kledd_delta_upload, tr("[Kledd] Delta texture upload (okboomerxd)"),
-           tr("For huge streamed textures, upload only the parts the game changed, right away.\n"
-              "Off: big textures go through the normal path (and forrest's async unswizzle).\n"
-              "Takes effect after restarting the game."));
-    INSERT(Settings, kledd_early_buffer_release, tr("[Kledd] Early frame buffer release (#4548)"),
-           tr("Give the game its frame buffer back right after compose.\n"
-              "Off: the older timing, where the game can't queue frames as far ahead "
-              "(may feel more responsive)."));
+    // eden-kledd D preset: locked in code, hidden
+    INSERT(Settings, kledd_delta_upload, QString(), QString());
+    // eden-kledd D preset: locked in code, hidden
+    INSERT(Settings, kledd_early_buffer_release, QString(), QString());
     INSERT(Settings, kledd_descriptor_stride_fix,
            tr("[Kledd] Descriptor stride fix (Amicuchu, PR #4549)"),
            tr("Indexes texture handle arrays inside structs by their real stride instead of the "
@@ -292,12 +282,10 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
               "By Amicuchu, from Eden PR #4549. Experimental."));
     INSERT(Settings, kledd_descriptor_max, tr("[Kledd] Max descriptors per array"),
            tr("Upper limit for textures bound from one dynamically indexed array (Eden "
-              "default 1024). Lower can be faster; Metroid Prime 4 needs at least 128.\n"
+              "default 1024, Kledd default 256). Lower can be faster; Metroid Prime 4 needs at least 128.\nRaise it if another game shows missing textures.\n"
               "Idea from John's adjustable descriptor test build. Needs a game restart."));
-    INSERT(Settings, kledd_gc_seconds, tr("[Kledd] Texture cleanup: keep for (seconds)"),
-           tr("Counts real seconds instead of frames before unused textures may be deleted "
-              "(when memory is tight; 2x and 4x longer when it is not). 0 = off.\n"
-              "Experimental: higher values use more VRAM."));
+    // eden-kledd D preset: locked in code, hidden
+    INSERT(Settings, kledd_gc_seconds, QString(), QString());
     INSERT(Settings, kledd_gpu_bc7, tr("[Kledd] GPU BC7 encoding"),
            tr("When ASTC Recompression is BC7 and ASTC Decoding is GPU, decode and re-encode "
               "textures on the GPU instead of the CPU (no CPU load, no audio crackle).\n"
