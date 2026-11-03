@@ -52,28 +52,29 @@ public:
      */
     double GetLastFrameTimeScale() const;
 
-    /// eden-kledd: writes the last ~2 minutes of presented frames (plus a summary and the
-    /// current settings) to the log folder. Returns the summary file path, or "" on failure.
-    std::string KleddSaveFrameRecording();
+    /// eden-kledd frame recorder, Action Replay style: off until switched on. Returns the new
+    /// state (true = on). Switching it off drops frames that were not saved yet.
+    bool KleddToggleRecorder();
 
-    /// eden-kledd: start / stop a recording of just the frames in between. Returns true when a
-    /// recording was started; when it stops, `saved_path` gets the summary path ("" on failure).
-    bool KleddToggleSegmentRecording(std::string& saved_path);
+    /// eden-kledd: saves the frames since the recorder was switched on or since the last save,
+    /// and keeps recording. Returns the summary path, "" when there is too little to save.
+    std::string KleddSaveRecording();
+
+    /// eden-kledd: true while the recorder is on
+    bool KleddIsRecording();
 
 private:
     mutable std::mutex object_mutex;
 
-    /// eden-kledd frame recorder: ring buffer of present timestamps (steady clock, ns)
-    static constexpr std::size_t KleddRecordFrames = 32768;
+    /// eden-kledd frame recorder: present timestamps (steady clock, ns), only while recording
     std::mutex kledd_mutex;
-    std::array<s64, KleddRecordFrames> kledd_frames{};
-    std::size_t kledd_count{0};
+    std::vector<s64> kledd_frames;
+    s64 kledd_last_frame_ns{0};
     bool kledd_segment_active{false};
-    std::size_t kledd_segment_start{0};
     std::int64_t kledd_segment_start_time{0}; // wall clock (time_t) when the recording started
 
-    /// Writes the recorded frames from frame number `from` (segment) or the last ~2 minutes.
-    std::string KleddSaveFrames(std::size_t from, bool segment, std::int64_t start_time = 0);
+    /// Writes a finished recording (plus a summary and the current settings) to the log folder.
+    std::string KleddSaveFrames(std::vector<s64> stamps, std::int64_t start_time);
 
     /// Title ID for the game that is running. 0 if there is no game running yet
     u64 title_id{0};

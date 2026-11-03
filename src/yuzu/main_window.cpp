@@ -1349,34 +1349,40 @@ void MainWindow::InitializeHotkeys() {
             QtCommon::system->GetRenderdocAPI().ToggleCapture();
         }
     });
-    connect_shortcut(QStringLiteral("[Kledd] Start/Stop Frame Recording"), [this] {
+    connect_shortcut(QStringLiteral("[Kledd] Frame Recorder (On or Off)"), [this] {
         if (QtCommon::system == nullptr || !QtCommon::system->IsPoweredOn()) {
             return;
         }
-        std::string path;
-        if (QtCommon::system->GetPerfStats().KleddToggleSegmentRecording(path)) {
+        if (QtCommon::system->GetPerfStats().KleddToggleRecorder()) {
             QApplication::beep();
+            // stays up while the recorder is on (0 = no timeout)
             statusBar()->showMessage(
-                tr("[Kledd] Frame recording started, press the hotkey again to stop and save"),
-                8000);
+                tr("[Kledd] \u25CF REC: frame recorder on. Save Frame Recording saves what it has"),
+                0);
             return;
         }
         QApplication::beep();
-        statusBar()->showMessage(
-            path.empty() ? tr("[Kledd] Frame recording: too short to save")
-                         : tr("[Kledd] Frame recording saved: %1").arg(QString::fromStdString(path)),
-            8000);
+        QApplication::beep();
+        statusBar()->showMessage(tr("[Kledd] Frame recorder off"), 4000);
     });
-    connect_shortcut(QStringLiteral("[Kledd] Save Last 2 Minutes"), [this] {
+    connect_shortcut(QStringLiteral("[Kledd] Save Frame Recording"), [this] {
         if (QtCommon::system == nullptr || !QtCommon::system->IsPoweredOn()) {
             return;
         }
-        const std::string path = QtCommon::system->GetPerfStats().KleddSaveFrameRecording();
+        auto& stats = QtCommon::system->GetPerfStats();
+        if (!stats.KleddIsRecording()) {
+            statusBar()->showMessage(
+                tr("[Kledd] Frame recorder is off: switch it on first (Frame Recorder hotkey)"),
+                6000);
+            return;
+        }
+        const std::string path = stats.KleddSaveRecording();
         QApplication::beep();
         statusBar()->showMessage(
-            path.empty() ? tr("[Kledd] Frame recording: nothing to save yet")
-                         : tr("[Kledd] Frame recording saved: %1").arg(QString::fromStdString(path)),
-            8000);
+            path.empty() ? tr("[Kledd] \u25CF REC: nothing new to save yet")
+                         : tr("[Kledd] \u25CF REC: saved %1, still recording")
+                               .arg(QString::fromStdString(path)),
+            0);
     });
     connect_shortcut(QStringLiteral("[Kledd] Gravity Check"), [&] {
         input_subsystem->GetMouse()->KleddRequestGravityCheck();

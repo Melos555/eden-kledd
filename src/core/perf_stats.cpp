@@ -93,72 +93,68 @@ void PerfStats::EndSystemFrame() {
 void PerfStats::EndGameFrame() {
     game_frames.fetch_add(1, std::memory_order_relaxed);
 
-    // eden-kledd frame recorder: always on, one timestamp per presented frame
     const s64 now_ns =
         std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now().time_since_epoch())
             .count();
     std::scoped_lock lock{kledd_mutex};
-    if (kledd_count > 0) {
+    if (kledd_last_frame_ns != 0) {
         // eden-kledd mouse gyro: tell the mouse driver how long the game's frames are
-        Common::KleddMouseGyro::game_frame_ns.store(
-            now_ns - kledd_frames[(kledd_count - 1) % KleddRecordFrames]);
+        Common::KleddMouseGyro::game_frame_ns.store(now_ns - kledd_last_frame_ns);
     }
-    kledd_frames[kledd_count % KleddRecordFrames] = now_ns;
-    ++kledd_count;
+    kledd_last_frame_ns = now_ns;
+    // eden-kledd frame recorder: only while the recorder is switched on
+    if (kledd_segment_active) {
+        kledd_frames.push_back(now_ns);
+    }
 }
 
-std::string PerfStats::KleddSaveFrameRecording() {
-    return KleddSaveFrames(0, false);
+bool PerfStats::KleddIsRecording() {
+    std::scoped_lock lock{kledd_mutex};
+    return kledd_segment_active;
 }
 
-bool PerfStats::KleddToggleSegmentRecording(std::string& saved_path) {
-    std::size_t from{};
+bool PerfStats::KleddToggleRecorder() {
+    std::scoped_lock lock{kledd_mutex};
+    kledd_segment_active = !kledd_segment_active;
+    kledd_frames.clear();
+    if (kledd_segment_active) {
+        kledd_frames.reserve(65536);
+        kledd_segment_start_time = static_cast<std::int64_t>(std::time(nullptr));
+    }
+    return kledd_segment_active;
+}
+
+std::string PerfStats::KleddSaveRecording() {
+    std::vector<s64> stamps;
     std::int64_t start_time{};
     {
         std::scoped_lock lock{kledd_mutex};
-        if (!kledd_segment_active) {
-            kledd_segment_active = true;
-            kledd_segment_start = kledd_count;
-            kledd_segment_start_time = static_cast<std::int64_t>(std::time(nullptr));
-            return true;
+        if (!kledd_segment_active || kledd_frames.size() < 3) {
+            return {};
         }
-        kledd_segment_active = false;
-        from = kledd_segment_start;
+        stamps.swap(kledd_frames);
+        // the next save starts where this one ended, so saves never overlap
+        kledd_frames.reserve(65536);
+        kledd_frames.push_back(stamps.back());
         start_time = kledd_segment_start_time;
+        kledd_segment_start_time = static_cast<std::int64_t>(std::time(nullptr));
     }
-    saved_path = KleddSaveFrames(from, true, start_time);
-    return false;
+    return KleddSaveFrames(std::move(stamps), start_time);
 }
 
-std::string PerfStats::KleddSaveFrames(std::size_t from, bool segment, std::int64_t start_time) {
-    constexpr double KeepSeconds = 120.0;
-    std::vector<s64> stamps;
-    {
-        std::scoped_lock lock{kledd_mutex};
-        const std::size_t n = (std::min)(kledd_count, KleddRecordFrames);
-        // a segment longer than the ring buffer keeps its most recent frames
-        const std::size_t begin = segment ? (std::max)(kledd_count - n, from) : kledd_count - n;
-        stamps.reserve(kledd_count - begin);
-        for (std::size_t i = begin; i < kledd_count; ++i) {
-            stamps.push_back(kledd_frames[i % KleddRecordFrames]);
-        }
-    }
+std::string PerfStats::KleddSaveFrames(std::vector<s64> stamps, std::int64_t start_time) {
     if (stamps.size() < 3) {
         return {};
     }
     const s64 last = stamps.back();
-    const s64 keep_ns = static_cast<s64>(KeepSeconds * 1e9);
-    std::size_t first = 0;
-    while (!segment && first + 2 < stamps.size() && last - stamps[first] > keep_ns) {
-        ++first;
-    }
+    const std::size_t first = 0;
 
     // Frame times in ms, with seconds-before-save for each frame
     std::vector<double> ft;
     std::vector<double> ago;
     for (std::size_t i = first + 1; i < stamps.size(); ++i) {
         ft.push_back(static_cast<double>(stamps[i] - stamps[i - 1]) / 1e6);
-        ago.push_back(static_cast<double>(last - stamps[i]) / 1e9);
+        ago.push_back(static_cast<double>(stamps[i] - stamps[first]) / 1e9);
     }
     const std::size_t count = ft.size();
     const double total_ms = std::accumulate(ft.begin(), ft.end(), 0.0);
@@ -230,7 +226,7 @@ std::string PerfStats::KleddSaveFrames(std::size_t from, bool segment, std::int6
     // Files read "kledd_frames [smooth fd8e7be] [11-02] [13.33.44 == 13.35.44].csv":
     // the build, the day, and the stretch of time the recording covers
     const std::time_t t = std::time(nullptr);
-    const std::time_t st = (segment && start_time != 0)
+    const std::time_t st = (start_time != 0)
                                ? static_cast<std::time_t>(start_time)
                                : t - static_cast<std::time_t>(total_ms / 1000.0 + 0.5);
     std::ostringstream span;
@@ -238,7 +234,7 @@ std::string PerfStats::KleddSaveFrames(std::size_t from, bool segment, std::int6
          << std::put_time(std::localtime(&t), "%H.%M.%S]");
     const std::string stamp = span.str();
     const auto dir = Common::FS::GetEdenPath(Common::FS::EdenPath::LogDir);
-    const char* const prefix = segment ? "kledd_segment" : "kledd_frames";
+    const char* const prefix = "kledd_frames";
     const auto csv_path = dir / fmt::format("{} [{}] {}.csv", prefix, build_tag, stamp);
     const auto txt_path = dir / fmt::format("{} [{}] {} summary.txt", prefix, build_tag, stamp);
     if (!Common::FS::CreateParentDir(csv_path)) {
@@ -247,14 +243,14 @@ std::string PerfStats::KleddSaveFrames(std::size_t from, bool segment, std::int6
 
     std::string csv;
     csv.reserve(count * 24 + 256);
-    csv += "frame,seconds_before_save,frametime_ms\n";
+    csv += "frame,seconds_into_recording,frametime_ms\n";
     for (std::size_t i = 0; i < count; ++i) {
         csv += fmt::format("{},{:.3f},{:.3f}\n", i, ago[i], ft[i]);
     }
 
     std::string txt;
     txt += fmt::format("Eden Kledd frame recording, {} {}\n", stamp,
-                       segment ? "(start/stop)" : "(last 2 minutes)");
+                       "(Kledd frame recorder)");
     txt += fmt::format("Build: {} ({})\n", build_tag, Common::g_build_fullname);
     txt += settings_line + "\n\n";
     txt += fmt::format("Length:        {:.1f} s ({} frames)\n", total_ms / 1000.0, count);
@@ -266,10 +262,10 @@ std::string PerfStats::KleddSaveFrames(std::size_t from, bool segment, std::int6
     txt += fmt::format("Min FPS:       {:.1f}  (worst frame {:.0f} ms)\n", min_fps, sorted.back());
     txt += fmt::format("Frames over 50 ms: {} | over 100 ms: {} | over 250 ms: {} | over 1 s: {}\n\n",
                        over(50.0), over(100.0), over(250.0), over(1000.0));
-    txt += "Worst freezes (how long, and how many seconds before you pressed save):\n";
+    txt += "Worst freezes (how long, and how many seconds into the recording):\n";
     for (std::size_t i = 0; i < (std::min)(std::size_t{10}, count); ++i) {
         const std::size_t f = order[i];
-        txt += fmt::format("  {:>7.0f} ms   {:>6.1f} s before save\n", ft[f], ago[f]);
+        txt += fmt::format("  {:>7.0f} ms   at {:>6.1f} s\n", ft[f], ago[f]);
     }
     txt += "\nPaste row for the test sheet (tab separated):\n";
     txt += fmt::format("{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.0f}\t{}\t{}\n",
