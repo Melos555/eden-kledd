@@ -22,6 +22,17 @@ Not affiliated with or endorsed by the Eden team. Please don't report bugs from 
 - **Linux:** `eden-kledd-scanfix-linux-x86_64.tar.gz`. Built on Ubuntu 26.04; needs the usual Eden runtime libraries (Qt 6, SDL2 etc.).
 - The release build has the scan fix **always on**, with no toggle. No login needed to download.
 
+## Mods: 1080p + 120 FPS that don't break the scan visor
+
+<p align="center">
+  <a href="https://github.com/Melos555/eden-kledd/raw/main/mods/Prime4_1080p_120FPS_scan-safe.zip"><b>⬇️ Prime4_1080p_120FPS_scan-safe.zip</b></a>
+</p>
+
+- **`[1920x1080 v1.1.0] Kledd scan-safe`**: Fl4sh's 1080p patch with one fix. The scan buffer is pinned to the game's native 1600×900, so the "ZL Fix scan" cheat is **not needed** (and shouldn't be used). The original reads that size from memory only the cheat fills, which breaks or crashes the scan without it.
+- **`[120FPS Dynamic v1.1.0] v1.0`**: Fl4sh's 120 FPS mod, unchanged.
+- **Install:** right-click the game → *Open Mod Data Location* → copy both folders in. Turn off any other resolution mod and the ZL scan cheat. Game version 1.1.0 only.
+- All credit for the original patches goes to [Fl4sh](https://github.com/Fl4sh9174/Switch-Emulator-Ultrawide-FPS-Mods) ([Ko-fi](https://ko-fi.com/Fl4sh9174)).
+
 ## What this fork changes
 
 **Fixes the Metroid Prime 4: Beyond scan visor jumping between targets / locking onto things behind walls.**
