@@ -858,7 +858,7 @@ void KleddMemory::RefreshWatchTable(bool full) {
         }
         auto* value = watch_table->item(r, 4);
         if (value && !(watch_table->currentRow() == r && watch_table->currentColumn() == 4 &&
-                       watch_table->state() == QAbstractItemView::EditingState)) {
+                       watch_table->viewport()->isAncestorOf(QApplication::focusWidget()))) {
             std::uint64_t bits = 0;
             value->setText(ReadBits(w.addr, w.type, bits) ? FormatValue(w.type, bits)
                                                           : tr("(unreadable)"));
