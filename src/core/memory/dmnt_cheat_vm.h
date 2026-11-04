@@ -291,6 +291,11 @@ public:
         NumReadableStaticRegisters + NumWritableStaticRegisters;
 
     explicit DmntCheatVm(std::unique_ptr<Callbacks> callbacks_);
+
+    // [Kledd] access to the callbacks (used to restore bytes when a cheat is turned off)
+    Callbacks* GetCallbacks() const {
+        return callbacks.get();
+    }
     ~DmntCheatVm();
 
     std::size_t GetProgramSize() const {
