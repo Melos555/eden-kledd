@@ -1068,7 +1068,13 @@ void KleddMemory::OnTick() {
     }
     // freeze
     for (const auto& w : watches) {
-        if (w.frozen) {
+        if (!w.frozen) {
+            continue;
+        }
+        // Only write when the game has put a different value back: every write tells the
+        // GPU side the memory changed, so blind writes 20 times a second tank the frame rate.
+        std::uint64_t now = 0;
+        if (ReadBits(w.addr, w.type, now) && now != w.frozen_bits) {
             WriteBits(w.addr, w.type, w.frozen_bits);
         }
     }
