@@ -1713,7 +1713,12 @@ bool TextureCache<P>::KleddTryDeltaUpload(Image& image, ImageId image_id) {
         if (info.type != ImageType::e3D || info.resources.levels != 1 ||
             info.resources.layers != 1 || info.num_samples != 1) {
             decline = "not a single-level 3D image";
-        } else if (True(image.flags & ImageFlagBits::AcceleratedUpload)) {
+        } else if (True(image.flags & ImageFlagBits::AcceleratedUpload) &&
+                   (IsPixelFormatASTC(info.format) || False(image.flags & ImageFlagBits::Sparse))) {
+            // The sparse upload path (async unswizzle) marks every image it handles as
+            // AcceleratedUpload and never clears it. That only says how the full upload went,
+            // so a sparse non-ASTC image can still take delta uploads. Real accelerated uploads
+            // (GPU ASTC decode) stay declined: their host data is not a plain unswizzle.
             decline = "accelerated upload";
         } else if (True(image.flags & ImageFlagBits::Converted)) {
             decline = "converted format";
@@ -1759,10 +1764,13 @@ bool TextureCache<P>::KleddTryDeltaUpload(Image& image, ImageId image_id) {
         watch->complete = false;
         LOG_INFO(HW_GPU,
                  "[Kledd] watching image {:#x} {}x{}x{} fmt {} {} MiB: {} z groups of {} slices "
-                 "({} MiB each){}",
+                 "({} MiB each){}{}",
                  image.gpu_addr, info.size.width, info.size.height, info.size.depth,
                  static_cast<u32>(info.format), guest_bytes >> 20, num_groups, group_slices,
-                 group_bytes >> 20, True(image.flags & ImageFlagBits::Sparse) ? ", sparse" : "");
+                 group_bytes >> 20, True(image.flags & ImageFlagBits::Sparse) ? ", sparse" : "",
+                 True(image.flags & ImageFlagBits::AcceleratedUpload)
+                     ? ", was declined as accelerated upload before (delta test build)"
+                     : "");
     }
 
     if (!watch->complete || True(image.flags & ImageFlagBits::GpuModified)) {
