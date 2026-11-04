@@ -8,6 +8,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <vector>
@@ -44,6 +45,11 @@ public:
     void CommandLog(std::string_view data) override;
     [[nodiscard]] bool IsCommandLogEnabled() const override;
 
+    // [Kledd] Put back every byte inside main that a cheat has overwritten since the last
+    // restore, so turning a cheat off returns the game to how it was. Enabled cheats write
+    // their values again on the next tick.
+    void RestoreOriginalBytes();
+
 private:
     bool IsAddressInRange(VAddr address) const;
 
@@ -53,6 +59,10 @@ private:
     Core::System& system;
     mutable Kernel::KProcess* cached_process{};
     mutable u64 cached_process_id{};
+
+    // [Kledd] first-seen value of every byte in main a cheat wrote (address -> original)
+    std::map<VAddr, u8> original_bytes;
+    std::mutex original_bytes_mutex;
 };
 
 // Intermediary class that parses a text file or other disk format for storing cheats into a
@@ -95,6 +105,7 @@ private:
     std::vector<CheatEntry> cheats;
     mutable std::mutex cheats_mutex;
     std::atomic_bool is_pending_reload{false};
+    std::atomic_bool is_pending_restore{false}; // [Kledd] a cheat was turned off
 
     std::shared_ptr<Core::Timing::EventType> event;
     Core::Timing::CoreTiming& core_timing;

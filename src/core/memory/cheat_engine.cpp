@@ -21,6 +21,7 @@
 #include "core/hle/service/sm/sm.h"
 #include "core/memory.h"
 #include "core/memory/cheat_engine.h"
+#include <vector>
 #include "hid_core/resource_manager.h"
 #include "hid_core/resources/npad/npad.h"
 
@@ -87,9 +88,51 @@ void StandardVmCallbacks::MemoryWriteUnsafe(VAddr address, const void* data, u64
         return;
     }
 
+    // [Kledd] remember what was there before the first cheat write, but only inside main
+    // (code, code caves and main's own data). Heap values like health are left alone.
+    const auto& main = metadata.main_nso_extents;
+    if (main.size != 0 && address >= main.base && address + size <= main.base + main.size) {
+        std::scoped_lock lock{original_bytes_mutex};
+        for (u64 i = 0; i < size; ++i) {
+            if (!original_bytes.contains(address + i)) {
+                u8 old_value{};
+                process->GetMemory().ReadBlock(address + i, &old_value, 1);
+                original_bytes.emplace(address + i, old_value);
+            }
+        }
+    }
+
     if (process->GetMemory().WriteBlock(address, data, size)) {
         Core::InvalidateInstructionCacheRange(process, address, size);
     }
+}
+
+void StandardVmCallbacks::RestoreOriginalBytes() {
+    auto* const process = this->GetProcess();
+    std::scoped_lock lock{original_bytes_mutex};
+    if (process == nullptr) {
+        original_bytes.clear();
+        return;
+    }
+    std::size_t restored = 0;
+    for (auto it = original_bytes.begin(); it != original_bytes.end();) {
+        // write back one contiguous run at a time
+        const VAddr start = it->first;
+        std::vector<u8> run;
+        VAddr next = start;
+        while (it != original_bytes.end() && it->first == next) {
+            run.push_back(it->second);
+            ++next;
+            ++it;
+        }
+        if (process->GetMemory().IsValidVirtualAddress(start) &&
+            process->GetMemory().WriteBlock(start, run.data(), run.size())) {
+            Core::InvalidateInstructionCacheRange(process, start, run.size());
+            restored += run.size();
+        }
+    }
+    original_bytes.clear();
+    LOG_INFO(CheatEngine, "[Kledd] cheat turned off: restored {} original bytes in main", restored);
 }
 
 u64 StandardVmCallbacks::HidKeysDown() {
@@ -342,12 +385,21 @@ bool CheatEngine::SetCheatEnabled(u32 cheat_id, bool enabled) {
     }
     if (entry->enabled != enabled) {
         entry->enabled = enabled;
+        if (!enabled) {
+            is_pending_restore.store(true); // [Kledd] undo what it wrote
+        }
         is_pending_reload.store(true);
     }
     return true;
 }
 
 void CheatEngine::FrameCallback(std::chrono::nanoseconds ns_late) {
+    if (is_pending_restore.exchange(false)) {
+        if (auto* callbacks = static_cast<StandardVmCallbacks*>(vm.GetCallbacks())) {
+            callbacks->RestoreOriginalBytes();
+        }
+    }
+
     if (is_pending_reload.exchange(false)) {
         std::scoped_lock lock{cheats_mutex};
         vm.LoadProgram(cheats);
