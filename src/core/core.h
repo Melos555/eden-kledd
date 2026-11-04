@@ -396,6 +396,11 @@ public:
     void SetApplicationProcessBuildID(const CurrentBuildProcessID& id);
     [[nodiscard]] const CurrentBuildProcessID& GetApplicationProcessBuildID() const;
 
+    // [Kledd] Where the application's main module was loaded (for the Kledd Memory tool).
+    void SetMainModuleRegion(u64 begin, u64 size);
+    [[nodiscard]] u64 GetMainModuleBegin() const;
+    [[nodiscard]] u64 GetMainModuleSize() const;
+
     /// Register a host thread as an emulated CPU Core.
     void RegisterCoreThread(std::size_t id);
 

@@ -521,6 +521,8 @@ struct System::Impl {
 
     std::array<u64, Core::Hardware::NUM_CPU_CORES> dynarmic_ticks{};
     std::array<u8, 0x20> build_id{};
+    u64 kledd_main_begin{};
+    u64 kledd_main_size{};
 
     std::string current_application_filepath;
 
@@ -936,6 +938,19 @@ void System::SetApplicationProcessBuildID(const CurrentBuildProcessID& id) {
 
 const System::CurrentBuildProcessID& System::GetApplicationProcessBuildID() const {
     return impl->build_id;
+}
+
+void System::SetMainModuleRegion(u64 begin, u64 size) {
+    impl->kledd_main_begin = begin;
+    impl->kledd_main_size = size;
+}
+
+u64 System::GetMainModuleBegin() const {
+    return impl->kledd_main_begin;
+}
+
+u64 System::GetMainModuleSize() const {
+    return impl->kledd_main_size;
 }
 
 Service::SM::ServiceManager& System::ServiceManager() {

@@ -42,6 +42,7 @@
 #include "set_play_time_dialog.h"
 #include "util/util.h"
 #include "yuzu/game/game_list.h"
+#include "yuzu/kledd_memory.h"
 
 #include "applets/qt_amiibo_settings.h"
 #include "applets/qt_controller.h"
@@ -1606,6 +1607,22 @@ void MainWindow::ConnectMenuEvents() {
     connect_menu(ui->action_Install_File_NAND, &MainWindow::OnMenuInstallToNAND);
     connect_menu(ui->action_Exit, &QMainWindow::close);
     connect_menu(ui->action_Load_Amiibo, &MainWindow::OnLoadAmiibo);
+
+    // Kledd Memory (Tools menu)
+    {
+        auto* kledd_memory_action = new QAction(tr("Kledd &Memory..."), this);
+        ui->menu_Tools->addSeparator();
+        ui->menu_Tools->addAction(kledd_memory_action);
+        connect(kledd_memory_action, &QAction::triggered, this, [this] {
+            auto* tool = findChild<KleddMemory*>(QString{}, Qt::FindDirectChildrenOnly);
+            if (!tool) {
+                tool = new KleddMemory(this);
+            }
+            tool->show();
+            tool->raise();
+            tool->activateWindow();
+        });
+    }
 
     // Emulation
     connect_menu(ui->action_Pause, &MainWindow::OnPauseContinueGame);
