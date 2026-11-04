@@ -289,7 +289,7 @@ KleddMemory::ScanResult RunFirstScan(const ScanParams& p, std::atomic<bool>* can
             if (extra && b + len < end && memory.IsValidVirtualAddressRange(b + len, extra)) {
                 readable += extra;
             }
-            memory.ReadBlock(b, buf.data(), readable);
+            memory.ReadBlockUnsafe(b, buf.data(), readable);
             keep_going = scan_chunk(b, static_cast<std::size_t>(len), readable);
         } else {
             for (std::uint64_t pg = b; pg < b + len && keep_going; pg += kPage) {
@@ -297,7 +297,7 @@ KleddMemory::ScanResult RunFirstScan(const ScanParams& p, std::atomic<bool>* can
                 if (!memory.IsValidVirtualAddress(pg)) {
                     continue;
                 }
-                memory.ReadBlock(pg, buf.data(), static_cast<std::size_t>(plen));
+                memory.ReadBlockUnsafe(pg, buf.data(), static_cast<std::size_t>(plen));
                 keep_going = scan_chunk(pg, static_cast<std::size_t>(plen),
                                         static_cast<std::size_t>(plen));
             }
@@ -335,7 +335,7 @@ KleddMemory::ScanResult RunNextScan(const ScanParams& p, std::atomic<bool>* canc
             block_base = base;
             block_ok = memory.IsValidVirtualAddressRange(base, kBlock + 16);
             if (block_ok) {
-                memory.ReadBlock(base, buf.data(), kBlock + 16);
+                memory.ReadBlockUnsafe(base, buf.data(), kBlock + 16);
             }
         }
         std::uint8_t tmp[64];
@@ -346,7 +346,7 @@ KleddMemory::ScanResult RunNextScan(const ScanParams& p, std::atomic<bool>* canc
             if (vsize > sizeof(tmp) || !memory.IsValidVirtualAddressRange(h.addr, vsize)) {
                 continue;
             }
-            memory.ReadBlock(h.addr, tmp, vsize);
+            memory.ReadBlockUnsafe(h.addr, tmp, vsize);
             ptr = tmp;
         }
         const std::uint64_t now = LoadBits(ptr, lsize);
@@ -666,7 +666,7 @@ bool KleddMemory::ReadBits(std::uint64_t addr, ValueType type, std::uint64_t& ou
         return false;
     }
     std::uint8_t tmp[8]{};
-    process->GetMemory().ReadBlock(addr, tmp, size);
+    process->GetMemory().ReadBlockUnsafe(addr, tmp, size);
     out = LoadBits(tmp, size);
     return true;
 }
@@ -1076,7 +1076,7 @@ void KleddMemory::RefreshViewer() {
         std::uint8_t b[16]{};
         const bool ok = process->GetMemory().IsValidVirtualAddressRange(a, 16);
         if (ok) {
-            process->GetMemory().ReadBlock(a, b, 16);
+            process->GetMemory().ReadBlockUnsafe(a, b, 16);
         }
         QString line = QStringLiteral("%1  ").arg(a, 12, 16, QLatin1Char('0'));
         for (int i = 0; i < 16; ++i) {
@@ -1122,6 +1122,9 @@ void KleddMemory::OnTick() {
         if (ReadBits(w.addr, w.type, now) && now != w.frozen_bits) {
             WriteBits(w.addr, w.type, w.frozen_bits);
         }
+    }
+    if (!isVisible()) {
+        return;
     }
     if (tick_count % 6 == 0) {
         RefreshWatchTable(false);
