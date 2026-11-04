@@ -28,6 +28,7 @@
 #include <QProgressBar>
 #include <QPushButton>
 #include <QSplitter>
+#include <QTabWidget>
 #include <QTableWidget>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -366,7 +367,7 @@ KleddMemory::ScanResult RunNextScan(const ScanParams& p, std::atomic<bool>* canc
 
 KleddMemory::KleddMemory(QWidget* parent) : QWidget(parent, Qt::Window) {
     setWindowTitle(tr("Kledd Memory"));
-    resize(980, 760);
+    resize(900, 640);
     BuildUi();
 
     scan_watcher = new QFutureWatcher<ScanResult>(this);
@@ -436,7 +437,8 @@ void KleddMemory::BuildUi() {
     grid->addWidget(type_box, 1, 1);
     grid->addWidget(aligned_check, 1, 2);
     auto* tol_row = new QHBoxLayout();
-    tol_row->addWidget(new QLabel(tr("Float tolerance"), search_box));
+    tolerance_label = new QLabel(tr("Float tolerance"), search_box);
+    tol_row->addWidget(tolerance_label);
     tol_row->addWidget(tolerance_edit);
     grid->addLayout(tol_row, 1, 3);
     grid->addWidget(new QLabel(tr("Value"), search_box), 2, 0);
@@ -454,19 +456,27 @@ void KleddMemory::BuildUi() {
     grid->addLayout(buttons, 4, 0, 1, 4);
     status_label = new QLabel(search_box);
     grid->addWidget(status_label, 5, 0, 1, 4);
-    root->addWidget(search_box);
 
-    // --- Results + watch list + viewer
-    auto* splitter = new QSplitter(Qt::Vertical, this);
+    // --- Two tabs: search + results, and watch list + viewer
+    tabs = new QTabWidget(this);
+    auto* search_page = new QWidget(tabs);
+    auto* search_layout = new QVBoxLayout(search_page);
+    search_layout->setContentsMargins(4, 4, 4, 4);
+    search_box->setParent(search_page);
+    search_layout->addWidget(search_box);
 
-    hit_table = new QTableWidget(0, 4, splitter);
+    hit_table = new QTableWidget(0, 4, search_page);
     hit_table->setHorizontalHeaderLabels({tr("Address"), tr("Where"), tr("Value"), tr("Previous")});
     hit_table->horizontalHeader()->setStretchLastSection(true);
     hit_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
     hit_table->setSelectionBehavior(QAbstractItemView::SelectRows);
     hit_table->setFont(mono);
     hit_table->setToolTip(tr("Double-click a result to add it to the watch list"));
+    hit_table->verticalHeader()->setDefaultSectionSize(22);
+    search_layout->addWidget(new QLabel(tr("Results: double-click one to watch it"), search_page));
+    search_layout->addWidget(hit_table, 1);
 
+    auto* splitter = new QSplitter(Qt::Vertical, tabs);
     auto* watch_box = new QWidget(splitter);
     auto* watch_layout = new QVBoxLayout(watch_box);
     watch_layout->setContentsMargins(0, 0, 0, 0);
@@ -489,7 +499,9 @@ void KleddMemory::BuildUi() {
     watch_buttons->addWidget(cheat_button);
     watch_buttons->addWidget(save_button);
     watch_buttons->addWidget(load_button);
-    watch_layout->addWidget(new QLabel(tr("Watch list"), watch_box));
+    watch_layout->addWidget(
+        new QLabel(tr("Double-click a value to change it. Freeze keeps it from changing back."),
+                   watch_box));
     watch_layout->addWidget(watch_table);
     watch_layout->addLayout(watch_buttons);
 
@@ -512,10 +524,30 @@ void KleddMemory::BuildUi() {
     viewer_layout->addLayout(viewer_row);
     viewer_layout->addWidget(viewer);
 
-    splitter->addWidget(hit_table);
     splitter->addWidget(watch_box);
     splitter->addWidget(viewer_box);
-    root->addWidget(splitter, 1);
+    splitter->setStretchFactor(0, 3);
+    splitter->setStretchFactor(1, 2);
+
+    tabs->addTab(search_page, tr("1. Search"));
+    tabs->addTab(splitter, tr("2. Watch && edit"));
+    root->addWidget(tabs, 1);
+
+    // Only show the fields that matter for the current choices
+    const auto update_fields = [this] {
+        const bool custom = region_box->currentIndex() == 3;
+        custom_start->setVisible(custom);
+        custom_size->setVisible(custom);
+        const auto t = CurrentType();
+        const bool is_float = t == ValueType::F32 || t == ValueType::F64;
+        tolerance_edit->setVisible(is_float);
+        tolerance_label->setVisible(is_float);
+        aligned_check->setVisible(t != ValueType::Bytes);
+        first_mode_box->setEnabled(t != ValueType::Bytes);
+    };
+    connect(region_box, &QComboBox::currentIndexChanged, this, update_fields);
+    connect(type_box, &QComboBox::currentIndexChanged, this, update_fields);
+    update_fields();
 
     connect(first_button, &QPushButton::clicked, this, &KleddMemory::OnFirstScan);
     connect(next_button, &QPushButton::clicked, this, &KleddMemory::OnNextScan);
@@ -725,6 +757,7 @@ void KleddMemory::OnFirstScan() {
         return;
     }
     hits_type = p.type;
+    hits_pattern_size = p.pattern.size();
     scan_total = std::max<std::uint64_t>(1, p.size);
     scan_done = 0;
     cancel_flag = false;
@@ -816,9 +849,19 @@ void KleddMemory::OnHitDoubleClicked(int row, [[maybe_unused]] int column) {
         return;
     }
     const Hit& h = hits[static_cast<std::size_t>(row)];
-    const ValueType t = hits_type == ValueType::Bytes ? ValueType::U32 : hits_type;
-    watches.push_back({tr("value %1").arg(watches.size() + 1), h.addr, t, false, 0});
+    if (hits_type == ValueType::Bytes) {
+        // A byte pattern is usually a few floats in a row (a color, a position): watch each one.
+        const std::size_t count = std::clamp<std::size_t>(hits_pattern_size / 4, 1, 4);
+        static const char* const parts[4] = {"x / red", "y / green", "z / blue", "w / alpha"};
+        for (std::size_t i = 0; i < count; ++i) {
+            watches.push_back({tr("result %1: %2").arg(row + 1).arg(QString::fromLatin1(parts[i])),
+                               h.addr + i * 4, ValueType::F32, false, 0});
+        }
+    } else {
+        watches.push_back({tr("result %1").arg(row + 1), h.addr, hits_type, false, 0});
+    }
     RefreshWatchTable(true);
+    tabs->setCurrentIndex(1);
     viewer_addr->setText(QStringLiteral("0x%1").arg(h.addr & ~0xFull, 0, 16));
     RefreshViewer();
 }
@@ -836,6 +879,8 @@ void KleddMemory::OnAddManual() {
 void KleddMemory::RefreshWatchTable(bool full) {
     updating_watch_table = true;
     if (full) {
+        tabs->setTabText(1, watches.empty() ? tr("2. Watch && edit")
+                                            : tr("2. Watch && edit (%1)").arg(watches.size()));
         watch_table->setRowCount(static_cast<int>(watches.size()));
     }
     for (int r = 0; r < static_cast<int>(watches.size()); ++r) {

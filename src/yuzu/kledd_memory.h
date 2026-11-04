@@ -22,6 +22,7 @@ class QPlainTextEdit;
 class QProgressBar;
 class QPushButton;
 class QTableWidget;
+class QTabWidget;
 class QTimer;
 
 namespace Kernel {
@@ -112,10 +113,13 @@ private:
     QCheckBox* viewer_auto{};
     QPlainTextEdit* viewer{};
     QTimer* tick_timer{};
+    QTabWidget* tabs{};
+    QLabel* tolerance_label{};
 
     // State
     std::vector<Hit> hits;
     ValueType hits_type = ValueType::U32;
+    std::size_t hits_pattern_size = 0;
     std::vector<Watch> watches;
     bool updating_watch_table = false;
     int tick_count = 0;
