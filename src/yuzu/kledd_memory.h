@@ -49,6 +49,8 @@ public:
         ValueType type;
         bool frozen;
         std::uint64_t frozen_bits;
+        std::uint64_t saved_bits = 0;
+        bool has_saved = false;
     };
 
     struct Chunk {
@@ -74,6 +76,11 @@ private:
     void OnAddManual();
     void OnWatchCellChanged(int row, int column);
     void OnRemoveWatch();
+    void OnAddSelectedHits();
+    void OnSetSelected();
+    void OnRestoreSelected();
+    std::vector<int> SelectedRows(QTableWidget* table) const;
+    void AddHit(int row);
     void OnCopyCheat();
     void OnSaveWatch();
     void OnLoadWatch();
@@ -120,6 +127,8 @@ private:
     QPlainTextEdit* viewer{};
     QTimer* tick_timer{};
     QTabWidget* tabs{};
+    QComboBox* add_type_box{};
+    QLineEdit* bulk_value{};
     QLabel* tolerance_label{};
 
     // State
