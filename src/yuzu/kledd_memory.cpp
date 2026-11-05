@@ -27,6 +27,8 @@
 #include <QPlainTextEdit>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QShortcut>
+#include <QKeySequence>
 #include <QSplitter>
 #include <QTabWidget>
 #include <QTableWidget>
@@ -664,6 +666,28 @@ void KleddMemory::BuildUi() {
     connect(set_button, &QPushButton::clicked, this, &KleddMemory::OnSetSelected);
     connect(bulk_value, &QLineEdit::returnPressed, this, &KleddMemory::OnSetSelected);
     connect(restore_button, &QPushButton::clicked, this, &KleddMemory::OnRestoreSelected);
+    // Ctrl+V on the watch list pastes the clipboard value into every selected row
+    auto* paste = new QShortcut(QKeySequence::Paste, watch_table);
+    paste->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(paste, &QShortcut::activated, this, [this] {
+        bulk_value->setText(QApplication::clipboard()->text().trimmed());
+        OnSetSelected();
+    });
+    auto* copy = new QShortcut(QKeySequence::Copy, watch_table);
+    copy->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(copy, &QShortcut::activated, this, [this] {
+        const int row = watch_table->currentRow();
+        if (row < 0 || static_cast<std::size_t>(row) >= watches.size()) {
+            return;
+        }
+        const Watch& w = watches[static_cast<std::size_t>(row)];
+        std::uint64_t bits = 0;
+        if (ReadBits(w.addr, w.type, bits)) {
+            QString text = FormatValue(w.type, bits);
+            const int paren = text.indexOf(QLatin1Char('('));
+            QApplication::clipboard()->setText((paren > 0 ? text.left(paren) : text).trimmed());
+        }
+    });
     connect(cheat_button, &QPushButton::clicked, this, &KleddMemory::OnCopyCheat);
     connect(save_button, &QPushButton::clicked, this, &KleddMemory::OnSaveWatch);
     connect(load_button, &QPushButton::clicked, this, &KleddMemory::OnLoadWatch);
