@@ -4,6 +4,9 @@
 #include "video_core/texture_cache/kledd_texture_pack.h"
 
 #include <atomic>
+#include <sstream>
+#include <cmath>
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -23,6 +26,15 @@ namespace {
 
 namespace fs = std::filesystem;
 
+struct TintRule {
+    u32 format;
+    u32 width;
+    u32 height;
+    u32 layers; // 0 = any
+    float mul[3];
+    float keep; // share of the original color kept
+};
+
 struct State {
     std::mutex mutex;
     std::atomic<bool> dumping{false};
@@ -32,6 +44,7 @@ struct State {
     std::unordered_map<u64, std::vector<u8>> replace_cache;
     std::unordered_set<u64> bad_size_logged;
     std::unordered_set<u64> dumped;
+    std::vector<TintRule> rules;
 };
 
 State& GetState() {
@@ -64,7 +77,23 @@ void ScanLocked(State& s) {
         } catch (...) {
         }
     }
-    s.has_replacements = !s.replace_files.empty();
+    s.rules.clear();
+    std::ifstream rules_file(dir / "rules.txt");
+    std::string line;
+    while (std::getline(rules_file, line)) {
+        std::istringstream in(line);
+        std::string kind;
+        TintRule rule{};
+        if (!(in >> kind) || kind != "tint") {
+            continue;
+        }
+        if (in >> rule.format >> rule.width >> rule.height >> rule.layers >> rule.mul[0] >>
+            rule.mul[1] >> rule.mul[2] >> rule.keep) {
+            s.rules.push_back(rule);
+        }
+    }
+    s.has_replacements = !s.replace_files.empty() || !s.rules.empty();
+    LOG_INFO(HW_GPU, "[Kledd] texture pack: {} tint rule(s)", s.rules.size());
     s.scanned = true;
     LOG_INFO(HW_GPU, "[Kledd] texture pack: {} replacement(s) in {}", s.replace_files.size(),
              dir.string());
@@ -81,7 +110,87 @@ void EnsureScanned() {
     }
 }
 
+u16 TintColor565(u16 c, const TintRule& r) {
+    const float rgb[3] = {static_cast<float>((c >> 11) & 31) / 31.0f,
+                          static_cast<float>((c >> 5) & 63) / 63.0f,
+                          static_cast<float>(c & 31) / 31.0f};
+    const float lum = 0.299f * rgb[0] + 0.587f * rgb[1] + 0.114f * rgb[2];
+    float out[3];
+    for (int i = 0; i < 3; ++i) {
+        out[i] = std::clamp(lum * r.mul[i], 0.0f, 1.0f) * (1.0f - r.keep) + rgb[i] * r.keep;
+    }
+    const u16 red = static_cast<u16>(std::lround(out[0] * 31.0f));
+    const u16 green = static_cast<u16>(std::lround(out[1] * 63.0f));
+    const u16 blue = static_cast<u16>(std::lround(out[2] * 31.0f));
+    return static_cast<u16>((red << 11) | (green << 5) | blue);
+}
+
+// The tint is linear in RGB, so tinting the two BC1 endpoints tints every texel. The endpoint
+// order picks the block mode, so the order is kept and the indices are remapped on a swap.
+void TintBc1(std::span<u8> data, const TintRule& rule) {
+    for (std::size_t off = 0; off + 8 <= data.size(); off += 8) {
+        u8* b = data.data() + off;
+        const u16 c0 = static_cast<u16>(b[0] | (b[1] << 8));
+        const u16 c1 = static_cast<u16>(b[2] | (b[3] << 8));
+        const bool four_color = c0 > c1;
+        u16 n0 = TintColor565(c0, rule);
+        u16 n1 = TintColor565(c1, rule);
+        u32 idx = static_cast<u32>(b[4] | (b[5] << 8) | (b[6] << 16) | (b[7] << 24));
+        const bool swap = four_color ? (n0 < n1) : (n0 > n1);
+        if (four_color && n0 == n1) {
+            idx = 0; // one color left; any index is the same color
+        } else if (swap) {
+            std::swap(n0, n1);
+            u32 remapped = 0;
+            for (int t = 0; t < 16; ++t) {
+                u32 v = (idx >> (2 * t)) & 3;
+                if (four_color) {
+                    v ^= 1; // 0<->1, 2<->3
+                } else if (v < 2) {
+                    v ^= 1; // 0<->1, midpoint and transparent stay
+                }
+                remapped |= v << (2 * t);
+            }
+            idx = remapped;
+        }
+        b[0] = static_cast<u8>(n0);
+        b[1] = static_cast<u8>(n0 >> 8);
+        b[2] = static_cast<u8>(n1);
+        b[3] = static_cast<u8>(n1 >> 8);
+        b[4] = static_cast<u8>(idx);
+        b[5] = static_cast<u8>(idx >> 8);
+        b[6] = static_cast<u8>(idx >> 16);
+        b[7] = static_cast<u8>(idx >> 24);
+    }
+}
+
 } // namespace
+
+bool ApplyRules(const ImageInfo& info, std::span<u8> linear) {
+    EnsureScanned();
+    State& s = GetState();
+    const auto format = static_cast<u32>(info.format);
+    const bool bc1 = info.format == VideoCore::Surface::PixelFormat::BC1_RGBA_UNORM ||
+                     info.format == VideoCore::Surface::PixelFormat::BC1_RGBA_SRGB;
+    if (!bc1) {
+        return false;
+    }
+    TintRule rule{};
+    {
+        std::scoped_lock lock{s.mutex};
+        const auto it = std::find_if(s.rules.begin(), s.rules.end(), [&](const TintRule& r) {
+            return r.format == format && r.width == info.size.width &&
+                   r.height == info.size.height &&
+                   (r.layers == 0 || r.layers == static_cast<u32>(info.resources.layers));
+        });
+        if (it == s.rules.end()) {
+            return false;
+        }
+        rule = *it;
+    }
+    TintBc1(linear, rule);
+    return true;
+}
 
 bool Active() {
     EnsureScanned();

@@ -34,6 +34,9 @@ void RequestReload();
 /// Replacement for this hash, or nullptr. Ignored (and logged once) when the size differs.
 [[nodiscard]] const std::vector<u8>* Find(u64 hash, std::size_t expected_size);
 
+/// Applies a tint rule from replace/rules.txt to matching textures. True if one matched.
+bool ApplyRules(const ImageInfo& info, std::span<u8> linear);
+
 /// Dumping is on and this hash has not been written yet.
 [[nodiscard]] bool NeedsDump(u64 hash);
 

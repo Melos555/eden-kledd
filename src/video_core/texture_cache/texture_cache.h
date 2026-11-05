@@ -1930,6 +1930,8 @@ void TextureCache<P>::KleddPackApply(Image& image, u64 hash, std::span<u8> linea
     }
     if (const auto* replacement = KleddPack::Find(hash, linear.size())) {
         std::memcpy(linear.data(), replacement->data(), linear.size());
+    } else {
+        KleddPack::ApplyRules(image.info, linear);
     }
 }
 
