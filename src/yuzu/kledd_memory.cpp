@@ -52,6 +52,7 @@ constexpr std::uint64_t kPage = 0x1000;
 constexpr std::size_t kMaxHits = 8'000'000;
 constexpr int kMaxHitRows = 1000;
 constexpr std::uint64_t kMaxUnknownRegion = 256ull * 1024 * 1024;
+constexpr std::uint64_t kMaxSnapshot = 3ull * 1024 * 1024 * 1024;
 
 enum FirstMode : int { FirstExact = 0, FirstUnknown = 1 };
 enum NextMode : int { NextExact = 0, NextChanged, NextUnchanged, NextIncreased, NextDecreased };
@@ -203,6 +204,7 @@ struct ScanParams {
     std::uint64_t start = 0;
     std::uint64_t size = 0;
     std::vector<Hit> hits;
+    const std::vector<KleddMemory::Chunk>* snapshot = nullptr;
 };
 
 bool MatchesExact(const ScanParams& p, std::uint64_t bits) {
@@ -358,6 +360,83 @@ KleddMemory::ScanResult RunNextScan(const ScanParams& p, std::atomic<bool>* canc
         }
         if (match) {
             result.hits.push_back({h.addr, now});
+        }
+    }
+    return result;
+}
+
+// Unknown starting value on a big region: copy every readable block instead of storing a
+// result per value, then compare the copy against live memory on the next scan.
+KleddMemory::ScanResult RunSnapshot(const ScanParams& p, std::atomic<bool>* cancel,
+                                    std::atomic<std::uint64_t>* done) {
+    KleddMemory::ScanResult result;
+    auto& memory = p.process->GetMemory();
+    const std::uint64_t end = p.start + p.size;
+    std::uint64_t total = 0;
+    for (std::uint64_t b = p.start; b < end; b += kBlock) {
+        if (cancel->load()) {
+            result.cancelled = true;
+            break;
+        }
+        const std::uint64_t len = std::min<std::uint64_t>(kBlock, end - b);
+        if (memory.IsValidVirtualAddressRange(b, len)) {
+            KleddMemory::Chunk chunk{b, std::vector<std::uint8_t>(static_cast<std::size_t>(len))};
+            memory.ReadBlockUnsafe(b, chunk.data.data(), chunk.data.size());
+            result.snapshot.push_back(std::move(chunk));
+            total += len;
+            if (total >= kMaxSnapshot) {
+                result.truncated = true;
+                break;
+            }
+        }
+        done->store(b + len - p.start);
+    }
+    return result;
+}
+
+bool SaneFloat(ValueType type, std::uint64_t bits) {
+    if (!IsFloat(type)) {
+        return true;
+    }
+    const double v = AsDouble(type, bits);
+    return std::isfinite(v) && std::fabs(v) < 1e9 && (v == 0.0 || std::fabs(v) > 1e-20);
+}
+
+KleddMemory::ScanResult RunSnapshotCompare(const ScanParams& p, std::atomic<bool>* cancel,
+                                           std::atomic<std::uint64_t>* done) {
+    KleddMemory::ScanResult result;
+    auto& memory = p.process->GetMemory();
+    const std::size_t vsize = TypeSize(p.type);
+    const std::size_t step = p.aligned ? vsize : 1;
+    std::vector<std::uint8_t> buf(kBlock);
+    const auto& chunks = *p.snapshot;
+    for (std::size_t c = 0; c < chunks.size(); ++c) {
+        if ((c & 0x3F) == 0) {
+            if (cancel->load()) {
+                result.cancelled = true;
+                break;
+            }
+            done->store(c);
+        }
+        const auto& chunk = chunks[c];
+        const std::size_t len = chunk.data.size();
+        if (!memory.IsValidVirtualAddressRange(chunk.base, len)) {
+            continue;
+        }
+        memory.ReadBlockUnsafe(chunk.base, buf.data(), len);
+        for (std::size_t off = 0; off + vsize <= len; off += step) {
+            const std::uint64_t prev = LoadBits(chunk.data.data() + off, vsize);
+            const std::uint64_t now = LoadBits(buf.data() + off, vsize);
+            if (!SaneFloat(p.type, now) || !SaneFloat(p.type, prev)) {
+                continue;
+            }
+            if (MatchesNext(p, now, prev)) {
+                if (result.hits.size() >= kMaxHits) {
+                    result.truncated = true;
+                    return result;
+                }
+                result.hits.push_back({chunk.base + off, now});
+            }
         }
     }
     return result;
@@ -690,7 +769,7 @@ bool KleddMemory::WriteBits(std::uint64_t addr, ValueType type, std::uint64_t bi
 
 void KleddMemory::SetBusy(bool busy) {
     first_button->setEnabled(!busy);
-    next_button->setEnabled(!busy && !hits.empty());
+    next_button->setEnabled(!busy && (!hits.empty() || !snapshot.empty()));
     reset_button->setEnabled(!busy);
     cancel_button->setEnabled(busy);
 }
@@ -706,8 +785,16 @@ void KleddMemory::UpdateStatus() {
         return;
     }
     first_button->setEnabled(true);
-    next_button->setEnabled(!hits.empty());
-    if (hits.empty()) {
+    next_button->setEnabled(!hits.empty() || !snapshot.empty());
+    if (hits.empty() && !snapshot.empty()) {
+        std::uint64_t bytes = 0;
+        for (const auto& chunk : snapshot) {
+            bytes += chunk.data.size();
+        }
+        status_label->setText(tr("Snapshot taken (%1 MB). Change the value in game, then Next "
+                                 "scan with Changed / Increased / Decreased.")
+                                  .arg(bytes >> 20));
+    } else if (hits.empty()) {
         status_label->setText(tr("Ready. Main module: %1 (size 0x%2)")
                                   .arg(QStringLiteral("0x%1").arg(
                                       QtCommon::system->GetMainModuleBegin(), 0, 16))
@@ -750,26 +837,31 @@ void KleddMemory::OnFirstScan() {
         }
         p.target_d = AsDouble(p.type, p.target);
         p.tolerance = std::fabs(tolerance_edit->text().toDouble());
-    } else if (p.size > kMaxUnknownRegion) {
-        QMessageBox::warning(
-            this, tr("Kledd Memory"),
-            tr("Unknown-value scans need a region up to 256 MB (use Main or a custom range)."));
-        return;
     }
+    const bool use_snapshot = p.type != ValueType::Bytes && p.mode == FirstUnknown &&
+                              p.size > kMaxUnknownRegion;
+    snapshot.clear();
+    hits.clear();
+    hit_table->setRowCount(0);
     hits_type = p.type;
     hits_pattern_size = p.pattern.size();
     scan_total = std::max<std::uint64_t>(1, p.size);
     scan_done = 0;
     cancel_flag = false;
     SetBusy(true);
-    status_label->setText(tr("Scanning..."));
-    scan_watcher->setFuture(QtConcurrent::run(
-        [p, this]() { return RunFirstScan(p, &cancel_flag, &scan_done); }));
+    status_label->setText(use_snapshot ? tr("Taking a snapshot...") : tr("Scanning..."));
+    if (use_snapshot) {
+        scan_watcher->setFuture(QtConcurrent::run(
+            [p, this]() { return RunSnapshot(p, &cancel_flag, &scan_done); }));
+    } else {
+        scan_watcher->setFuture(QtConcurrent::run(
+            [p, this]() { return RunFirstScan(p, &cancel_flag, &scan_done); }));
+    }
 }
 
 void KleddMemory::OnNextScan() {
     auto* process = Process();
-    if (!process || hits.empty()) {
+    if (!process || (hits.empty() && snapshot.empty())) {
         return;
     }
     ScanParams p;
@@ -790,12 +882,20 @@ void KleddMemory::OnNextScan() {
         p.target_d = AsDouble(p.type, p.target);
         p.tolerance = std::fabs(tolerance_edit->text().toDouble());
     }
-    p.hits = hits;
-    scan_total = std::max<std::uint64_t>(1, hits.size());
+    p.aligned = aligned_check->isChecked();
     scan_done = 0;
     cancel_flag = false;
     SetBusy(true);
     status_label->setText(tr("Narrowing..."));
+    if (hits.empty()) {
+        p.snapshot = &snapshot;
+        scan_total = std::max<std::uint64_t>(1, snapshot.size());
+        scan_watcher->setFuture(QtConcurrent::run(
+            [p, this]() { return RunSnapshotCompare(p, &cancel_flag, &scan_done); }));
+        return;
+    }
+    p.hits = hits;
+    scan_total = std::max<std::uint64_t>(1, hits.size());
     scan_watcher->setFuture(QtConcurrent::run(
         [p, this]() { return RunNextScan(p, &cancel_flag, &scan_done); }));
 }
@@ -808,6 +908,11 @@ void KleddMemory::OnScanFinished() {
         status_label->setText(tr("Cancelled. Previous results kept."));
         return;
     }
+    if (!r.snapshot.empty()) {
+        snapshot = std::move(r.snapshot);
+    } else {
+        snapshot.clear();
+    }
     hits = std::move(r.hits);
     RefreshHitTable();
     UpdateStatus();
@@ -819,6 +924,7 @@ void KleddMemory::OnScanFinished() {
 
 void KleddMemory::OnReset() {
     hits.clear();
+    snapshot.clear();
     hit_table->setRowCount(0);
     progress->setValue(0);
     UpdateStatus();

@@ -51,8 +51,14 @@ public:
         std::uint64_t frozen_bits;
     };
 
+    struct Chunk {
+        std::uint64_t base;
+        std::vector<std::uint8_t> data;
+    };
+
     struct ScanResult {
         std::vector<Hit> hits;
+        std::vector<Chunk> snapshot;
         bool truncated = false;
         bool cancelled = false;
         QString error;
@@ -118,6 +124,7 @@ private:
 
     // State
     std::vector<Hit> hits;
+    std::vector<Chunk> snapshot;
     ValueType hits_type = ValueType::U32;
     std::size_t hits_pattern_size = 0;
     std::vector<Watch> watches;
