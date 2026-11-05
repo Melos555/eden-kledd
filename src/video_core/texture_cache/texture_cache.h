@@ -29,6 +29,7 @@
 #include "video_core/engines/kepler_compute.h"
 #include "video_core/guest_memory.h"
 #include "video_core/host1x/gpu_device_memory_manager.h"
+#include "video_core/texture_cache/kledd_texture_pack.h"
 #include "video_core/texture_cache/image_view_base.h"
 #include "video_core/texture_cache/samples_helper.h"
 #include "video_core/texture_cache/texture_cache_base.h"
@@ -1461,6 +1462,13 @@ void TextureCache<P>::RefreshContents(Image& image, ImageId image_id) {
     kledd_stats.uploads.fetch_add(1, std::memory_order_relaxed);
     kledd_stats.upload_bytes.fetch_add(MapSizeBytes(image), std::memory_order_relaxed);
     KleddNoteBigUpload(image);
+    // eden-kledd: a replaced ASTC texture goes through the CPU decode path, which is where the
+    // replacement bytes are copied in.
+    if (True(image.flags & ImageFlagBits::AcceleratedUpload) &&
+        True(image.flags & ImageFlagBits::Converted) && KleddPack::Active() &&
+        KleddPackHasReplacement(image)) {
+        image.flags &= ~ImageFlagBits::AcceleratedUpload;
+    }
     auto staging = runtime.UploadStagingBuffer(MapSizeBytes(image));
     UploadImageContents(image, staging);
     runtime.InsertUploadMemoryBarrier();
@@ -1871,10 +1879,21 @@ template <typename StagingBuffer>
 void TextureCache<P>::UploadImageContents(Image& image, StagingBuffer& staging) {
     const std::span<u8> mapped_span = staging.mapped_span;
     const GPUVAddr gpu_addr = image.gpu_addr;
+    const bool kledd_pack = KleddPack::Active();
 
     if (True(image.flags & ImageFlagBits::AcceleratedUpload)) {
         gpu_memory->ReadBlock(gpu_addr, mapped_span.data(), mapped_span.size_bytes(),
                               VideoCommon::CacheType::NoTextureCache);
+        if (kledd_pack && mapped_span.size_bytes() >= image.guest_size_bytes) {
+            const std::span<const u8> guest{mapped_span.data(), image.guest_size_bytes};
+            const u64 hash = KleddPack::Hash(guest);
+            if (KleddPack::NeedsDump(hash)) {
+                std::vector<u8> linear(image.unswizzled_size_bytes);
+                const auto dump_copies =
+                    UnswizzleImage(*gpu_memory, gpu_addr, image.info, guest, linear);
+                KleddPack::Dump(hash, image.info, linear, dump_copies);
+            }
+        }
         const auto uploads = FullUploadSwizzles(image.info);
         runtime.AccelerateImageUpload(image, staging, uploads, 0, 0, 0, {}, false);
         return;
@@ -1882,15 +1901,44 @@ void TextureCache<P>::UploadImageContents(Image& image, StagingBuffer& staging) 
 
     Tegra::Memory::GpuGuestMemory<u8, Tegra::Memory::GuestMemoryFlags::UnsafeRead> swizzle_data(
         *gpu_memory, gpu_addr, image.guest_size_bytes, &swizzle_data_buffer);
+    const u64 kledd_hash =
+        kledd_pack ? KleddPack::Hash({swizzle_data.data(), swizzle_data.size()}) : 0;
     if (True(image.flags & ImageFlagBits::Converted)) {
         unswizzle_data_buffer.resize_destructive(image.unswizzled_size_bytes);
         auto copies = UnswizzleImage(*gpu_memory, gpu_addr, image.info, swizzle_data, unswizzle_data_buffer);
+        if (kledd_pack) {
+            KleddPackApply(image, kledd_hash,
+                           {unswizzle_data_buffer.data(), image.unswizzled_size_bytes}, copies);
+        }
         ConvertImage(unswizzle_data_buffer, image.info, mapped_span, copies);
         image.UploadMemory(staging, copies);
     } else {
         const auto copies = UnswizzleImage(*gpu_memory, gpu_addr, image.info, swizzle_data, mapped_span);
+        if (kledd_pack && mapped_span.size_bytes() >= image.unswizzled_size_bytes) {
+            KleddPackApply(image, kledd_hash, mapped_span.first(image.unswizzled_size_bytes),
+                           copies);
+        }
         image.UploadMemory(staging, copies);
     }
+}
+
+template <class P>
+void TextureCache<P>::KleddPackApply(Image& image, u64 hash, std::span<u8> linear,
+                                     std::span<const BufferImageCopy> copies) {
+    if (KleddPack::NeedsDump(hash)) {
+        KleddPack::Dump(hash, image.info, linear, copies);
+    }
+    if (const auto* replacement = KleddPack::Find(hash, linear.size())) {
+        std::memcpy(linear.data(), replacement->data(), linear.size());
+    }
+}
+
+template <class P>
+bool TextureCache<P>::KleddPackHasReplacement(Image& image) {
+    Tegra::Memory::GpuGuestMemory<u8, Tegra::Memory::GuestMemoryFlags::UnsafeRead> guest(
+        *gpu_memory, image.gpu_addr, image.guest_size_bytes, &swizzle_data_buffer);
+    const u64 hash = KleddPack::Hash({guest.data(), guest.size()});
+    return KleddPack::Find(hash, image.unswizzled_size_bytes) != nullptr;
 }
 
 template <class P>
@@ -2072,6 +2120,10 @@ void TextureCache<P>::QueueAsyncDecode(Image& image, ImageId image_id) {
     std::vector<u8> local_unswizzle_data_buffer(image.unswizzled_size_bytes, 0);
     Tegra::Memory::GpuGuestMemory<u8, Tegra::Memory::GuestMemoryFlags::UnsafeRead> swizzle_data(*gpu_memory, image.gpu_addr, image.guest_size_bytes, &swizzle_data_buffer);
     auto copies = UnswizzleImage(*gpu_memory, image.gpu_addr, image.info, swizzle_data, local_unswizzle_data_buffer);
+    if (KleddPack::Active()) {
+        KleddPackApply(image, KleddPack::Hash({swizzle_data.data(), swizzle_data.size()}),
+                       local_unswizzle_data_buffer, copies);
+    }
     const size_t out_size = MapSizeBytes(image);
 
     auto func = [out_size, copies, info = image.info,

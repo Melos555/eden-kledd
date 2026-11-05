@@ -434,6 +434,11 @@ private:
     template <typename StagingBuffer>
     void UploadImageContents(Image& image, StagingBuffer& staging_buffer);
 
+    /// eden-kledd texture pack: dump and/or replace the unswizzled guest data of an upload.
+    void KleddPackApply(Image& image, u64 hash, std::span<u8> linear,
+                        std::span<const BufferImageCopy> copies);
+    [[nodiscard]] bool KleddPackHasReplacement(Image& image);
+
     /// Create a new image view from a guest descriptor
     [[nodiscard]] ImageViewId CreateImageView(const TICEntry& config);
 
