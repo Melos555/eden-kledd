@@ -15,7 +15,7 @@
 
 #include "common/cityhash.h"
 #include "common/fs/path_util.h"
-#include "common/logging/log.h"
+#include "common/logging.h"
 
 namespace VideoCommon::KleddPack {
 
