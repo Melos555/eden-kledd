@@ -289,7 +289,8 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
               "cleanup with the old walk. From John's Unified-GC branch."));
     INSERT(Settings, kledd_cheat_write_fix, tr("[Kledd] Cheat write fix (Eden PR #4640)"),
            tr("Cheats rewrite their values about 12 times a second. With this on, a write that "
-              "changes nothing is skipped, and only writes to code make the CPU re-translate it.\n"
+              "changes nothing is skipped, only writes to code make the CPU re-translate it, and cheat "
+              "reads no longer ask the GPU for the memory first.\n"
               "Off: the old behaviour, where performance drops over long sessions with cheats."));
     INSERT(Settings, kledd_descriptor_stride_fix,
            tr("[Kledd] Descriptor stride fix (Amicuchu, PR #4549)"),
