@@ -106,12 +106,17 @@ jobs:
             exit 1
           fi
 
+      - name: Name the downloads after the build
+        run: |
+          branch="${GITHUB_REF_NAME#kledd-}"; branch="${branch#lab-}"
+          echo "ARTIFACT_NAME=#${GITHUB_RUN_NUMBER} [${branch} ${GITHUB_SHA::7}]" >> "$GITHUB_ENV"
+
       - uses: actions/upload-artifact@v4
         with:
-          name: eden-kledd-lab-linux-x86_64
+          name: ${{ env.ARTIFACT_NAME }} linux
           path: eden-kledd-lab-linux-x86_64.tar.gz
 
       - uses: actions/upload-artifact@v4
         with:
-          name: eden-kledd-lab-linux-appimage
+          name: ${{ env.ARTIFACT_NAME }} appimage
           path: eden-kledd-lab-x86_64.AppImage

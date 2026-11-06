@@ -79,10 +79,15 @@ jobs:
           Copy-Item -Recurse build/bin/* out/
           Get-ChildItem out -Recurse -Include *.pdb,*.ilk,*.lib,*.exp | Remove-Item -Force
           Get-ChildItem out
+          # eden-kledd: name the download like Melos's build folders, e.g. "#106 [prime4-v1-delta-async-gc b46bfba]",
+          # so Windows' "Extract All" makes that folder directly
+          $branch = "${{ github.ref_name }}" -replace '^kledd-(lab-)?', ''
+          $sha = "${{ github.sha }}".Substring(0, 7)
+          "ARTIFACT_NAME=#${{ github.run_number }} [$branch $sha]" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Upload Eden
         uses: actions/upload-artifact@v4
         with:
-          name: eden-kledd-windows
+          name: ${{ env.ARTIFACT_NAME }}
           path: out/
           retention-days: 30
