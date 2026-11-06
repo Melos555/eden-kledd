@@ -78,6 +78,13 @@ void StandardVmCallbacks::MemoryReadUnsafe(VAddr address, void* data, u64 size) 
         return;
     }
 
+    // eden-kledd: with the cheat write fix on, cheat reads (pointer chains, conditions) skip the
+    // GPU readback the normal read does: game variables are written by the CPU, and asking the
+    // GPU side for them every tick only adds syncs.
+    if (Settings::values.kledd_cheat_write_fix.GetValue()) {
+        process->GetMemory().ReadBlockUnsafe(address, data, size);
+        return;
+    }
     process->GetMemory().ReadBlock(address, data, size);
 }
 
@@ -114,8 +121,12 @@ void StandardVmCallbacks::MemoryWriteUnsafe(VAddr address, const void* data, u64
 
     // Eden PR #4640: cheats write the same values over and over (12 times a second): a write that
     // changes nothing has nothing to write or to invalidate
+    // eden-kledd: ReadBlockUnsafe, not ReadBlock. The normal read flushes GPU caches for the
+    // range, so checking every cheat write (12 times a second per cheat) made the GPU sync over
+    // and over: six times the 50 ms stutters of the build without this check (Nov 6 logs).
     std::array<u8, 16> current{};
-    if (size <= current.size() && process->GetMemory().ReadBlock(address, current.data(), size) &&
+    if (size <= current.size() &&
+        process->GetMemory().ReadBlockUnsafe(address, current.data(), size) &&
         std::memcmp(current.data(), data, size) == 0) {
         return;
     }
