@@ -315,6 +315,10 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
     INSERT(Settings, fix_bloom_effects, tr("Fix bloom effects"), tr("Removes bloom in Burnout."));
     // eden-kledd: replaced by "BC7 (GPU)" / "BC7 (CPU, slow)" in ASTC Recompression; kept hidden
     INSERT(Settings, kledd_gpu_bc7, QString(), QString());
+    INSERT(Settings, kledd_cheat_write_fix, tr("[Kledd] Cheat write fix (Eden PR #4640)"),
+           tr("Cheats rewrite their values about 12 times a second. With this on, a write that "
+              "changes nothing is skipped, and only writes to code make the CPU re-translate it.\n"
+              "Off: the old behaviour, where performance drops over long sessions with cheats."));
 
     // Renderer (Extensions)
     INSERT(Settings, dyna_state, tr("Extended Dynamic State"),

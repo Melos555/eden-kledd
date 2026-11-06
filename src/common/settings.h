@@ -718,6 +718,10 @@ struct Values {
     SwitchableSetting<bool> fix_bloom_effects{linkage, false, "fix_bloom_effects",
                                                      Category::RendererHacks};
 
+    // eden-kledd: Eden PR #4640, cheat writes that change nothing are skipped and only writes to
+    // code drop translated code. Off = the old behaviour (slower over long sessions with cheats).
+    SwitchableSetting<bool> kledd_cheat_write_fix{linkage, true, "kledd_cheat_write_fix",
+                                                  Category::RendererHacks};
     // eden-kledd: with BC7 recompression + GPU ASTC decoding, encode BC7 on the GPU
     SwitchableSetting<bool> kledd_gpu_bc7{linkage, false, "kledd_gpu_bc7",
                                           Category::RendererHacks};

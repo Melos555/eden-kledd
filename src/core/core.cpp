@@ -411,10 +411,13 @@ struct System::Impl {
         kernel.SuspendEmulation(true);
         kernel.CloseServices();
         kernel.ShutdownCores();
+        // Eden PR #4640: before the services. The cheat engine's tick still runs on the timing
+        // thread here and reads the controllers through the service manager (it crashed in a
+        // freed mutex when a game with cheats was stopped). Its reset removes the tick and waits.
+        cheat_engine.reset();
         services.reset();
         service_manager.reset();
         fs_controller.Reset();
-        cheat_engine.reset();
         core_timing.ClearPendingEvents();
         app_loader.reset();
         audio_core.reset();
