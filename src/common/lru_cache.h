@@ -60,6 +60,25 @@ public:
         free_items.push_back(id);
     }
 
+    // Resume after the last inspected item without changing its usage tick: the cursor
+    // advances before the callback so the callback may destroy the current item, and the
+    // sweep continues next call instead of re-scanning. (John's Unified-GC branch.)
+    template <typename Func>
+    void ForEachItemBelowResumable(TickType tick, Func&& func) {
+        Item* iterator = next_gc_item ? next_gc_item : first_item;
+        while (iterator) {
+            if (static_cast<s64>(tick) - static_cast<s64>(iterator->tick) < 0) {
+                next_gc_item = nullptr;
+                return;
+            }
+            next_gc_item = iterator->next;
+            if (func(iterator->obj)) {
+                return;
+            }
+            iterator = next_gc_item;
+        }
+    }
+
     template <typename Func>
     void ForEachItemBelow(TickType tick, Func&& func) {
         static constexpr bool RETURNS_BOOL =
@@ -113,6 +132,10 @@ private:
     }
 
     void Detach(Item& item) {
+        // The sweep's cursor must not stay on an item that leaves its place in the list
+        if (&item == next_gc_item) {
+            next_gc_item = item.next;
+        }
         if (item.prev) {
             item.prev->next = item.next;
         }
@@ -137,6 +160,7 @@ private:
     std::deque<size_t> free_items;
     Item* first_item{};
     Item* last_item{};
+    Item* next_gc_item{};
 };
 
 } // namespace Common
