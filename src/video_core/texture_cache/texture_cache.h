@@ -2445,7 +2445,12 @@ void TextureCache<P>::TickAsyncUnswizzleGpu(PendingUnswizzle& task, Image& image
 
         size_t max_batch_size = task.total_size;
         {
-            const u32 batch_slices = (async_unswizzle_slices_per_batch == 0)
+            // eden-kledd: a delta task reads one z group at a time, so its staging buffer only
+            // needs one group. Sized for 128-slice batches, six delta tasks at once asked for
+            // ~260 MiB of staging (the 1.35 s freeze in the Nov 6 #109 log).
+            const u32 batch_slices = !task.delta_mask.empty()
+                ? (std::max)(1u << task.swizzle_block_depth, 1u)
+                : (async_unswizzle_slices_per_batch == 0)
                 ? (task.active_z_end - task.active_z_start)
                 : async_unswizzle_slices_per_batch;
 
