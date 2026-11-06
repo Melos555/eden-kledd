@@ -681,6 +681,10 @@ struct Values {
     // cleanup with the old walk from the oldest image every frame.
     SwitchableSetting<bool> kledd_resumable_gc{linkage, true, "kledd_resumable_gc",
                                                Category::RendererHacks};
+    // eden-kledd: Eden PR #4640, cheat writes that change nothing are skipped and only writes to
+    // code drop translated code. Off = the old behaviour (slower over long sessions with cheats).
+    SwitchableSetting<bool> kledd_cheat_write_fix{linkage, true, "kledd_cheat_write_fix",
+                                                  Category::RendererHacks};
     // eden-kledd: descriptor stride fix by Amicuchu (Eden PR #4549), as a toggle for testing
     SwitchableSetting<bool> kledd_descriptor_stride_fix{linkage, true,
                                                         "kledd_descriptor_stride_fix",

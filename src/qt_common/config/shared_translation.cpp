@@ -287,6 +287,10 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
            tr("The texture cleanup continues where it stopped on the next frame, so protected "
               "textures at the front of the list no longer block the rest.\nOff: the 5 s "
               "cleanup with the old walk. From John's Unified-GC branch."));
+    INSERT(Settings, kledd_cheat_write_fix, tr("[Kledd] Cheat write fix (Eden PR #4640)"),
+           tr("Cheats rewrite their values about 12 times a second. With this on, a write that "
+              "changes nothing is skipped, and only writes to code make the CPU re-translate it.\n"
+              "Off: the old behaviour, where performance drops over long sessions with cheats."));
     INSERT(Settings, kledd_descriptor_stride_fix,
            tr("[Kledd] Descriptor stride fix (Amicuchu, PR #4549)"),
            tr("Indexes texture handle arrays inside structs by their real stride instead of the "
