@@ -43,6 +43,7 @@
 #include "util/util.h"
 #include "yuzu/game/game_list.h"
 #include "yuzu/kledd_memory.h"
+#include "video_core/texture_cache/kledd_texture_pack.h"
 
 #include "applets/qt_amiibo_settings.h"
 #include "applets/qt_controller.h"
@@ -1622,6 +1623,20 @@ void MainWindow::ConnectMenuEvents() {
             tool->raise();
             tool->activateWindow();
         });
+    }
+
+    // Kledd texture pack (Tools menu)
+    {
+        auto* dump_action = new QAction(tr("Kledd: Dump textures"), this);
+        dump_action->setCheckable(true);
+        dump_action->setChecked(VideoCommon::KleddPack::IsDumping());
+        auto* reload_action = new QAction(tr("Kledd: Reload texture pack"), this);
+        ui->menu_Tools->addAction(dump_action);
+        ui->menu_Tools->addAction(reload_action);
+        connect(dump_action, &QAction::toggled, this,
+                [](bool checked) { VideoCommon::KleddPack::SetDumping(checked); });
+        connect(reload_action, &QAction::triggered, this,
+                [] { VideoCommon::KleddPack::RequestReload(); });
     }
 
     // Emulation

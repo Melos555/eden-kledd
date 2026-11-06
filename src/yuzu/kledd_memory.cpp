@@ -27,7 +27,10 @@
 #include <QPlainTextEdit>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QShortcut>
+#include <QKeySequence>
 #include <QSplitter>
+#include <QTabWidget>
 #include <QTableWidget>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -51,6 +54,7 @@ constexpr std::uint64_t kPage = 0x1000;
 constexpr std::size_t kMaxHits = 8'000'000;
 constexpr int kMaxHitRows = 1000;
 constexpr std::uint64_t kMaxUnknownRegion = 256ull * 1024 * 1024;
+constexpr std::uint64_t kMaxSnapshot = 3ull * 1024 * 1024 * 1024;
 
 enum FirstMode : int { FirstExact = 0, FirstUnknown = 1 };
 enum NextMode : int { NextExact = 0, NextChanged, NextUnchanged, NextIncreased, NextDecreased };
@@ -202,6 +206,7 @@ struct ScanParams {
     std::uint64_t start = 0;
     std::uint64_t size = 0;
     std::vector<Hit> hits;
+    const std::vector<KleddMemory::Chunk>* snapshot = nullptr;
 };
 
 bool MatchesExact(const ScanParams& p, std::uint64_t bits) {
@@ -288,7 +293,7 @@ KleddMemory::ScanResult RunFirstScan(const ScanParams& p, std::atomic<bool>* can
             if (extra && b + len < end && memory.IsValidVirtualAddressRange(b + len, extra)) {
                 readable += extra;
             }
-            memory.ReadBlock(b, buf.data(), readable);
+            memory.ReadBlockUnsafe(b, buf.data(), readable);
             keep_going = scan_chunk(b, static_cast<std::size_t>(len), readable);
         } else {
             for (std::uint64_t pg = b; pg < b + len && keep_going; pg += kPage) {
@@ -296,7 +301,7 @@ KleddMemory::ScanResult RunFirstScan(const ScanParams& p, std::atomic<bool>* can
                 if (!memory.IsValidVirtualAddress(pg)) {
                     continue;
                 }
-                memory.ReadBlock(pg, buf.data(), static_cast<std::size_t>(plen));
+                memory.ReadBlockUnsafe(pg, buf.data(), static_cast<std::size_t>(plen));
                 keep_going = scan_chunk(pg, static_cast<std::size_t>(plen),
                                         static_cast<std::size_t>(plen));
             }
@@ -334,7 +339,7 @@ KleddMemory::ScanResult RunNextScan(const ScanParams& p, std::atomic<bool>* canc
             block_base = base;
             block_ok = memory.IsValidVirtualAddressRange(base, kBlock + 16);
             if (block_ok) {
-                memory.ReadBlock(base, buf.data(), kBlock + 16);
+                memory.ReadBlockUnsafe(base, buf.data(), kBlock + 16);
             }
         }
         std::uint8_t tmp[64];
@@ -345,7 +350,7 @@ KleddMemory::ScanResult RunNextScan(const ScanParams& p, std::atomic<bool>* canc
             if (vsize > sizeof(tmp) || !memory.IsValidVirtualAddressRange(h.addr, vsize)) {
                 continue;
             }
-            memory.ReadBlock(h.addr, tmp, vsize);
+            memory.ReadBlockUnsafe(h.addr, tmp, vsize);
             ptr = tmp;
         }
         const std::uint64_t now = LoadBits(ptr, lsize);
@@ -362,11 +367,88 @@ KleddMemory::ScanResult RunNextScan(const ScanParams& p, std::atomic<bool>* canc
     return result;
 }
 
+// Unknown starting value on a big region: copy every readable block instead of storing a
+// result per value, then compare the copy against live memory on the next scan.
+KleddMemory::ScanResult RunSnapshot(const ScanParams& p, std::atomic<bool>* cancel,
+                                    std::atomic<std::uint64_t>* done) {
+    KleddMemory::ScanResult result;
+    auto& memory = p.process->GetMemory();
+    const std::uint64_t end = p.start + p.size;
+    std::uint64_t total = 0;
+    for (std::uint64_t b = p.start; b < end; b += kBlock) {
+        if (cancel->load()) {
+            result.cancelled = true;
+            break;
+        }
+        const std::uint64_t len = std::min<std::uint64_t>(kBlock, end - b);
+        if (memory.IsValidVirtualAddressRange(b, len)) {
+            KleddMemory::Chunk chunk{b, std::vector<std::uint8_t>(static_cast<std::size_t>(len))};
+            memory.ReadBlockUnsafe(b, chunk.data.data(), chunk.data.size());
+            result.snapshot.push_back(std::move(chunk));
+            total += len;
+            if (total >= kMaxSnapshot) {
+                result.truncated = true;
+                break;
+            }
+        }
+        done->store(b + len - p.start);
+    }
+    return result;
+}
+
+bool SaneFloat(ValueType type, std::uint64_t bits) {
+    if (!IsFloat(type)) {
+        return true;
+    }
+    const double v = AsDouble(type, bits);
+    return std::isfinite(v) && std::fabs(v) < 1e9 && (v == 0.0 || std::fabs(v) > 1e-20);
+}
+
+KleddMemory::ScanResult RunSnapshotCompare(const ScanParams& p, std::atomic<bool>* cancel,
+                                           std::atomic<std::uint64_t>* done) {
+    KleddMemory::ScanResult result;
+    auto& memory = p.process->GetMemory();
+    const std::size_t vsize = TypeSize(p.type);
+    const std::size_t step = p.aligned ? vsize : 1;
+    std::vector<std::uint8_t> buf(kBlock);
+    const auto& chunks = *p.snapshot;
+    for (std::size_t c = 0; c < chunks.size(); ++c) {
+        if ((c & 0x3F) == 0) {
+            if (cancel->load()) {
+                result.cancelled = true;
+                break;
+            }
+            done->store(c);
+        }
+        const auto& chunk = chunks[c];
+        const std::size_t len = chunk.data.size();
+        if (!memory.IsValidVirtualAddressRange(chunk.base, len)) {
+            continue;
+        }
+        memory.ReadBlockUnsafe(chunk.base, buf.data(), len);
+        for (std::size_t off = 0; off + vsize <= len; off += step) {
+            const std::uint64_t prev = LoadBits(chunk.data.data() + off, vsize);
+            const std::uint64_t now = LoadBits(buf.data() + off, vsize);
+            if (!SaneFloat(p.type, now) || !SaneFloat(p.type, prev)) {
+                continue;
+            }
+            if (MatchesNext(p, now, prev)) {
+                if (result.hits.size() >= kMaxHits) {
+                    result.truncated = true;
+                    return result;
+                }
+                result.hits.push_back({chunk.base + off, now});
+            }
+        }
+    }
+    return result;
+}
+
 } // namespace
 
 KleddMemory::KleddMemory(QWidget* parent) : QWidget(parent, Qt::Window) {
     setWindowTitle(tr("Kledd Memory"));
-    resize(980, 760);
+    resize(900, 640);
     BuildUi();
 
     scan_watcher = new QFutureWatcher<ScanResult>(this);
@@ -436,7 +518,8 @@ void KleddMemory::BuildUi() {
     grid->addWidget(type_box, 1, 1);
     grid->addWidget(aligned_check, 1, 2);
     auto* tol_row = new QHBoxLayout();
-    tol_row->addWidget(new QLabel(tr("Float tolerance"), search_box));
+    tolerance_label = new QLabel(tr("Float tolerance"), search_box);
+    tol_row->addWidget(tolerance_label);
     tol_row->addWidget(tolerance_edit);
     grid->addLayout(tol_row, 1, 3);
     grid->addWidget(new QLabel(tr("Value"), search_box), 2, 0);
@@ -454,19 +537,32 @@ void KleddMemory::BuildUi() {
     grid->addLayout(buttons, 4, 0, 1, 4);
     status_label = new QLabel(search_box);
     grid->addWidget(status_label, 5, 0, 1, 4);
-    root->addWidget(search_box);
 
-    // --- Results + watch list + viewer
-    auto* splitter = new QSplitter(Qt::Vertical, this);
+    // --- Two tabs: search + results, and watch list + viewer
+    tabs = new QTabWidget(this);
+    auto* search_page = new QWidget(tabs);
+    auto* search_layout = new QVBoxLayout(search_page);
+    search_layout->setContentsMargins(4, 4, 4, 4);
+    search_box->setParent(search_page);
+    search_layout->addWidget(search_box);
 
-    hit_table = new QTableWidget(0, 4, splitter);
+    hit_table = new QTableWidget(0, 4, search_page);
     hit_table->setHorizontalHeaderLabels({tr("Address"), tr("Where"), tr("Value"), tr("Previous")});
     hit_table->horizontalHeader()->setStretchLastSection(true);
     hit_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
     hit_table->setSelectionBehavior(QAbstractItemView::SelectRows);
+    hit_table->setSelectionMode(QAbstractItemView::ExtendedSelection);
     hit_table->setFont(mono);
     hit_table->setToolTip(tr("Double-click a result to add it to the watch list"));
+    hit_table->verticalHeader()->setDefaultSectionSize(22);
+    search_layout->addWidget(new QLabel(tr("Results: double-click one to watch it"), search_page));
+    search_layout->addWidget(hit_table, 1);
+    auto* add_hits_button =
+        new QPushButton(tr("Add selected to watch list (Shift/Ctrl-click to pick several)"),
+                        search_page);
+    search_layout->addWidget(add_hits_button);
 
+    auto* splitter = new QSplitter(Qt::Vertical, tabs);
     auto* watch_box = new QWidget(splitter);
     auto* watch_layout = new QVBoxLayout(watch_box);
     watch_layout->setContentsMargins(0, 0, 0, 0);
@@ -475,7 +571,14 @@ void KleddMemory::BuildUi() {
         {tr("Freeze"), tr("Name"), tr("Address"), tr("Type"), tr("Value (edit to write)")});
     watch_table->horizontalHeader()->setStretchLastSection(true);
     watch_table->setFont(mono);
+    watch_table->setSelectionBehavior(QAbstractItemView::SelectRows);
+    watch_table->setSelectionMode(QAbstractItemView::ExtendedSelection);
     auto* watch_buttons = new QHBoxLayout();
+    add_type_box = new QComboBox(watch_box);
+    add_type_box->addItems({tr("u8"), tr("u16"), tr("u32"), tr("u64"), tr("s32"), tr("float"),
+                            tr("double")});
+    add_type_box->setCurrentIndex(static_cast<int>(ValueType::F32));
+    add_type_box->setToolTip(tr("Type for addresses added with the Add button"));
     manual_addr = new QLineEdit(watch_box);
     manual_addr->setPlaceholderText(tr("add address: 0x..., main+0x..., heap+0x..."));
     auto* add_button = new QPushButton(tr("Add"), watch_box);
@@ -484,14 +587,28 @@ void KleddMemory::BuildUi() {
     auto* save_button = new QPushButton(tr("Save list"), watch_box);
     auto* load_button = new QPushButton(tr("Load list"), watch_box);
     watch_buttons->addWidget(manual_addr, 1);
+    watch_buttons->addWidget(add_type_box);
     watch_buttons->addWidget(add_button);
     watch_buttons->addWidget(remove_button);
     watch_buttons->addWidget(cheat_button);
     watch_buttons->addWidget(save_button);
     watch_buttons->addWidget(load_button);
-    watch_layout->addWidget(new QLabel(tr("Watch list"), watch_box));
+    watch_layout->addWidget(
+        new QLabel(tr("Double-click a value to change it. Freeze keeps it from changing back."),
+                   watch_box));
     watch_layout->addWidget(watch_table);
     watch_layout->addLayout(watch_buttons);
+    auto* bulk_row = new QHBoxLayout();
+    bulk_value = new QLineEdit(watch_box);
+    bulk_value->setPlaceholderText(tr("value for all selected rows"));
+    auto* set_button = new QPushButton(tr("Set selected"), watch_box);
+    auto* restore_button = new QPushButton(tr("Restore selected"), watch_box);
+    restore_button->setToolTip(tr("Put back the values the rows had before Set selected"));
+    bulk_row->addWidget(new QLabel(tr("Selected rows:"), watch_box));
+    bulk_row->addWidget(bulk_value, 1);
+    bulk_row->addWidget(set_button);
+    bulk_row->addWidget(restore_button);
+    watch_layout->addLayout(bulk_row);
 
     auto* viewer_box = new QWidget(splitter);
     auto* viewer_layout = new QVBoxLayout(viewer_box);
@@ -512,10 +629,30 @@ void KleddMemory::BuildUi() {
     viewer_layout->addLayout(viewer_row);
     viewer_layout->addWidget(viewer);
 
-    splitter->addWidget(hit_table);
     splitter->addWidget(watch_box);
     splitter->addWidget(viewer_box);
-    root->addWidget(splitter, 1);
+    splitter->setStretchFactor(0, 3);
+    splitter->setStretchFactor(1, 2);
+
+    tabs->addTab(search_page, tr("1. Search"));
+    tabs->addTab(splitter, tr("2. Watch && edit"));
+    root->addWidget(tabs, 1);
+
+    // Only show the fields that matter for the current choices
+    const auto update_fields = [this] {
+        const bool custom = region_box->currentIndex() == 3;
+        custom_start->setVisible(custom);
+        custom_size->setVisible(custom);
+        const auto t = CurrentType();
+        const bool is_float = t == ValueType::F32 || t == ValueType::F64;
+        tolerance_edit->setVisible(is_float);
+        tolerance_label->setVisible(is_float);
+        aligned_check->setVisible(t != ValueType::Bytes);
+        first_mode_box->setEnabled(t != ValueType::Bytes);
+    };
+    connect(region_box, &QComboBox::currentIndexChanged, this, update_fields);
+    connect(type_box, &QComboBox::currentIndexChanged, this, update_fields);
+    update_fields();
 
     connect(first_button, &QPushButton::clicked, this, &KleddMemory::OnFirstScan);
     connect(next_button, &QPushButton::clicked, this, &KleddMemory::OnNextScan);
@@ -525,6 +662,32 @@ void KleddMemory::BuildUi() {
     connect(watch_table, &QTableWidget::cellChanged, this, &KleddMemory::OnWatchCellChanged);
     connect(add_button, &QPushButton::clicked, this, &KleddMemory::OnAddManual);
     connect(remove_button, &QPushButton::clicked, this, &KleddMemory::OnRemoveWatch);
+    connect(add_hits_button, &QPushButton::clicked, this, &KleddMemory::OnAddSelectedHits);
+    connect(set_button, &QPushButton::clicked, this, &KleddMemory::OnSetSelected);
+    connect(bulk_value, &QLineEdit::returnPressed, this, &KleddMemory::OnSetSelected);
+    connect(restore_button, &QPushButton::clicked, this, &KleddMemory::OnRestoreSelected);
+    // Ctrl+V on the watch list pastes the clipboard value into every selected row
+    auto* paste = new QShortcut(QKeySequence::Paste, watch_table);
+    paste->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(paste, &QShortcut::activated, this, [this] {
+        bulk_value->setText(QApplication::clipboard()->text().trimmed());
+        OnSetSelected();
+    });
+    auto* copy = new QShortcut(QKeySequence::Copy, watch_table);
+    copy->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(copy, &QShortcut::activated, this, [this] {
+        const int row = watch_table->currentRow();
+        if (row < 0 || static_cast<std::size_t>(row) >= watches.size()) {
+            return;
+        }
+        const Watch& w = watches[static_cast<std::size_t>(row)];
+        std::uint64_t bits = 0;
+        if (ReadBits(w.addr, w.type, bits)) {
+            QString text = FormatValue(w.type, bits);
+            const int paren = text.indexOf(QLatin1Char('('));
+            QApplication::clipboard()->setText((paren > 0 ? text.left(paren) : text).trimmed());
+        }
+    });
     connect(cheat_button, &QPushButton::clicked, this, &KleddMemory::OnCopyCheat);
     connect(save_button, &QPushButton::clicked, this, &KleddMemory::OnSaveWatch);
     connect(load_button, &QPushButton::clicked, this, &KleddMemory::OnLoadWatch);
@@ -634,7 +797,7 @@ bool KleddMemory::ReadBits(std::uint64_t addr, ValueType type, std::uint64_t& ou
         return false;
     }
     std::uint8_t tmp[8]{};
-    process->GetMemory().ReadBlock(addr, tmp, size);
+    process->GetMemory().ReadBlockUnsafe(addr, tmp, size);
     out = LoadBits(tmp, size);
     return true;
 }
@@ -658,7 +821,7 @@ bool KleddMemory::WriteBits(std::uint64_t addr, ValueType type, std::uint64_t bi
 
 void KleddMemory::SetBusy(bool busy) {
     first_button->setEnabled(!busy);
-    next_button->setEnabled(!busy && !hits.empty());
+    next_button->setEnabled(!busy && (!hits.empty() || !snapshot.empty()));
     reset_button->setEnabled(!busy);
     cancel_button->setEnabled(busy);
 }
@@ -674,8 +837,16 @@ void KleddMemory::UpdateStatus() {
         return;
     }
     first_button->setEnabled(true);
-    next_button->setEnabled(!hits.empty());
-    if (hits.empty()) {
+    next_button->setEnabled(!hits.empty() || !snapshot.empty());
+    if (hits.empty() && !snapshot.empty()) {
+        std::uint64_t bytes = 0;
+        for (const auto& chunk : snapshot) {
+            bytes += chunk.data.size();
+        }
+        status_label->setText(tr("Snapshot taken (%1 MB). Change the value in game, then Next "
+                                 "scan with Changed / Increased / Decreased.")
+                                  .arg(bytes >> 20));
+    } else if (hits.empty()) {
         status_label->setText(tr("Ready. Main module: %1 (size 0x%2)")
                                   .arg(QStringLiteral("0x%1").arg(
                                       QtCommon::system->GetMainModuleBegin(), 0, 16))
@@ -718,25 +889,31 @@ void KleddMemory::OnFirstScan() {
         }
         p.target_d = AsDouble(p.type, p.target);
         p.tolerance = std::fabs(tolerance_edit->text().toDouble());
-    } else if (p.size > kMaxUnknownRegion) {
-        QMessageBox::warning(
-            this, tr("Kledd Memory"),
-            tr("Unknown-value scans need a region up to 256 MB (use Main or a custom range)."));
-        return;
     }
+    const bool use_snapshot = p.type != ValueType::Bytes && p.mode == FirstUnknown &&
+                              p.size > kMaxUnknownRegion;
+    snapshot.clear();
+    hits.clear();
+    hit_table->setRowCount(0);
     hits_type = p.type;
+    hits_pattern_size = p.pattern.size();
     scan_total = std::max<std::uint64_t>(1, p.size);
     scan_done = 0;
     cancel_flag = false;
     SetBusy(true);
-    status_label->setText(tr("Scanning..."));
-    scan_watcher->setFuture(QtConcurrent::run(
-        [p, this]() { return RunFirstScan(p, &cancel_flag, &scan_done); }));
+    status_label->setText(use_snapshot ? tr("Taking a snapshot...") : tr("Scanning..."));
+    if (use_snapshot) {
+        scan_watcher->setFuture(QtConcurrent::run(
+            [p, this]() { return RunSnapshot(p, &cancel_flag, &scan_done); }));
+    } else {
+        scan_watcher->setFuture(QtConcurrent::run(
+            [p, this]() { return RunFirstScan(p, &cancel_flag, &scan_done); }));
+    }
 }
 
 void KleddMemory::OnNextScan() {
     auto* process = Process();
-    if (!process || hits.empty()) {
+    if (!process || (hits.empty() && snapshot.empty())) {
         return;
     }
     ScanParams p;
@@ -757,12 +934,20 @@ void KleddMemory::OnNextScan() {
         p.target_d = AsDouble(p.type, p.target);
         p.tolerance = std::fabs(tolerance_edit->text().toDouble());
     }
-    p.hits = hits;
-    scan_total = std::max<std::uint64_t>(1, hits.size());
+    p.aligned = aligned_check->isChecked();
     scan_done = 0;
     cancel_flag = false;
     SetBusy(true);
     status_label->setText(tr("Narrowing..."));
+    if (hits.empty()) {
+        p.snapshot = &snapshot;
+        scan_total = std::max<std::uint64_t>(1, snapshot.size());
+        scan_watcher->setFuture(QtConcurrent::run(
+            [p, this]() { return RunSnapshotCompare(p, &cancel_flag, &scan_done); }));
+        return;
+    }
+    p.hits = hits;
+    scan_total = std::max<std::uint64_t>(1, hits.size());
     scan_watcher->setFuture(QtConcurrent::run(
         [p, this]() { return RunNextScan(p, &cancel_flag, &scan_done); }));
 }
@@ -775,6 +960,11 @@ void KleddMemory::OnScanFinished() {
         status_label->setText(tr("Cancelled. Previous results kept."));
         return;
     }
+    if (!r.snapshot.empty()) {
+        snapshot = std::move(r.snapshot);
+    } else {
+        snapshot.clear();
+    }
     hits = std::move(r.hits);
     RefreshHitTable();
     UpdateStatus();
@@ -786,6 +976,7 @@ void KleddMemory::OnScanFinished() {
 
 void KleddMemory::OnReset() {
     hits.clear();
+    snapshot.clear();
     hit_table->setRowCount(0);
     progress->setValue(0);
     UpdateStatus();
@@ -815,12 +1006,90 @@ void KleddMemory::OnHitDoubleClicked(int row, [[maybe_unused]] int column) {
     if (row < 0 || static_cast<std::size_t>(row) >= hits.size()) {
         return;
     }
-    const Hit& h = hits[static_cast<std::size_t>(row)];
-    const ValueType t = hits_type == ValueType::Bytes ? ValueType::U32 : hits_type;
-    watches.push_back({tr("value %1").arg(watches.size() + 1), h.addr, t, false, 0});
+    AddHit(row);
     RefreshWatchTable(true);
+    tabs->setCurrentIndex(1);
+    const Hit& h = hits[static_cast<std::size_t>(row)];
     viewer_addr->setText(QStringLiteral("0x%1").arg(h.addr & ~0xFull, 0, 16));
     RefreshViewer();
+}
+
+void KleddMemory::AddHit(int row) {
+    const Hit& h = hits[static_cast<std::size_t>(row)];
+    if (hits_type == ValueType::Bytes) {
+        // A byte pattern is usually a few floats in a row (a color, a position): watch each one.
+        const std::size_t count = std::clamp<std::size_t>(hits_pattern_size / 4, 1, 4);
+        static const char* const parts[4] = {"x / red", "y / green", "z / blue", "w / alpha"};
+        for (std::size_t i = 0; i < count; ++i) {
+            watches.push_back({tr("result %1: %2").arg(row + 1).arg(QString::fromLatin1(parts[i])),
+                               h.addr + i * 4, ValueType::F32, false, 0, 0, false});
+        }
+    } else {
+        watches.push_back({tr("result %1").arg(row + 1), h.addr, hits_type, false, 0, 0, false});
+    }
+}
+
+std::vector<int> KleddMemory::SelectedRows(QTableWidget* table) const {
+    std::vector<int> rows;
+    for (const auto& index : table->selectionModel()->selectedRows()) {
+        rows.push_back(index.row());
+    }
+    std::sort(rows.begin(), rows.end());
+    return rows;
+}
+
+void KleddMemory::OnAddSelectedHits() {
+    const auto rows = SelectedRows(hit_table);
+    if (rows.empty()) {
+        return;
+    }
+    for (const int row : rows) {
+        if (row >= 0 && static_cast<std::size_t>(row) < hits.size()) {
+            AddHit(row);
+        }
+    }
+    RefreshWatchTable(true);
+    tabs->setCurrentIndex(1);
+    watch_table->selectAll();
+}
+
+void KleddMemory::OnSetSelected() {
+    for (const int row : SelectedRows(watch_table)) {
+        if (row < 0 || static_cast<std::size_t>(row) >= watches.size()) {
+            continue;
+        }
+        Watch& w = watches[static_cast<std::size_t>(row)];
+        std::uint64_t bits = 0;
+        if (!ParseValue(w.type, bulk_value->text(), bits)) {
+            continue;
+        }
+        if (!w.has_saved && ReadBits(w.addr, w.type, w.saved_bits)) {
+            w.has_saved = true;
+        }
+        WriteBits(w.addr, w.type, bits);
+        if (w.frozen) {
+            w.frozen_bits = bits;
+        }
+    }
+    RefreshWatchTable(false);
+}
+
+void KleddMemory::OnRestoreSelected() {
+    for (const int row : SelectedRows(watch_table)) {
+        if (row < 0 || static_cast<std::size_t>(row) >= watches.size()) {
+            continue;
+        }
+        Watch& w = watches[static_cast<std::size_t>(row)];
+        if (!w.has_saved) {
+            continue;
+        }
+        WriteBits(w.addr, w.type, w.saved_bits);
+        if (w.frozen) {
+            w.frozen_bits = w.saved_bits;
+        }
+        w.has_saved = false;
+    }
+    RefreshWatchTable(false);
 }
 
 void KleddMemory::OnAddManual() {
@@ -828,14 +1097,16 @@ void KleddMemory::OnAddManual() {
     if (!ParseAddress(manual_addr->text(), addr)) {
         return;
     }
-    const ValueType t = CurrentType() == ValueType::Bytes ? ValueType::U32 : CurrentType();
-    watches.push_back({tr("value %1").arg(watches.size() + 1), addr, t, false, 0});
+    const auto t = static_cast<ValueType>(add_type_box->currentIndex());
+    watches.push_back({tr("value %1").arg(watches.size() + 1), addr, t, false, 0, 0, false});
     RefreshWatchTable(true);
 }
 
 void KleddMemory::RefreshWatchTable(bool full) {
     updating_watch_table = true;
     if (full) {
+        tabs->setTabText(1, watches.empty() ? tr("2. Watch && edit")
+                                            : tr("2. Watch && edit (%1)").arg(watches.size()));
         watch_table->setRowCount(static_cast<int>(watches.size()));
     }
     for (int r = 0; r < static_cast<int>(watches.size()); ++r) {
@@ -900,11 +1171,15 @@ void KleddMemory::OnWatchCellChanged(int row, int column) {
 }
 
 void KleddMemory::OnRemoveWatch() {
-    const int row = watch_table->currentRow();
-    if (row < 0 || static_cast<std::size_t>(row) >= watches.size()) {
-        return;
+    auto rows = SelectedRows(watch_table);
+    if (rows.empty() && watch_table->currentRow() >= 0) {
+        rows.push_back(watch_table->currentRow());
     }
-    watches.erase(watches.begin() + row);
+    for (auto it = rows.rbegin(); it != rows.rend(); ++it) {
+        if (*it >= 0 && static_cast<std::size_t>(*it) < watches.size()) {
+            watches.erase(watches.begin() + *it);
+        }
+    }
     RefreshWatchTable(true);
 }
 
@@ -1031,7 +1306,7 @@ void KleddMemory::RefreshViewer() {
         std::uint8_t b[16]{};
         const bool ok = process->GetMemory().IsValidVirtualAddressRange(a, 16);
         if (ok) {
-            process->GetMemory().ReadBlock(a, b, 16);
+            process->GetMemory().ReadBlockUnsafe(a, b, 16);
         }
         QString line = QStringLiteral("%1  ").arg(a, 12, 16, QLatin1Char('0'));
         for (int i = 0; i < 16; ++i) {
@@ -1077,6 +1352,9 @@ void KleddMemory::OnTick() {
         if (ReadBits(w.addr, w.type, now) && now != w.frozen_bits) {
             WriteBits(w.addr, w.type, w.frozen_bits);
         }
+    }
+    if (!isVisible()) {
+        return;
     }
     if (tick_count % 6 == 0) {
         RefreshWatchTable(false);

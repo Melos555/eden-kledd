@@ -22,6 +22,7 @@ class QPlainTextEdit;
 class QProgressBar;
 class QPushButton;
 class QTableWidget;
+class QTabWidget;
 class QTimer;
 
 namespace Kernel {
@@ -48,10 +49,18 @@ public:
         ValueType type;
         bool frozen;
         std::uint64_t frozen_bits;
+        std::uint64_t saved_bits = 0;
+        bool has_saved = false;
+    };
+
+    struct Chunk {
+        std::uint64_t base;
+        std::vector<std::uint8_t> data;
     };
 
     struct ScanResult {
         std::vector<Hit> hits;
+        std::vector<Chunk> snapshot;
         bool truncated = false;
         bool cancelled = false;
         QString error;
@@ -67,6 +76,11 @@ private:
     void OnAddManual();
     void OnWatchCellChanged(int row, int column);
     void OnRemoveWatch();
+    void OnAddSelectedHits();
+    void OnSetSelected();
+    void OnRestoreSelected();
+    std::vector<int> SelectedRows(QTableWidget* table) const;
+    void AddHit(int row);
     void OnCopyCheat();
     void OnSaveWatch();
     void OnLoadWatch();
@@ -112,10 +126,16 @@ private:
     QCheckBox* viewer_auto{};
     QPlainTextEdit* viewer{};
     QTimer* tick_timer{};
+    QTabWidget* tabs{};
+    QComboBox* add_type_box{};
+    QLineEdit* bulk_value{};
+    QLabel* tolerance_label{};
 
     // State
     std::vector<Hit> hits;
+    std::vector<Chunk> snapshot;
     ValueType hits_type = ValueType::U32;
+    std::size_t hits_pattern_size = 0;
     std::vector<Watch> watches;
     bool updating_watch_table = false;
     int tick_count = 0;
