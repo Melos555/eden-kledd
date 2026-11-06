@@ -131,6 +131,7 @@ std::vector<std::string> KleddSettingsPairs() {
         fmt::format("Long frame log={}", on(v.kledd_frame_log.GetValue())),
         fmt::format("Audio hold={}", on(v.kledd_audio_hold.GetValue())),
         fmt::format("Resumable cleanup={}", on(v.kledd_resumable_gc.GetValue())),
+        fmt::format("Cheat write fix={}", on(v.kledd_cheat_write_fix.GetValue())),
         "Delta upload=on (locked)",
         "Early buffer release=off (locked)",
         "Async unswizzle=GPU / Normal (locked)",
