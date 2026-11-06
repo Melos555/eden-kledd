@@ -1817,7 +1817,8 @@ bool TextureCache<P>::KleddTryDeltaUpload(Image& image, ImageId image_id) {
     // eden-kledd: a big delta (many groups at once, e.g. after a remap) unswizzled here would
     // stall the GPU thread for hundreds of ms. Sparse images can hand it to the async GPU
     // unswizzle instead, limited to the written groups, and it is spread over frames.
-    constexpr u64 async_delta_min_bytes = 8_MiB;
+    // 16 MiB: the logs show smaller deltas at 0-2 ms on this thread, cheaper than a task
+    constexpr u64 async_delta_min_bytes = 16_MiB;
     const u64 changed_bytes = static_cast<u64>(changed.size()) * watch->group_bytes;
     if (async_unswizzle_mode == Settings::AsyncUnswizzleMode::Gpu &&
         True(image.flags & ImageFlagBits::Sparse) && changed_bytes >= async_delta_min_bytes) {
@@ -2491,8 +2492,46 @@ void TextureCache<P>::TickAsyncUnswizzleGpu(PendingUnswizzle& task, Image& image
         (task.is_sparse && (async_unswizzle_slices_per_batch == 0 || !task.delta_mask.empty()))
             ? task.active_z_end
             : total_slices;
+
+    // eden-kledd: a delta task works one z group at a time and skips the clean groups without
+    // reading them. Before, it read every slice between the first and the last written group in
+    // 128-slice batches, which for groups far apart meant most of a 346 MiB pool per task, on
+    // the GPU thread (the 265-336 ms freezes in the Nov 6 log).
+    const u32 delta_group = (std::max)(1u << task.swizzle_block_depth, 1u);
+    if (!task.delta_mask.empty()) {
+        while (task.last_submitted_slice < effective_end) {
+            const u32 zs = task.last_submitted_slice;
+            const u32 ze = (std::min)(zs + delta_group, effective_end);
+            bool written = false;
+            for (u32 z = zs; z < ze && z < task.slice_has_data.size(); ++z) {
+                written = written || task.slice_has_data[z] != 0;
+            }
+            if (written) {
+                break;
+            }
+            const size_t skip_to = (ze < image.slice_offsets.size())
+                                       ? static_cast<size_t>(image.slice_offsets[ze])
+                                       : active_end_byte;
+            task.last_submitted_slice = ze;
+            task.current_offset = (std::max)(task.current_offset, skip_to);
+            task.current_batch_start_byte = skip_to;
+        }
+        if (task.last_submitted_slice >= effective_end) {
+            runtime.FreeDeferredStagingBuffer(task.staging_buffer);
+            runtime.ReleaseSparseUnswizzleBuffer(image);
+            image.flags &= ~ImageFlagBits::IsDecoding;
+            if (!unswizzle_queue.empty() && unswizzle_queue.front().image_id == task.image_id) {
+                unswizzle_queue.erase(unswizzle_queue.begin());
+            }
+            return;
+        }
+    }
+
     const u32 batch =
-        (async_unswizzle_slices_per_batch == 0 ? effective_end : async_unswizzle_slices_per_batch);
+        !task.delta_mask.empty()
+            ? delta_group
+            : (async_unswizzle_slices_per_batch == 0 ? effective_end
+                                                     : async_unswizzle_slices_per_batch);
 
     const u32 z_start = task.last_submitted_slice;
     const u32 z_want = (std::min)(z_start + batch, effective_end);
