@@ -184,6 +184,8 @@ class TextureCache : public VideoCommon::ChannelSetupCaches<TextureCacheChannelI
         bool is_cpu = false;
         bool cpu_job_in_flight = false;
         bool already_uploaded = false;
+        /// eden-kledd: a delta task re-uploads only the slices marked here (empty = full task)
+        std::vector<u8> delta_mask;
     };
 
     struct BlitImages {

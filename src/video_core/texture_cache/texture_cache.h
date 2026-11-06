@@ -1448,6 +1448,12 @@ void TextureCache<P>::RefreshContents(Image& image, ImageId image_id) {
         kledd_stats.uploads.fetch_add(1, std::memory_order_relaxed);
         return;
     }
+    if (True(image.flags & ImageFlagBits::IsDecoding) && KleddFindWatch(image_id) != nullptr) {
+        // eden-kledd: an upload of this watched image is still running in the background.
+        // Its newer writes stay marked in the watch; refresh again once it is done.
+        image.flags |= ImageFlagBits::CpuModified;
+        return;
+    }
     if (True(image.flags & ImageFlagBits::SparseUpload)) {
         kledd_stats.async_unswizzles.fetch_add(1, std::memory_order_relaxed);
         if ( async_unswizzle_mode == Settings::AsyncUnswizzleMode::Off ) {
@@ -1793,6 +1799,43 @@ bool TextureCache<P>::KleddTryDeltaUpload(Image& image, ImageId image_id) {
     KleddTrackGroups(image_id, image, *watch, true);
     std::fill(watch->dirty.begin(), watch->dirty.end(), 0);
     if (changed.empty()) {
+        return true;
+    }
+
+    // eden-kledd: a big delta (many groups at once, e.g. after a remap) unswizzled here would
+    // stall the GPU thread for hundreds of ms. Sparse images can hand it to the async GPU
+    // unswizzle instead, limited to the written groups, and it is spread over frames.
+    constexpr u64 async_delta_min_bytes = 8_MiB;
+    const u64 changed_bytes = static_cast<u64>(changed.size()) * watch->group_bytes;
+    if (async_unswizzle_mode == Settings::AsyncUnswizzleMode::Gpu &&
+        True(image.flags & ImageFlagBits::Sparse) && changed_bytes >= async_delta_min_bytes) {
+        if (unswizzle_queue.size() >= MAX_ASYNC_UNSWIZZLE_TASKS) {
+            EvictOldestUnswizzleTask();
+        }
+        PendingUnswizzle task{};
+        task.info = image.info;
+        task.image_id = image_id;
+        task.is_cpu = false;
+        task.already_uploaded = true;
+        task.delta_mask.assign(info.size.depth, 0u);
+        for (const u32 group : changed) {
+            const u32 z_start = group * watch->group_slices;
+            const u32 z_end = (std::min)(z_start + watch->group_slices, info.size.depth);
+            for (u32 z = z_start; z < z_end; ++z) {
+                task.delta_mask[z] = 1u;
+            }
+        }
+        image.flags |= ImageFlagBits::IsDecoding;
+        unswizzle_queue.push_back(std::move(task));
+        LOG_INFO(HW_GPU,
+                 "[Kledd] async delta image {:#x} {}x{}x{} fmt {}: {} of {} z groups queued for "
+                 "GPU unswizzle ({} of {} MiB, {} remap events, {} views rebuilt)",
+                 image.gpu_addr, info.size.width, info.size.height, info.size.depth,
+                 static_cast<u32>(info.format), changed.size(), watch->num_groups,
+                 changed_bytes >> 20, guest_bytes >> 20, watch->dirty_by_remap,
+                 watch->views_rebuilt);
+        watch->dirty_by_remap = 0;
+        watch->views_rebuilt = 0;
         return true;
     }
 
@@ -2287,6 +2330,29 @@ void TextureCache<P>::InitSparseUnswizzleTracking(PendingUnswizzle& task, Image&
             task.active_z_end = 0;
         }
     }
+
+    // eden-kledd: a delta task only touches the z groups that were written
+    if (!task.delta_mask.empty()) {
+        u32 first = total_slices_init;
+        u32 last_excl = 0;
+        for (u32 z = 0; z < total_slices_init; ++z) {
+            const bool wanted = z < task.delta_mask.size() && task.delta_mask[z] != 0;
+            task.slice_has_data[z] = (task.slice_has_data[z] != 0 && wanted) ? 1u : 0u;
+            if (wanted) {
+                first = (std::min)(first, z);
+                last_excl = z + 1;
+            }
+        }
+        const u32 align = (std::max)(1u << task.swizzle_block_depth, 1u);
+        if (first < last_excl) {
+            task.active_z_start = (first / align) * align;
+            task.active_z_end =
+                (std::min)(Common::AlignUp(last_excl, align), total_slices_init);
+        } else {
+            task.active_z_start = 0;
+            task.active_z_end = 0;
+        }
+    }
 }
 
 template <class P>
@@ -2409,9 +2475,10 @@ void TextureCache<P>::TickAsyncUnswizzleGpu(PendingUnswizzle& task, Image& image
                                        ? static_cast<size_t>(image.slice_offsets[task.active_z_end]) : task.total_size;
 
     const u32 total_slices = image.info.size.depth;
-    const u32 effective_end = (async_unswizzle_slices_per_batch == 0 && task.is_sparse)
-        ? task.active_z_end
-        : total_slices;
+    const u32 effective_end =
+        (task.is_sparse && (async_unswizzle_slices_per_batch == 0 || !task.delta_mask.empty()))
+            ? task.active_z_end
+            : total_slices;
     const u32 batch =
         (async_unswizzle_slices_per_batch == 0 ? effective_end : async_unswizzle_slices_per_batch);
 
@@ -2559,9 +2626,10 @@ void TextureCache<P>::TickAsyncUnswizzleCpu(PendingUnswizzle& task, Image& image
     }
 
     const u32 total_slices = image.info.size.depth;
-    const u32 effective_end = (async_unswizzle_slices_per_batch == 0 && task.is_sparse)
-        ? task.active_z_end
-        : total_slices;
+    const u32 effective_end =
+        (task.is_sparse && (async_unswizzle_slices_per_batch == 0 || !task.delta_mask.empty()))
+            ? task.active_z_end
+            : total_slices;
     const u32 batch = (async_unswizzle_slices_per_batch == 0)
         ? effective_end
         : async_unswizzle_slices_per_batch;
@@ -3668,6 +3736,12 @@ void TextureCache<P>::CancelPendingUnswizzle(ImageId image_id) {
         texture_unswizzle_worker.WaitForRequests();
     }
     for (auto& task : unswizzle_queue) {
+        if (task.image_id == image_id && !task.delta_mask.empty()) {
+            // eden-kledd: the groups this delta task carried are no longer marked dirty
+            if (KleddWatch* watch = KleddFindWatch(image_id)) {
+                watch->complete = false;
+            }
+        }
         if (task.image_id == image_id && task.initialized) {
             runtime.FreeDeferredStagingBuffer(task.staging_buffer);
             ReleaseCpuChunk(task);
