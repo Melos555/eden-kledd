@@ -279,6 +279,14 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
     INSERT(Settings, kledd_delta_upload, QString(), QString());
     // eden-kledd D preset: locked in code, hidden
     INSERT(Settings, kledd_early_buffer_release, QString(), QString());
+    INSERT(Settings, kledd_audio_hold, tr("[Kledd] Hold audio during stalls (okboomerxd)"),
+           tr("While the game stalls, pause the audio instead of looping a buffer (the loud "
+              "buzz).\nOff: the old behaviour, the buzz comes back. For testing whether the hold "
+              "itself causes hitches or the boot crash."));
+    INSERT(Settings, kledd_resumable_gc, tr("[Kledd] Resumable texture cleanup (John)"),
+           tr("The texture cleanup continues where it stopped on the next frame, so protected "
+              "textures at the front of the list no longer block the rest.\nOff: the 5 s "
+              "cleanup with the old walk. From John's Unified-GC branch."));
     INSERT(Settings, kledd_descriptor_stride_fix,
            tr("[Kledd] Descriptor stride fix (Amicuchu, PR #4549)"),
            tr("Indexes texture handle arrays inside structs by their real stride instead of the "

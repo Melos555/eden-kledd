@@ -673,6 +673,14 @@ struct Values {
     SwitchableSetting<bool> kledd_early_buffer_release{linkage, false,
                                                        "kledd_early_buffer_release",
                                                        Category::RendererHacks};
+    // eden-kledd: okboomerxd's audio hold. While the game is stalled (waiting for the GPU, or late
+    // with its audio updates) the audio pauses instead of looping a buffer (the buzz).
+    SwitchableSetting<bool> kledd_audio_hold{linkage, true, "kledd_audio_hold",
+                                             Category::RendererHacks};
+    // eden-kledd: John's resumable texture cleanup sweep (Unified-GC branch). Off = the 5 s
+    // cleanup with the old walk from the oldest image every frame.
+    SwitchableSetting<bool> kledd_resumable_gc{linkage, true, "kledd_resumable_gc",
+                                               Category::RendererHacks};
     // eden-kledd: descriptor stride fix by Amicuchu (Eden PR #4549), as a toggle for testing
     SwitchableSetting<bool> kledd_descriptor_stride_fix{linkage, true,
                                                         "kledd_descriptor_stride_fix",

@@ -129,6 +129,8 @@ std::vector<std::string> KleddSettingsPairs() {
         fmt::format("Max descriptors={}", v.kledd_descriptor_max.GetValue()),
         fmt::format("GPU BC7={}", on(v.kledd_gpu_bc7.GetValue())),
         fmt::format("Long frame log={}", on(v.kledd_frame_log.GetValue())),
+        fmt::format("Audio hold={}", on(v.kledd_audio_hold.GetValue())),
+        fmt::format("Resumable cleanup={}", on(v.kledd_resumable_gc.GetValue())),
         "Delta upload=on (locked)",
         "Early buffer release=off (locked)",
         "Async unswizzle=GPU / Normal (locked)",

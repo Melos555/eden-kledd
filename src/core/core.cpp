@@ -252,7 +252,9 @@ struct System::Impl {
     }
 
     bool IsApplicationStalled() const {
-        return is_stalled.load(std::memory_order_relaxed);
+        // eden-kledd: switched off, the audio no longer freezes while the guest is stalled
+        return Settings::values.kledd_audio_hold.GetValue() &&
+               is_stalled.load(std::memory_order_relaxed);
     }
 
     void NotifyNVDECChannelOpen(u64 process_id) {

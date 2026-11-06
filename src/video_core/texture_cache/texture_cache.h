@@ -159,10 +159,19 @@ void TextureCache<P>::RunGarbageCollector() {
     // John's resumable sweep: protected images (costly, must-download, still decoding) no
     // longer eat the budget every frame at the head of the list and block the stale images
     // behind them; the sweep continues where it stopped on the next frame.
-    lru_cache.ForEachItemBelowResumable(frame_tick - ticks_to_destroy, Cleanup);
+    // eden-kledd: switched off, the old walk from the oldest image every frame
+    const bool resumable = Settings::values.kledd_resumable_gc.GetValue();
+    const auto sweep = [&] {
+        if (resumable) {
+            lru_cache.ForEachItemBelowResumable(frame_tick - ticks_to_destroy, Cleanup);
+        } else {
+            lru_cache.ForEachItemBelow(frame_tick - ticks_to_destroy, Cleanup);
+        }
+    };
+    sweep();
     if (total_used_memory >= critical_memory) {
         Configure(true);
-        lru_cache.ForEachItemBelowResumable(frame_tick - ticks_to_destroy, Cleanup);
+        sweep();
     }
 }
 

@@ -8,6 +8,7 @@
 #include <chrono>
 #include <span>
 
+#include "common/settings.h"
 #include "audio_core/adsp/apps/audio_renderer/audio_renderer.h"
 #include "audio_core/adsp/apps/audio_renderer/command_buffer.h"
 #include "audio_core/audio_core.h"
@@ -615,7 +616,8 @@ void System::SendCommandToDsp() {
             // audio thread) has fallen behind the DSP. Hardware would render on and loop whatever
             // the game could not refill; hold instead, so the sound pauses and resumes in step
             // with the game. The event is still signalled so the game can catch up.
-            if (remaining_command_count == 0 && num_times_updated > 0) {
+            if (remaining_command_count == 0 && num_times_updated > 0 &&
+                Settings::values.kledd_audio_hold.GetValue()) {
                 const u32 usual_gap{*std::min_element(update_gaps.begin(), update_gaps.end())};
                 const u32 hold_after{(std::max)(4u, usual_gap * 3)};
                 if (frames_since_update >= hold_after) {
