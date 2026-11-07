@@ -287,9 +287,11 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
               "buzz).\nOff: the old behaviour, the buzz comes back. For testing whether the hold "
               "itself causes hitches or the boot crash."));
     INSERT(Settings, kledd_resumable_gc, tr("[Kledd] Resumable texture cleanup (John)"),
-           tr("The texture cleanup continues where it stopped on the next frame, so protected "
-              "textures at the front of the list no longer block the rest.\nOff: the 5 s "
-              "cleanup with the old walk. From John's Unified-GC branch."));
+           tr("Only changes HOW the cleanup walks through old textures, not how long they are "
+              "kept: the 5 s keep time applies either way.\nOn: the walk continues where it "
+              "stopped on the next frame, so textures still in use at the front of the list "
+              "no longer block the rest (more old textures get freed).\nOff: the walk starts at "
+              "the front every frame (stock Eden). From John's Unified-GC branch."));
     INSERT(Settings, kledd_cheat_write_fix, tr("[Kledd] Cheat write fix (Eden PR #4640)"),
            tr("Cheats rewrite their values about 12 times a second. With this on, a write that "
               "changes nothing is skipped, only writes to code make the CPU re-translate it, and cheat "
