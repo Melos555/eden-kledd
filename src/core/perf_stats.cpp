@@ -127,7 +127,8 @@ std::vector<std::string> KleddSettingsPairs() {
         "Keep seconds=5 (locked)",
         fmt::format("Descriptor fix={}", on(v.kledd_descriptor_stride_fix.GetValue())),
         fmt::format("Max descriptors={}", v.kledd_descriptor_max.GetValue()),
-        fmt::format("GPU BC7={}", on(v.kledd_gpu_bc7.GetValue())),
+        fmt::format("GPU BC7={}", on(v.astc_recompression.GetValue() ==
+                                     Settings::AstcRecompression::Bc7)),
         fmt::format("Long frame log={}", on(v.kledd_frame_log.GetValue())),
         fmt::format("Audio hold={}", on(v.kledd_audio_hold.GetValue())),
         fmt::format("Resumable cleanup={}", on(v.kledd_resumable_gc.GetValue())),
