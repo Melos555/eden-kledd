@@ -219,7 +219,10 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
            tr("Most GPUs lack support for ASTC textures and must decompress to an"
               "intermediate format: RGBA8.\n"
               "BC1/BC3: The intermediate format will be recompressed to BC1 or BC3 format,\n"
-              " saving VRAM but degrading image quality."));
+              " saving VRAM but degrading image quality.\n"
+              "BC7 on GPU: same VRAM as BC3, close to the original quality, encoded on the GPU.\n"
+              " Needs ASTC Decoding Method = GPU (otherwise it falls back to the CPU).\n"
+              "BC7 on CPU: same result, but every new area loads for seconds."));
     INSERT(Settings, frame_pacing_mode, tr("Frame Pacing Mode (Vulkan only)"),
            tr("Controls how the emulator manages frame pacing to reduce stuttering and make the "
               "frame rate smoother and more consistent."));
@@ -306,10 +309,8 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
            tr("Enables access to previous buffer states.\nThis option may improve rendering "
               "quality and performance consistency in some games."));
     INSERT(Settings, fix_bloom_effects, tr("Fix bloom effects"), tr("Removes bloom in Burnout."));
-    INSERT(Settings, kledd_gpu_bc7, tr("[Kledd] GPU BC7 encoding"),
-           tr("When ASTC Recompression is BC7 and ASTC Decoding is GPU, decode and re-encode "
-              "textures on the GPU instead of the CPU (no CPU load, no audio crackle).\n"
-              "Experimental, Vulkan only."));
+    // eden-kledd: replaced by "BC7 (GPU)" / "BC7 (CPU, slow)" in ASTC Recompression; kept hidden
+    INSERT(Settings, kledd_gpu_bc7, QString(), QString());
 
     // Renderer (Extensions)
     INSERT(Settings, dyna_state, tr("Extended Dynamic State"),
@@ -430,7 +431,8 @@ std::unique_ptr<ComboboxTranslationMap> ComboboxEnumeration(QObject* parent) {
              PAIR(AstcRecompression, Uncompressed, tr("Uncompressed (Best quality)")),
              PAIR(AstcRecompression, Bc1, tr("BC1 (Low quality)")),
              PAIR(AstcRecompression, Bc3, tr("BC3 (Medium quality)")),
-             PAIR(AstcRecompression, Bc7, tr("[Kledd] BC7 (High quality, slower to load)")),
+             PAIR(AstcRecompression, Bc7, tr("[Kledd] BC7 on GPU (High quality, recommended)")),
+             PAIR(AstcRecompression, Bc7Cpu, tr("[Kledd] BC7 on CPU (High quality, very slow loads)")),
          }});
     translations->insert({Settings::EnumMetadata<Settings::FramePacingMode>::Index(),
                           {

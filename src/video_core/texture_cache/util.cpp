@@ -1151,7 +1151,8 @@ void ConvertImage(std::span<const u8> input, const ImageInfo& info, std::span<u8
             const auto compress =
                 recompression_setting == Settings::AstcRecompression::Bc1
                     ? Tegra::Texture::BCN::CompressBC1
-                    : (recompression_setting == Settings::AstcRecompression::Bc7
+                    : ((recompression_setting == Settings::AstcRecompression::Bc7 ||
+                        recompression_setting == Settings::AstcRecompression::Bc7Cpu)
                            ? Tegra::Texture::BCN::CompressBC7
                            : Tegra::Texture::BCN::CompressBC3);
             const auto bpp_div = recompression_setting == Settings::AstcRecompression::Bc1 ? 2 : 1;
