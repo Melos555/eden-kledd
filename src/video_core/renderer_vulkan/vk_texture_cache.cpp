@@ -156,9 +156,8 @@ constexpr VkBorderColor ConvertBorderColor(const std::array<float, 4>& color) {
         return false;
     }
     const auto recompression = Settings::values.astc_recompression.GetValue();
-    // eden-kledd: BC7 can also take the GPU path (decode + encode on the GPU)
-    const bool gpu_bc7 = recompression == Settings::AstcRecompression::Bc7 &&
-                         Settings::values.kledd_gpu_bc7.GetValue();
+    // eden-kledd: "BC7 (GPU)" decodes and encodes on the GPU; "BC7 (CPU, slow)" never does
+    const bool gpu_bc7 = recompression == Settings::AstcRecompression::Bc7;
     return (recompression == Settings::AstcRecompression::Uncompressed || gpu_bc7) &&
            info.size.depth == 1;
 }
