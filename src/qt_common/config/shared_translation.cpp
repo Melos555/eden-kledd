@@ -249,8 +249,13 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
            tr("Determines the number of depth slices processed in a single dispatch.\n"
               "Increasing this can improve throughput on high-end GPUs but may cause TDR or driver "
               "timeouts on weaker hardware.\nKledd D preset value: Normal (128)."));
-    // eden-kledd D preset: locked in code, hidden
-    INSERT(Settings, async_unswizzle_mode, QString(), QString());
+    // eden-kledd texture-switches test build: adjustable again
+    INSERT(Settings, async_unswizzle_mode, tr("Async Unswizzle Mode"),
+           tr("This option controls how chunked texture uploads are unswizzled.\n"
+              "Off: Disables asynchronous texture unswizzling.\n"
+              "CPU: Uses the CPU for asynchronous unswizzling.\n"
+              "GPU: Accelerates BCn 3D texture decoding using GPU compute (recommended).\n"
+              "Kledd D preset value: GPU. Big delta uploads only use the queue with GPU."));
 
     INSERT(Settings, use_vulkan_driver_pipeline_cache, tr("Use Vulkan pipeline cache"),
            tr("Enables GPU vendor-specific pipeline cache.\nThis option can improve shader loading "

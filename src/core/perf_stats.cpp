@@ -135,7 +135,8 @@ std::vector<std::string> KleddSettingsPairs() {
         fmt::format("Cheat write fix={}", on(v.kledd_cheat_write_fix.GetValue())),
         fmt::format("Delta upload={}", on(v.kledd_delta_upload.GetValue())),
         "Early buffer release=off (locked)",
-        fmt::format("Async unswizzle=GPU (locked) / chunk {}",
+        fmt::format("Async unswizzle={} / chunk {}",
+                    Settings::CanonicalizeEnum(v.async_unswizzle_mode.GetValue()),
                     Settings::CanonicalizeEnum(v.gpu_unswizzle_chunk_size.GetValue())),
         fmt::format("Mouse gyro={}",
                     v.kledd_mouse_gyro.GetValue()

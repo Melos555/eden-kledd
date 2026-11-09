@@ -88,11 +88,13 @@ TextureCache<P>::TextureCache(Runtime& runtime_, Tegra::MaxwellDeviceMemoryManag
         minimum_memory = 0;
     }
 
-    // eden-kledd D preset: async unswizzle locked to GPU. Texture-switches test build: the chunk
-    // size is adjustable again (default Normal = 128 slices, the locked value)
-    async_unswizzle_mode = Settings::AsyncUnswizzleMode::Gpu;
+    // eden-kledd texture-switches test build: async unswizzle mode and chunk size are adjustable
+    // again (defaults GPU / Normal = 128 slices, the D preset's locked values)
+    async_unswizzle_mode = Settings::values.async_unswizzle_mode.GetValue();
 
-    switch (Settings::values.gpu_unswizzle_chunk_size.GetValue()) {
+    if (async_unswizzle_mode == Settings::AsyncUnswizzleMode::Off) {
+        async_unswizzle_slices_per_batch = 0;
+    } else switch (Settings::values.gpu_unswizzle_chunk_size.GetValue()) {
     case Settings::GpuUnswizzleChunk::VeryLow: async_unswizzle_slices_per_batch = 32; break;
     case Settings::GpuUnswizzleChunk::Low:     async_unswizzle_slices_per_batch = 64; break;
     case Settings::GpuUnswizzleChunk::Normal:  async_unswizzle_slices_per_batch = 128; break;
@@ -1836,7 +1838,15 @@ bool TextureCache<P>::KleddTryDeltaUpload(Image& image, ImageId image_id) {
     if (async_unswizzle_mode == Settings::AsyncUnswizzleMode::Gpu &&
         True(image.flags & ImageFlagBits::Sparse) && changed_bytes >= async_delta_min_bytes) {
         if (unswizzle_queue.size() >= MAX_ASYNC_UNSWIZZLE_TASKS) {
-            EvictOldestUnswizzleTask();
+            // eden-kledd: queue full. Don't throw out another texture's job for a delta (that
+            // job's texture then waits black, or a cancelled pool needs a full re-upload).
+            // Put the groups back as written and try again on a later use; the image keeps its
+            // previous contents meanwhile, which is a short stale patch at worst, never black.
+            for (const u32 group : changed) {
+                watch->dirty[group] = 1;
+            }
+            image.flags |= ImageFlagBits::CpuModified;
+            return true;
         }
         PendingUnswizzle task{};
         task.info = image.info;
@@ -2183,7 +2193,18 @@ void TextureCache<P>::EvictOldestUnswizzleTask() {
     if (unswizzle_queue.empty()) {
         return;
     }
-    const ImageId task_image_id = unswizzle_queue.front().image_id;
+    // eden-kledd: never evict a delta task if anything else can go. Cancelling one makes the next
+    // upload of that streamed pool a full one (hundreds of MiB), during which its textures show
+    // black, and that full upload fills the queue again, so one eviction set off the next (black
+    // Samus / boss with delta on). Evict the oldest normal task instead; only a queue made of
+    // nothing but delta tasks gives one up.
+    auto victim = std::ranges::find_if(unswizzle_queue, [](const PendingUnswizzle& task) {
+        return task.delta_mask.empty();
+    });
+    if (victim == unswizzle_queue.end()) {
+        victim = unswizzle_queue.begin();
+    }
+    const ImageId task_image_id = victim->image_id;
     Image& image = slot_images[task_image_id];
     CancelPendingUnswizzle(task_image_id);
     image.flags &= ~ImageFlagBits::IsDecoding;
