@@ -19,16 +19,83 @@
       <widget class="QComboBox" name="kledd_mode">
        <property name="toolTip">
         <string>Off: the mouse doesn't move anything in the game.
-Stick: Eden's original mouse panning, the mouse moves the right stick.
-Gyro, camera: the mouse turns an imaginary motion controller (mouse look). Needs Motion 1 bound to the mouse.
-Gyro, cursor: the mouse's spot on the screen is where the controller points (pointer/cursor schemes). Needs Motion 1 bound to the mouse.
+Mouse to camera: the mouse turns an imaginary motion controller (mouse look). Needs Motion 1 bound to the mouse.
+Mouse to cursor: the mouse's spot on the screen is where the controller points (pointer/cursor schemes). Needs Motion 1 bound to the mouse.
 Ctrl + F9 frees / captures the mouse.</string>
        </property>
        <item><property name="text"><string>Off</string></property></item>
-       <item><property name="text"><string>Mouse to stick (Eden's original mouse panning)</string></property></item>
        <item><property name="text"><string>Mouse to camera (gyro, mouse look)</string></property></item>
        <item><property name="text"><string>Mouse to cursor (gyro, reticle follows the mouse)</string></property></item>
       </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QLabel" name="kledd_question">
+     <property name="alignment"><set>Qt::AlignCenter</set></property>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout">
+     <item>
+      <spacer name="kledd_boxes_left">
+       <property name="orientation"><enum>Qt::Horizontal</enum></property>
+      </spacer>
+     </item>
+     <item>
+      <layout class="QVBoxLayout">
+       <item>
+        <widget class="QLabel" name="kledd_box_x_label">
+         <property name="alignment"><set>Qt::AlignCenter</set></property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QSpinBox" name="kledd_box_x">
+         <property name="alignment"><set>Qt::AlignCenter</set></property>
+        </widget>
+       </item>
+      </layout>
+     </item>
+     <item>
+      <layout class="QVBoxLayout">
+       <item>
+        <widget class="QLabel" name="kledd_box_y_label">
+         <property name="alignment"><set>Qt::AlignCenter</set></property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QSpinBox" name="kledd_box_y">
+         <property name="alignment"><set>Qt::AlignCenter</set></property>
+        </widget>
+       </item>
+      </layout>
+     </item>
+     <item>
+      <spacer name="kledd_boxes_right">
+       <property name="orientation"><enum>Qt::Horizontal</enum></property>
+      </spacer>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QLabel" name="kledd_box_hint">
+     <property name="alignment"><set>Qt::AlignCenter</set></property>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout">
+     <item>
+      <widget class="QLabel" name="kledd_gravity_key_label">
+       <property name="text">
+        <string>Gravity Check key:</string>
+       </property>
+       <property name="toolTip">
+        <string>Levels the imaginary controller and puts the mouse back in the center. Same hotkey as "[Kledd] Gravity Check" in Settings &gt; Hotkeys. Click the box, then press the key.</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QKeySequenceEdit" name="kledd_gravity_key"/>
      </item>
     </layout>
    </item>

@@ -73,6 +73,8 @@ ConfigureHotkeys::ConfigureHotkeys(Core::HID::HIDCore& hid_core, QWidget* parent
 ConfigureHotkeys::~ConfigureHotkeys() = default;
 
 void ConfigureHotkeys::Populate(const HotkeyRegistry& registry) {
+    // eden-kledd: a key left over from a Configure dialog that was cancelled doesn't count
+    kledd_pending_gravity_key.reset();
     for (const auto& group : registry.hotkey_groups) {
         QString parent_item_data = QString::fromStdString(group.first);
         auto* parent_item =
@@ -344,13 +346,22 @@ void ConfigureHotkeys::ApplyConfiguration(HotkeyRegistry& registry) {
                     if (action_name != action->data().toString().toStdString())
                         continue;
                     hotkey.keyseq = QKeySequence(keyseq->text());
+                    // eden-kledd: a Gravity Check key set in Configure mouse panning wins
+                    if (kledd_pending_gravity_key && action_name == "[Kledd] Gravity Check") {
+                        hotkey.keyseq = *kledd_pending_gravity_key;
+                    }
                     hotkey.controller_keyseq = controller_keyseq->text().toStdString();
                 }
             }
         }
     }
+    kledd_pending_gravity_key.reset();
 
     registry.SaveHotkeys();
+}
+
+void ConfigureHotkeys::KleddSetPendingGravityKey(const QKeySequence& key) {
+    kledd_pending_gravity_key = key;
 }
 
 void ConfigureHotkeys::RestoreDefaults() {

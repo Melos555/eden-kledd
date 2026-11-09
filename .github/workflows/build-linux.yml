@@ -1,7 +1,8 @@
 name: Build Eden (Linux)
 
+# Linux only builds on request (Actions > Build Eden (Linux) > Run workflow, pick the branch),
+# so pushes only start the Windows build; run it here once a Windows build is confirmed
 on:
-  push:
   workflow_dispatch:
 
 permissions:
