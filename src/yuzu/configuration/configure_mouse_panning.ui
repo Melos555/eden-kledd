@@ -148,7 +148,7 @@
       <string>[Kledd] Mouse gyro: while ZL (lock-on) is held, the mouse moves the right stick</string>
      </property>
      <property name="toolTip">
-      <string>Camera mode only. Some games stop reading motion while locked on and only let the right stick nudge the aim (Metroid Prime 4&apos;s lock-on targets). While ZL is held, mouse movement pushes the right stick instead, and the gyro holds still; let go and it is the gyro again. For the map and other screens that ignore motion, use the [Kledd] Mouse Drives the Stick hotkey.</string>
+      <string>Camera mode only. Some games stop reading motion while locked on and only let the right stick nudge the aim (Metroid Prime 4&apos;s lock-on targets). While ZL is held, the mouse moves the right stick like a cursor inside the stick's circle: the stick goes where the mouse goes and stays there when the mouse stops. The gyro holds still meanwhile. Let go of ZL and the stick returns to center and the mouse is the gyro again. For the map and other screens that ignore motion, use the [Kledd] Mouse Drives the Stick hotkey.</string>
      </property>
     </widget>
    </item>
@@ -157,7 +157,7 @@
      <item>
       <widget class="QLabel" name="kledd_mouse_stick_sensitivity_label">
        <property name="text">
-        <string>[Kledd] Stick sensitivity while the mouse drives the stick (ZL held or hotkey)</string>
+        <string>[Kledd] Stick sensitivity while the mouse drives the stick (50% = 100 px from center to edge)</string>
        </property>
       </widget>
      </item>

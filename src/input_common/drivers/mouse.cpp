@@ -120,15 +120,16 @@ void Mouse::UpdateStickInput(Common::SteadyClock::time_point timestamp) {
             Common::KleddMouseGyro::stick_override_active.store(false);
         }
 
+        // eden-kledd: the handed-over stick holds its position like a cursor (no decay)
+        if (kledd_gyro) {
+            return;
+        }
+
         // Decay input over time
         const float clamped_length = (std::min)(1.0f, length);
-        // eden-kledd: the stick decay boxes are usually zeroed for the gyro, so the handed-over
-        // stick uses Eden's defaults (otherwise it would stay pushed after the mouse stops)
-        const float decay_strength =
-            kledd_gyro ? 18.0f : Settings::values.mouse_panning_decay_strength.GetValue();
+        const float decay_strength = Settings::values.mouse_panning_decay_strength.GetValue();
         const float decay = 1 - clamped_length * clamped_length * decay_strength * 0.01f;
-        const float min_decay =
-            kledd_gyro ? 6.0f : Settings::values.mouse_panning_min_decay.GetValue();
+        const float min_decay = Settings::values.mouse_panning_min_decay.GetValue();
         const float clamped_decay = (std::min)(1 - min_decay / 100.0f, decay);
         last_mouse_change *= clamped_decay;
     }
@@ -438,19 +439,20 @@ void Mouse::Move(int x, int y, int center_x, int center_y) {
                 return;
             }
             if (KleddStickMode()) {
-                // eden-kledd: ZL held (lock-on) or stick toggle: the mouse pushes the right stick
-                // like stock mouse panning, with its own sensitivity (the gyro holds still)
-                const float stick_sensitivity =
-                    Settings::values.kledd_mouse_stick_sensitivity.GetValue() *
-                    default_panning_sensitivity;
-                last_mouse_change[0] += mouse_change[0] * stick_sensitivity;
-                last_mouse_change[1] += mouse_change[1] * stick_sensitivity;
-                // Stock deadzone counterweight at its default (20%), so small pokes register
-                constexpr float stick_deadzone_cw = 20.0f * default_deadzone_counterweight;
+                // eden-kledd: ZL held (lock-on) or stick toggle: the mouse moves the right stick
+                // like a cursor inside the stick's circle. The stick goes where the mouse goes
+                // and stays there when the mouse stops (no spring back); it returns to center
+                // when ZL is released / the toggle is switched off. The gyro holds still.
+                // Sensitivity: full tilt after 5000 / sensitivity% pixels (50% = 100 px).
+                const float per_pixel =
+                    Settings::values.kledd_mouse_stick_sensitivity.GetValue() / 5000.0f;
+                last_mouse_change[0] += mouse_change[0] * per_pixel;
+                last_mouse_change[1] += mouse_change[1] * per_pixel;
+                // The edge is a hard stop: overshooting doesn't pile up, so moving back
+                // responds immediately
                 const float length = last_mouse_change.Length();
-                if (length < stick_deadzone_cw && length != 0.0f) {
+                if (length > 1.0f) {
                     last_mouse_change /= length;
-                    last_mouse_change *= stick_deadzone_cw;
                 }
                 return;
             }
