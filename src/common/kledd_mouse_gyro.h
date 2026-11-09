@@ -17,6 +17,8 @@ inline std::atomic<float> tracked_pitch_deg{0.0f};
 inline std::atomic<float> tracked_yaw_deg{0.0f};
 /// Set by hid_core: ZL (lock-on in Metroid Prime) is held on the connected controller
 inline std::atomic<bool> zl_held{false};
+/// Set by hid_core when R (Metroid Prime 4's gyro re-center) is pressed on the connected controller
+inline std::atomic<bool> r_recenter_request{false};
 /// Set by the mouse driver: the mouse drives the right stick (ZL held / toggle) with this value
 /// (-1..1 each axis, up = +y); hid_core puts it on the right stick whatever it is bound to
 inline std::atomic<bool> stick_override_active{false};

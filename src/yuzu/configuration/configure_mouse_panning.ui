@@ -143,6 +143,16 @@
     </widget>
    </item>
    <item>
+    <widget class="QCheckBox" name="kledd_mouse_gyro_r_recenter">
+     <property name="text">
+      <string>[Kledd] Mouse gyro: R (the game&apos;s gyro re-center) also does a Gravity Check</string>
+     </property>
+     <property name="toolTip">
+      <string>Metroid Prime 4 re-centers its reticle when you press R, but it doesn&apos;t know about the mouse, so in cursor mode the two drift apart. With this on, pressing R also puts the mouse and the imaginary controller back in the center (same as the Gravity Check hotkey). Turn it off for games where R does something else.</string>
+     </property>
+    </widget>
+   </item>
+   <item>
     <widget class="QCheckBox" name="kledd_mouse_gyro_zl_stick">
      <property name="text">
       <string>[Kledd] Mouse gyro: while ZL (lock-on) is held, the mouse moves the right stick</string>

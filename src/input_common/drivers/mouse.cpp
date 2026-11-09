@@ -145,6 +145,10 @@ constexpr float kledd_gyro_pitch_limit = 75.0f;
 constexpr float kledd_calib_min_deg = 3.0f;
 
 void Mouse::UpdateMotionInput(Common::SteadyClock::time_point timestamp) {
+    // eden-kledd: R pressed (Metroid Prime 4's own gyro re-center). Taken here every update so a
+    // press while the mouse gyro is inactive doesn't fire later.
+    const bool kledd_r_pressed = Common::KleddMouseGyro::r_recenter_request.exchange(false);
+
     // eden-kledd: mouse gyro while the mouse is freed (Ctrl+F9), or while the mouse drives the
     // right stick (ZL held / toggle): hold the imaginary controller perfectly still where it is,
     // instead of falling back to stock drag-to-tilt motion
@@ -268,6 +272,12 @@ void Mouse::UpdateMotionInput(Common::SteadyClock::time_point timestamp) {
         const bool probe = Settings::values.kledd_mouse_gyro_probe.GetValue();
         bool resync = false;
 
+        // The game re-centers its reticle on R; do a Gravity Check with it so the mouse/aim and
+        // the game's reticle start from the same center again (not during the calibration)
+        if (kledd_r_pressed && Settings::values.kledd_mouse_gyro_r_recenter.GetValue() &&
+            kledd_calib_step.load() == 0) {
+            kledd_gravity_check_pending.store(true);
+        }
         // Gravity Check (hotkey): level the imaginary controller and snap Eden's orientation to
         // it. Only the up/down tilt is reset; left/right stays where it is.
         if (kledd_gravity_check_pending.exchange(false)) {

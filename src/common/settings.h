@@ -914,6 +914,10 @@ struct Values {
     // (an automatic Gravity Check), so turning speed doesn't depend on where you look
     Setting<bool> kledd_mouse_gyro_tilt_resync{linkage, true, "kledd_mouse_gyro_tilt_resync",
                                                Category::Controls};
+    // eden-kledd: pressing R (the game's own gyro re-center in Metroid Prime 4) also does a
+    // Gravity Check, so the mouse/aim and the game's reticle re-center together
+    Setting<bool> kledd_mouse_gyro_r_recenter{linkage, true, "kledd_mouse_gyro_r_recenter",
+                                              Category::Controls};
     // eden-kledd: camera (relative) mouse gyro: while ZL (lock-on) is held, the mouse drives the
     // right stick instead of the gyro (games that ignore motion while locked on)
     Setting<bool> kledd_mouse_gyro_zl_stick{linkage, true, "kledd_mouse_gyro_zl_stick",

@@ -857,6 +857,10 @@ void EmulatedController::SetButton(const Common::Input::CallbackStatus& callback
     case Settings::NativeButton::R:
         controller.npad_button_state.r.Assign(current_status.value);
         controller.debug_pad_button_state.r.Assign(current_status.value);
+        // eden-kledd: R is Metroid Prime 4's gyro re-center; the mouse gyro re-centers with it
+        if (is_connected && current_status.value) {
+            Common::KleddMouseGyro::r_recenter_request.store(true);
+        }
         break;
     case Settings::NativeButton::ZL:
         controller.npad_button_state.zl.Assign(current_status.value);
