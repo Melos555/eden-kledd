@@ -84,6 +84,7 @@
 #include <QProgressDialog>
 #include <QScreen>
 #include <QShortcut>
+#include <QLabel>
 #include <QApplication>
 #include <QSignalBlocker>
 #include <QStatusBar>
@@ -1394,44 +1395,61 @@ void MainWindow::InitializeHotkeys() {
             0);
     });
     connect_shortcut(QStringLiteral("[Kledd] Gravity Check"), [&] {
-        input_subsystem->GetMouse()->KleddRequestGravityCheck();
-        statusBar()->showMessage(tr("[Kledd] Gravity Check"), 1500);
+        auto* mouse = input_subsystem->GetMouse();
+        // During the edge calibration, Gravity Check cancels it (old values are kept)
+        if (mouse->KleddCalibrateCancel()) {
+            KleddShowOsd(tr("Calibration cancelled: your old values are kept"), 3000);
+            statusBar()->showMessage(tr("[Kledd] Calibration cancelled"), 3000);
+        } else {
+            statusBar()->showMessage(tr("[Kledd] Gravity Check"), 1500);
+        }
+        mouse->KleddRequestGravityCheck();
     });
     connect_shortcut(QStringLiteral("[Kledd] Mouse Drives the Stick (On or Off)"), [&] {
         const bool on = input_subsystem->GetMouse()->KleddToggleStick();
-        statusBar()->showMessage(on ? tr("[Kledd] Mouse drives the right stick")
-                                    : tr("[Kledd] Mouse drives the gyro again"),
-                                 on ? 0 : 2000);
+        const QString text = on ? tr("Mouse drives the right stick (press again to go back)")
+                                : tr("Mouse drives the gyro again");
+        KleddShowOsd(text, on ? 2500 : 1500);
+        statusBar()->showMessage(QStringLiteral("[Kledd] ") + text, on ? 0 : 2000);
     });
     connect_shortcut(QStringLiteral("[Kledd] Calibrate Cursor Edges"), [&] {
-        switch (input_subsystem->GetMouse()->KleddCalibrateStep()) {
+        auto* mouse = input_subsystem->GetMouse();
+        const QString cancel_hint = tr("(Gravity Check cancels)");
+        QString text;
+        int timeout_ms = 0;
+        switch (mouse->KleddCalibrateStep()) {
         case -1:
-            statusBar()->showMessage(
-                tr("[Kledd] Calibration is for cursor mode: turn on \"Mouse gyro: absolute\" in "
-                   "Configure mouse panning first"),
-                6000);
+            text = tr("Calibration is for cursor mode: turn on \"Mouse gyro: absolute\" in "
+                      "Configure mouse panning first");
+            timeout_ms = 6000;
             break;
         case 1:
-            statusBar()->showMessage(
-                tr("[Kledd] Calibration 1/2: move the game's reticle exactly onto the RIGHT edge "
-                   "of the picture, then press the calibration hotkey again"),
-                0);
+            text = tr("CALIBRATION 1/2\nMove the game's reticle onto the RIGHT edge of the "
+                      "picture, then press the calibration key\n%1")
+                       .arg(cancel_hint);
             break;
         case 2:
-            statusBar()->showMessage(
-                tr("[Kledd] Calibration 2/2: now move the reticle exactly onto the TOP edge of the "
-                   "picture, then press again"),
-                0);
+            text = tr("CALIBRATION 2/2  (side: %1°)\nNow move the reticle onto the TOP edge "
+                      "of the picture, then press the calibration key\n%2")
+                       .arg(mouse->KleddCalibratePendingX())
+                       .arg(cancel_hint);
+            break;
+        case 4:
+            text = tr("Not at the edge yet: the reticle has barely moved.\nMove it all the way to "
+                      "the edge, then press the calibration key\n%1")
+                       .arg(cancel_hint);
             break;
         default:
             config->SaveAllValues();
-            statusBar()->showMessage(
-                tr("[Kledd] Calibrated: side edges %1°, top/bottom edges %2° (saved)")
-                    .arg(static_cast<int>(Settings::values.kledd_mouse_gyro_abs_range_x.GetValue()))
-                    .arg(static_cast<int>(Settings::values.kledd_mouse_gyro_abs_range_y.GetValue())),
-                8000);
+            text = tr("CALIBRATION DONE\nSide edges %1°, top/bottom edges %2° (saved)")
+                       .arg(static_cast<int>(Settings::values.kledd_mouse_gyro_abs_range_x.GetValue()))
+                       .arg(static_cast<int>(Settings::values.kledd_mouse_gyro_abs_range_y.GetValue()));
+            timeout_ms = 5000;
             break;
         }
+        KleddShowOsd(text, timeout_ms);
+        statusBar()->showMessage(QStringLiteral("[Kledd] ") + QString(text).replace(u'\n', u' '),
+                                 timeout_ms);
     });
     connect_shortcut(QStringLiteral("Toggle Mouse Panning"), [&] {
         Settings::values.mouse_panning = !Settings::values.mouse_panning;
@@ -3238,6 +3256,39 @@ bool MainWindow::ConfirmShutdownGame() {
         }
     }
     return true;
+}
+
+void MainWindow::KleddShowOsd(const QString& text, int timeout_ms) {
+    // A small frameless window floating over the game (like the performance overlay), so it shows
+    // in fullscreen too; clicks and the mouse go straight through it to the game
+    if (!kledd_osd) {
+        kledd_osd = new QLabel(this);
+        kledd_osd->setWindowFlags(Qt::FramelessWindowHint | Qt::Tool | Qt::WindowStaysOnTopHint |
+                                  Qt::WindowTransparentForInput | Qt::WindowDoesNotAcceptFocus);
+        kledd_osd->setAttribute(Qt::WA_ShowWithoutActivating);
+        kledd_osd->setAttribute(Qt::WA_TranslucentBackground);
+        kledd_osd->setAlignment(Qt::AlignCenter);
+        kledd_osd->setStyleSheet(QStringLiteral(
+            "QLabel { background-color: rgba(10, 12, 16, 215); color: white;"
+            " border: 2px solid #3ddc84; border-radius: 10px; padding: 12px 20px;"
+            " font-size: 17px; font-weight: 600; }"));
+        kledd_osd_timer.setSingleShot(true);
+        connect(&kledd_osd_timer, &QTimer::timeout, kledd_osd, &QLabel::hide);
+    }
+    kledd_osd->setText(text);
+    kledd_osd->adjustSize();
+    QWidget* anchor = (render_window && render_window->isVisible())
+                          ? static_cast<QWidget*>(render_window)
+                          : static_cast<QWidget*>(this);
+    const QPoint top_center = anchor->mapToGlobal(QPoint{anchor->width() / 2, 0});
+    kledd_osd->move(top_center.x() - kledd_osd->width() / 2, top_center.y() + 60);
+    kledd_osd->show();
+    kledd_osd->raise();
+    if (timeout_ms > 0) {
+        kledd_osd_timer.start(timeout_ms);
+    } else {
+        kledd_osd_timer.stop();
+    }
 }
 
 void MainWindow::OnLoadComplete() {

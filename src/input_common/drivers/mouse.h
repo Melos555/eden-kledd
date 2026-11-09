@@ -107,10 +107,16 @@ public:
     /// eden-kledd: toggle "mouse drives the right stick" (e.g. for menus/maps that ignore motion)
     /// @return the new state
     bool KleddToggleStick();
-    /// eden-kledd: next step of the absolute-mode edge calibration.
+    /// eden-kledd: next step of the absolute-mode edge calibration. The settings only change
+    /// when both edges are measured.
     /// @return -1 = absolute mode is off, 1 = started (reticle to the right edge next),
-    ///         2 = side recorded (reticle to the top edge next), 3 = done and saved to settings
+    ///         2 = side measured (reticle to the top edge next), 3 = done and saved to settings,
+    ///         4 = the reticle has barely moved: not at the edge yet, same step again
     int KleddCalibrateStep();
+    /// eden-kledd: cancel a running calibration (old values stay). @return true if one was running
+    bool KleddCalibrateCancel();
+    /// eden-kledd: the side value measured in step 1 of the calibration (degrees)
+    int KleddCalibratePendingX() const;
 
     /// @brief Notifies we changed something about the mouse state and we must update
     void NotifyChanged();
@@ -156,6 +162,10 @@ private:
     bool kledd_stick_active = false;
     // 0 = not calibrating, 1 = waiting for the right edge, 2 = waiting for the top edge
     std::atomic<int> kledd_calib_step{0};
+    // temporary ranges used while calibrating, and the side value measured in step 1
+    std::atomic<float> kledd_calib_range_x{60.0f};
+    std::atomic<float> kledd_calib_range_y{40.0f};
+    int kledd_calib_pending_x = 0;
     // up/down tilt at the last re-sync, for the automatic tilt re-sync
     float kledd_last_resync_pitch{};
     Common::SteadyClock::time_point kledd_last_tilt_resync{};

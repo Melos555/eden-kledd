@@ -141,9 +141,8 @@ constexpr float kledd_gyro_degrees_per_pixel = 0.1f;
 constexpr float kledd_gyro_max_rps = 4.9f;
 // eden-kledd: maximum up/down tilt of the virtual controller (degrees from where it started)
 constexpr float kledd_gyro_pitch_limit = 75.0f;
-// eden-kledd: absolute-mode calibration ranges (just under the settings' 90/75 maximums)
-constexpr float kledd_calib_range_x = 80.0f;
-constexpr float kledd_calib_range_y = 60.0f;
+// eden-kledd: a calibration press that measures less than this hasn't reached the edge yet
+constexpr float kledd_calib_min_deg = 3.0f;
 
 void Mouse::UpdateMotionInput(Common::SteadyClock::time_point timestamp) {
     // eden-kledd: mouse gyro while the mouse is freed (Ctrl+F9), or while the mouse drives the
@@ -188,11 +187,11 @@ void Mouse::UpdateMotionInput(Common::SteadyClock::time_point timestamp) {
             // well before the cursor does; the angle at which it gets there is what's measured
             const bool calibrating = kledd_calib_step.load() != 0;
             const float range_x =
-                calibrating ? kledd_calib_range_x
+                calibrating ? kledd_calib_range_x.load()
                             : static_cast<float>(
                                   Settings::values.kledd_mouse_gyro_abs_range_x.GetValue());
             const float range_y =
-                calibrating ? kledd_calib_range_y
+                calibrating ? kledd_calib_range_y.load()
                             : static_cast<float>(
                                   Settings::values.kledd_mouse_gyro_abs_range_y.GetValue());
             const float target_yaw = -kledd_abs_pos[0] * range_x;
@@ -584,21 +583,38 @@ int Mouse::KleddCalibrateStep() {
         return -1;
     }
     switch (kledd_calib_step.load()) {
-    case 0:
-        // Start: wide ranges, aim and cursor back to the center (same as Gravity Check)
+    case 0: {
+        // Start: temporary ranges about 3x the current ones (so the reticle can surely reach the
+        // edges, without racing far ahead of the mouse), aim and cursor back to the center
+        const float cur_x =
+            static_cast<float>(Settings::values.kledd_mouse_gyro_abs_range_x.GetValue());
+        const float cur_y =
+            static_cast<float>(Settings::values.kledd_mouse_gyro_abs_range_y.GetValue());
+        kledd_calib_range_x.store(std::clamp(cur_x * 3.0f, 30.0f, 80.0f));
+        kledd_calib_range_y.store(std::clamp(cur_y * 3.0f, 20.0f, 60.0f));
+        kledd_calib_pending_x = 0;
         kledd_calib_step.store(1);
         KleddRequestGravityCheck();
         return 1;
+    }
     case 1: {
         // The reticle sits on the right (or left) edge: the turn needed to get there is the range
         const float yaw = std::abs(Common::KleddMouseGyro::tracked_yaw_deg.load());
-        Settings::values.kledd_mouse_gyro_abs_range_x.SetValue(
-            static_cast<u8>(std::clamp<long>(std::lround(yaw), 1, 90)));
+        if (yaw < kledd_calib_min_deg) {
+            return 4;
+        }
+        kledd_calib_pending_x = static_cast<int>(std::clamp<long>(std::lround(yaw), 1, 90));
         kledd_calib_step.store(2);
         return 2;
     }
     default: {
         const float pitch = std::abs(Common::KleddMouseGyro::tracked_pitch_deg.load());
+        if (pitch < kledd_calib_min_deg) {
+            return 4;
+        }
+        // Both edges measured: only now the settings change
+        Settings::values.kledd_mouse_gyro_abs_range_x.SetValue(
+            static_cast<u8>(kledd_calib_pending_x));
         Settings::values.kledd_mouse_gyro_abs_range_y.SetValue(
             static_cast<u8>(std::clamp<long>(std::lround(pitch), 1, 75)));
         kledd_calib_step.store(0);
@@ -607,6 +623,14 @@ int Mouse::KleddCalibrateStep() {
         return 3;
     }
     }
+}
+
+bool Mouse::KleddCalibrateCancel() {
+    return kledd_calib_step.exchange(0) != 0;
+}
+
+int Mouse::KleddCalibratePendingX() const {
+    return kledd_calib_pending_x;
 }
 
 void Mouse::ReleaseAllButtons() {

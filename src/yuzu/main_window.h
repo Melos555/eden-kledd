@@ -507,6 +507,11 @@ private:
     QTimer shutdown_timer;
     OverlayDialog* shutdown_dialog{};
     PerformanceOverlay* perf_overlay = nullptr;
+    // eden-kledd: on-screen message over the game (also in fullscreen), e.g. calibration steps
+    QLabel* kledd_osd = nullptr;
+    QTimer kledd_osd_timer;
+    /// eden-kledd: show text over the top of the game picture; timeout_ms 0 = until replaced
+    void KleddShowOsd(const QString& text, int timeout_ms);
 #ifdef HAS_RESHADE
     ConfigurePostProcessing* post_processing_dialog = nullptr;
 #endif
