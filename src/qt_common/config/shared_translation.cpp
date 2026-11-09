@@ -244,8 +244,11 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
     INSERT(Settings, gpu_clock, tr("GPU Clocks"),
            tr("Makes the game believe GPU work finishes faster than it does, so it stops lowering "
               "resolution and render distance to fit the Switch's clocks."));
-    // eden-kledd D preset: locked in code, hidden
-    INSERT(Settings, gpu_unswizzle_chunk_size, QString(), QString());
+    // eden-kledd texture-switches test build: adjustable again
+    INSERT(Settings, gpu_unswizzle_chunk_size, tr("Async Unswizzle Chunk Size"),
+           tr("Determines the number of depth slices processed in a single dispatch.\n"
+              "Increasing this can improve throughput on high-end GPUs but may cause TDR or driver "
+              "timeouts on weaker hardware.\nKledd D preset value: Normal (128)."));
     // eden-kledd D preset: locked in code, hidden
     INSERT(Settings, async_unswizzle_mode, QString(), QString());
 
@@ -278,8 +281,11 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
     INSERT(Settings, kledd_gentle_gc, tr("[Kledd] Gentle texture cleanup"),
            tr("When texture memory is high, only delete textures that have not been used for a "
               "few seconds, instead of a few frames.\nExperimental: may use more VRAM."));
-    // eden-kledd D preset: locked in code, hidden
-    INSERT(Settings, kledd_delta_upload, QString(), QString());
+    // eden-kledd texture-switches test build: switchable again
+    INSERT(Settings, kledd_delta_upload, tr("[Kledd] Delta texture upload (okboomerxd)"),
+           tr("For huge streamed textures, upload only the parts the game changed.\n"
+              "Off: big textures always go through the full upload path (and the async "
+              "unswizzle), like builds before Nov 1.\nTakes effect after restarting the game."));
     // eden-kledd D preset: locked in code, hidden
     INSERT(Settings, kledd_early_buffer_release, QString(), QString());
     INSERT(Settings, kledd_audio_hold, tr("[Kledd] Hold audio during stalls (okboomerxd)"),

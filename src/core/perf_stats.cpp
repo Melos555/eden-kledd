@@ -133,9 +133,10 @@ std::vector<std::string> KleddSettingsPairs() {
         fmt::format("Audio hold={}", on(v.kledd_audio_hold.GetValue())),
         fmt::format("Resumable cleanup={}", on(v.kledd_resumable_gc.GetValue())),
         fmt::format("Cheat write fix={}", on(v.kledd_cheat_write_fix.GetValue())),
-        "Delta upload=on (locked)",
+        fmt::format("Delta upload={}", on(v.kledd_delta_upload.GetValue())),
         "Early buffer release=off (locked)",
-        "Async unswizzle=GPU / Normal (locked)",
+        fmt::format("Async unswizzle=GPU (locked) / chunk {}",
+                    Settings::CanonicalizeEnum(v.gpu_unswizzle_chunk_size.GetValue())),
         fmt::format("Mouse gyro={}",
                     v.kledd_mouse_gyro.GetValue()
                         ? fmt::format("on (yaw {}, smoothing {}, gravity {})",
