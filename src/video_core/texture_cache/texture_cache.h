@@ -2238,18 +2238,12 @@ void TextureCache<P>::TickAsyncUnswizzle() {
 
     do {
         PendingUnswizzle& task = unswizzle_queue.front();
-        const ImageId task_image_id = task.image_id;
         Image& image = slot_images[task.image_id];
 
         if (task.is_cpu) {
             TickAsyncUnswizzleCpu(task, image);
         } else {
             TickAsyncUnswizzleGpu(task, image);
-        }
-
-        if (!unswizzle_queue.empty() && unswizzle_queue.front().image_id == task_image_id) {
-            std::rotate(unswizzle_queue.begin(), unswizzle_queue.begin() + 1,
-                        unswizzle_queue.end());
         }
     } while (!unswizzle_queue.empty() &&
              Common::SteadyClock::Now() < frame_deadline);
