@@ -30,7 +30,7 @@ namespace UISettings {
 // This must be in alphabetical order according to action name as it must have the same order as
 // UISetting::values.shortcuts, which is alphabetically ordered.
 // clang-format off
-const std::array<Shortcut, 36> default_hotkeys{{
+const std::array<Shortcut, 38> default_hotkeys{{
     {QStringLiteral(QT_TRANSLATE_NOOP("Hotkeys", "Audio Mute/Unmute")).toStdString(),          QStringLiteral(QT_TRANSLATE_NOOP("Hotkeys", "Main Window")).toStdString(), {std::string("Ctrl+M"),  std::string("Home+Dpad_Right"), Qt::WindowShortcut, false}},
     {QStringLiteral(QT_TRANSLATE_NOOP("Hotkeys", "Audio Volume Down")).toStdString(),          QStringLiteral(QT_TRANSLATE_NOOP("Hotkeys", "Main Window")).toStdString(), {std::string("-"),       std::string("Home+Dpad_Down"), Qt::ApplicationShortcut, true}},
     {QStringLiteral(QT_TRANSLATE_NOOP("Hotkeys", "Audio Volume Up")).toStdString(),            QStringLiteral(QT_TRANSLATE_NOOP("Hotkeys", "Main Window")).toStdString(), {std::string("="),       std::string("Home+Dpad_Up"), Qt::ApplicationShortcut, true}},
@@ -62,6 +62,8 @@ const std::array<Shortcut, 36> default_hotkeys{{
     {QStringLiteral(QT_TRANSLATE_NOOP("Hotkeys", "Toggle Slow Speed")).toStdString(),          QStringLiteral(QT_TRANSLATE_NOOP("Hotkeys", "Main Window")).toStdString(), {std::string("Ctrl+X"),  std::string(""), Qt::ApplicationShortcut, false}},
     {QStringLiteral(QT_TRANSLATE_NOOP("Hotkeys", "Toggle Mouse Panning")).toStdString(),       QStringLiteral(QT_TRANSLATE_NOOP("Hotkeys", "Main Window")).toStdString(), {std::string("Ctrl+F9"), std::string(""), Qt::ApplicationShortcut, false}},
     {QStringLiteral(QT_TRANSLATE_NOOP("Hotkeys", "[Kledd] Gravity Check")).toStdString(),       QStringLiteral(QT_TRANSLATE_NOOP("Hotkeys", "Main Window")).toStdString(), {std::string(""), std::string(""), Qt::ApplicationShortcut, false}},
+    {QStringLiteral(QT_TRANSLATE_NOOP("Hotkeys", "[Kledd] Mouse Drives the Stick (On or Off)")).toStdString(), QStringLiteral(QT_TRANSLATE_NOOP("Hotkeys", "Main Window")).toStdString(), {std::string(""), std::string(""), Qt::ApplicationShortcut, false}},
+    {QStringLiteral(QT_TRANSLATE_NOOP("Hotkeys", "[Kledd] Calibrate Cursor Edges")).toStdString(), QStringLiteral(QT_TRANSLATE_NOOP("Hotkeys", "Main Window")).toStdString(), {std::string(""), std::string(""), Qt::ApplicationShortcut, false}},
     {QStringLiteral(QT_TRANSLATE_NOOP("Hotkeys", "Toggle Renderdoc Capture")).toStdString(),   QStringLiteral(QT_TRANSLATE_NOOP("Hotkeys", "Main Window")).toStdString(), {std::string(""),        std::string(""), Qt::ApplicationShortcut, false}},
     {QStringLiteral(QT_TRANSLATE_NOOP("Hotkeys", "[Kledd] Frame Recorder (On or Off)")).toStdString(), QStringLiteral(QT_TRANSLATE_NOOP("Hotkeys", "Main Window")).toStdString(), {std::string("Shift+F7"),     std::string("Home+Dpad_Left"), Qt::ApplicationShortcut, false}},
     {QStringLiteral(QT_TRANSLATE_NOOP("Hotkeys", "[Kledd] Save Frame Recording")).toStdString(), QStringLiteral(QT_TRANSLATE_NOOP("Hotkeys", "Main Window")).toStdString(), {std::string("F7"),     std::string(""), Qt::ApplicationShortcut, false}},

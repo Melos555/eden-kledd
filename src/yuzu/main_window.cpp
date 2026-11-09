@@ -1397,6 +1397,42 @@ void MainWindow::InitializeHotkeys() {
         input_subsystem->GetMouse()->KleddRequestGravityCheck();
         statusBar()->showMessage(tr("[Kledd] Gravity Check"), 1500);
     });
+    connect_shortcut(QStringLiteral("[Kledd] Mouse Drives the Stick (On or Off)"), [&] {
+        const bool on = input_subsystem->GetMouse()->KleddToggleStick();
+        statusBar()->showMessage(on ? tr("[Kledd] Mouse drives the right stick")
+                                    : tr("[Kledd] Mouse drives the gyro again"),
+                                 on ? 0 : 2000);
+    });
+    connect_shortcut(QStringLiteral("[Kledd] Calibrate Cursor Edges"), [&] {
+        switch (input_subsystem->GetMouse()->KleddCalibrateStep()) {
+        case -1:
+            statusBar()->showMessage(
+                tr("[Kledd] Calibration is for cursor mode: turn on \"Mouse gyro: absolute\" in "
+                   "Configure mouse panning first"),
+                6000);
+            break;
+        case 1:
+            statusBar()->showMessage(
+                tr("[Kledd] Calibration 1/2: move the game's reticle exactly onto the RIGHT edge "
+                   "of the picture, then press the calibration hotkey again"),
+                0);
+            break;
+        case 2:
+            statusBar()->showMessage(
+                tr("[Kledd] Calibration 2/2: now move the reticle exactly onto the TOP edge of the "
+                   "picture, then press again"),
+                0);
+            break;
+        default:
+            config->SaveAllValues();
+            statusBar()->showMessage(
+                tr("[Kledd] Calibrated: side edges %1°, top/bottom edges %2° (saved)")
+                    .arg(static_cast<int>(Settings::values.kledd_mouse_gyro_abs_range_x.GetValue()))
+                    .arg(static_cast<int>(Settings::values.kledd_mouse_gyro_abs_range_y.GetValue())),
+                8000);
+            break;
+        }
+    });
     connect_shortcut(QStringLiteral("Toggle Mouse Panning"), [&] {
         Settings::values.mouse_panning = !Settings::values.mouse_panning;
         if (Settings::values.mouse_panning) {

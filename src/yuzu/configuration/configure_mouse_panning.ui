@@ -133,6 +133,48 @@
     </widget>
    </item>
    <item>
+    <widget class="QCheckBox" name="kledd_mouse_gyro_tilt_resync">
+     <property name="text">
+      <string>[Kledd] Mouse gyro: automatic Gravity Check when looking up/down (same turn speed at any angle)</string>
+     </property>
+     <property name="toolTip">
+      <string>With gravity off, the game only learns how far the controller is tilted at a Gravity Check, and turns get weaker the further you look up or down from that angle (a 180 looking up becomes about 90). This re-syncs automatically every time the up/down aim has moved 5 degrees. Does nothing while &quot;send gravity&quot; is on.</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QCheckBox" name="kledd_mouse_gyro_zl_stick">
+     <property name="text">
+      <string>[Kledd] Mouse gyro: while ZL (lock-on) is held, the mouse moves the right stick</string>
+     </property>
+     <property name="toolTip">
+      <string>Camera mode only. Some games stop reading motion while locked on and only let the right stick nudge the aim (Metroid Prime 4&apos;s lock-on targets). While ZL is held, mouse movement pushes the right stick instead, and the gyro holds still; let go and it is the gyro again. For the map and other screens that ignore motion, use the [Kledd] Mouse Drives the Stick hotkey.</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout">
+     <item>
+      <widget class="QLabel" name="kledd_mouse_stick_sensitivity_label">
+       <property name="text">
+        <string>[Kledd] Stick sensitivity while the mouse drives the stick (ZL held or hotkey)</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QSpinBox" name="kledd_mouse_stick_sensitivity">
+       <property name="minimum">
+        <number>1</number>
+       </property>
+       <property name="maximum">
+        <number>100</number>
+       </property>
+       <property name="suffix"><string>%</string></property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
     <layout class="QHBoxLayout">
      <item>
       <widget class="QLabel" name="kledd_mouse_gyro_smoothing_label">

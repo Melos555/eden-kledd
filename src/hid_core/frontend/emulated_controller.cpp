@@ -861,6 +861,10 @@ void EmulatedController::SetButton(const Common::Input::CallbackStatus& callback
     case Settings::NativeButton::ZL:
         controller.npad_button_state.zl.Assign(current_status.value);
         controller.debug_pad_button_state.zl.Assign(current_status.value);
+        // eden-kledd: the mouse gyro hands the mouse to the right stick while ZL is held
+        if (is_connected) {
+            Common::KleddMouseGyro::zl_held.store(current_status.value);
+        }
         break;
     case Settings::NativeButton::ZR:
         controller.npad_button_state.zr.Assign(current_status.value);
@@ -1078,6 +1082,26 @@ void EmulatedController::SetMotion(const Common::Input::CallbackStatus& callback
     motion.euler = emulated.GetEulerAngles();
     motion.orientation = emulated.GetOrientation();
     motion.is_at_rest = !emulated.IsMoving(motion_sensitivity);
+
+    // eden-kledd: the mouse drives the right stick (ZL held / toggle). Applied here, because the
+    // mouse's motion sample arrives on every mouse update whatever the right stick is bound to
+    // (keys, a pad, or the mouse); when it ends, the stick goes back to its own binding.
+    if (kledd_is_mouse && !is_configuring) {
+        const bool override_on = Common::KleddMouseGyro::stick_override_active.load();
+        if (override_on || kledd_stick_override_was_on) {
+            const auto& own = controller.stick_values[Settings::NativeAnalog::RStick];
+            const float x =
+                override_on ? Common::KleddMouseGyro::stick_override_x.load() : own.x.value;
+            const float y =
+                override_on ? Common::KleddMouseGyro::stick_override_y.load() : own.y.value;
+            controller.analog_stick_state.right = {
+                .x = static_cast<s32>(x * HID_JOYSTICK_MAX),
+                .y = static_cast<s32>(y * HID_JOYSTICK_MAX),
+            };
+            kledd_stick_override_was_on = override_on;
+            TriggerOnChange(ControllerTriggerType::Stick, true);
+        }
+    }
 
     if (kledd_is_mouse && Settings::values.kledd_mouse_gyro_probe.GetValue()) {
         static auto last = std::chrono::steady_clock::time_point{};

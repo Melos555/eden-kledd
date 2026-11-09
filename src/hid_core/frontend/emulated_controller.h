@@ -595,6 +595,8 @@ private:
     std::atomic<bool> is_configuring{false};
     std::atomic<bool> is_initialized{false};
     std::atomic<bool> system_buttons_enabled{true};
+    // eden-kledd: the mouse was driving the right stick on the last motion update
+    bool kledd_stick_override_was_on{false};
 
     ButtonParams button_params;
     StickParams stick_params;

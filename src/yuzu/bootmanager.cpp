@@ -221,6 +221,26 @@ qreal GRenderWindow::windowPixelRatio() const {
     return devicePixelRatioF();
 }
 
+QRect GRenderWindow::KleddPictureRect() const {
+    // The game picture inside this widget (black bars excluded), in widget coordinates. The
+    // framebuffer layout is in physical pixels, the widget in logical ones.
+    const auto& screen = GetFramebufferLayout().screen;
+    const qreal ratio = windowPixelRatio();
+    const QRect window_rect{0, 0, std::max(1, width()), std::max(1, height())};
+    if (screen.right <= screen.left || screen.bottom <= screen.top || !(ratio > 0.0)) {
+        return window_rect;
+    }
+    const int left = static_cast<int>(std::ceil(screen.left / ratio));
+    const int top = static_cast<int>(std::ceil(screen.top / ratio));
+    const int right = static_cast<int>(std::floor((screen.right - 1) / ratio));
+    const int bottom = static_cast<int>(std::floor((screen.bottom - 1) / ratio));
+    if (right < left || bottom < top) {
+        return window_rect;
+    }
+    const QRect picture = QRect{QPoint{left, top}, QPoint{right, bottom}}.intersected(window_rect);
+    return picture.isEmpty() ? window_rect : picture;
+}
+
 std::pair<u32, u32> GRenderWindow::ScaleTouch(const QPointF& pos) const {
     const qreal pixel_ratio = windowPixelRatio();
     return {static_cast<u32>((std::max)(std::round(pos.x() * pixel_ratio), qreal{0.0})),
@@ -511,15 +531,19 @@ void GRenderWindow::mouseMoveEvent(QMouseEvent* event) {
 
     input_subsystem->GetMouse()->MouseMove(touch_x, touch_y);
     input_subsystem->GetMouse()->TouchMove(touch_x, touch_y);
+    // eden-kledd: absolute mouse gyro aims by the cursor's spot inside the game picture
+    input_subsystem->GetMouse()->KleddSetPicturePos(touch_x, touch_y);
     input_subsystem->GetMouse()->Move(pos.x(), pos.y(), center_x, center_y);
 
     // Center mouse for mouse panning
     if (Settings::values.mouse_panning && !Settings::values.mouse_enabled) {
         if (Settings::values.kledd_mouse_gyro.GetValue() &&
             Settings::values.kledd_mouse_gyro_absolute.GetValue()) {
-            // eden-kledd absolute mouse gyro: keep the cursor inside the window, don't center it
-            const int clamped_x = std::clamp(pos.x(), 0, std::max(0, width() - 1));
-            const int clamped_y = std::clamp(pos.y(), 0, std::max(0, height() - 1));
+            // eden-kledd absolute mouse gyro: keep the cursor inside the game picture (not the
+            // black bars around it), don't center it
+            const QRect picture = KleddPictureRect();
+            const int clamped_x = std::clamp(pos.x(), picture.left(), picture.right());
+            const int clamped_y = std::clamp(pos.y(), picture.top(), picture.bottom());
             if (clamped_x != pos.x() || clamped_y != pos.y()) {
                 QCursor::setPos(mapToGlobal(QPoint{clamped_x, clamped_y}));
             }
@@ -569,7 +593,7 @@ void GRenderWindow::ConstrainMouse() {
 void GRenderWindow::UpdateMouse() {
     // eden-kledd absolute mouse gyro: Gravity Check puts the cursor back in the center
     if (input_subsystem->GetMouse()->KleddTakeCenterRequest() && this->isActiveWindow()) {
-        QCursor::setPos(mapToGlobal(QPoint{width() / 2, height() / 2}));
+        QCursor::setPos(mapToGlobal(KleddPictureRect().center()));
     }
     input_subsystem->GetMouse()->NotifyChanged(); // required to reset mouse once it's no longer moved
 }

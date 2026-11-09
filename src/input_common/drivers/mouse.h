@@ -102,6 +102,15 @@ public:
     void KleddRequestGravityCheck();
     /// eden-kledd: absolute mode wants the OS cursor put back in the window center (once)
     bool KleddTakeCenterRequest();
+    /// eden-kledd: cursor position inside the game picture (0..1 each axis, black bars excluded)
+    void KleddSetPicturePos(float x, float y);
+    /// eden-kledd: toggle "mouse drives the right stick" (e.g. for menus/maps that ignore motion)
+    /// @return the new state
+    bool KleddToggleStick();
+    /// eden-kledd: next step of the absolute-mode edge calibration.
+    /// @return -1 = absolute mode is off, 1 = started (reticle to the right edge next),
+    ///         2 = side recorded (reticle to the top edge next), 3 = done and saved to settings
+    int KleddCalibrateStep();
 
     /// @brief Notifies we changed something about the mouse state and we must update
     void NotifyChanged();
@@ -114,6 +123,8 @@ private:
     void UpdateStickInput(Common::SteadyClock::time_point timestamp);
     void UpdateMotionInput(Common::SteadyClock::time_point timestamp);
     bool IsMousePanningEnabled();
+    /// eden-kledd: camera-mode mouse gyro currently hands the mouse to the right stick
+    bool KleddStickMode();
 
     Common::Input::ButtonNames GetUIButtonName(const Common::ParamPackage& params) const;
 
@@ -140,6 +151,14 @@ private:
     float kledd_gyro_yaw_deg{};
     std::atomic<bool> kledd_center_request{false};
     int kledd_skip_moves = 0;
+    Common::Vec<float, 2> kledd_picture_pos{0.5f, 0.5f};
+    std::atomic<bool> kledd_stick_toggle{false};
+    bool kledd_stick_active = false;
+    // 0 = not calibrating, 1 = waiting for the right edge, 2 = waiting for the top edge
+    std::atomic<int> kledd_calib_step{0};
+    // up/down tilt at the last re-sync, for the automatic tilt re-sync
+    float kledd_last_resync_pitch{};
+    Common::SteadyClock::time_point kledd_last_tilt_resync{};
     bool button_pressed = false;
 };
 

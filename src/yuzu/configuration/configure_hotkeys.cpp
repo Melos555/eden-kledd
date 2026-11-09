@@ -95,6 +95,19 @@ void ConfigureHotkeys::Populate(const HotkeyRegistry& registry) {
                     "the emulated motion sensor knows which way is down again.\nUse it when the "
                     "aim drifts, flips or gets stuck at an edge."));
             }
+            if (hotkey_action_data == QStringLiteral("[Kledd] Mouse Drives the Stick (On or Off)")) {
+                action->setToolTip(tr(
+                    "Mouse gyro (camera mode): while on, the mouse moves the right stick instead "
+                    "of the gyro.\nFor screens that ignore motion, like the map. Press again to "
+                    "go back to the gyro."));
+            }
+            if (hotkey_action_data == QStringLiteral("[Kledd] Calibrate Cursor Edges")) {
+                action->setToolTip(tr(
+                    "Mouse gyro (cursor mode): measures the edge degrees for you.\nPress once, "
+                    "move the game's reticle onto the right edge of the picture and press again, "
+                    "then onto the top edge and press again.\nRedo it after changing the game's "
+                    "aiming sensitivity."));
+            }
             keyseq->setEditable(false);
             controller_keyseq->setEditable(false);
             parent_item->appendRow({action, keyseq, controller_keyseq});

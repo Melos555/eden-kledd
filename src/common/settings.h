@@ -910,6 +910,18 @@ struct Values {
     // eden-kledd: write log/kledd_mouse_gyro.txt (probe)
     Setting<bool> kledd_mouse_gyro_probe{linkage, false, "kledd_mouse_gyro_probe",
                                          Category::Controls};
+    // eden-kledd: with gravity off, re-sync Eden's tilt whenever the up/down aim moved 5 degrees
+    // (an automatic Gravity Check), so turning speed doesn't depend on where you look
+    Setting<bool> kledd_mouse_gyro_tilt_resync{linkage, true, "kledd_mouse_gyro_tilt_resync",
+                                               Category::Controls};
+    // eden-kledd: camera (relative) mouse gyro: while ZL (lock-on) is held, the mouse drives the
+    // right stick instead of the gyro (games that ignore motion while locked on)
+    Setting<bool> kledd_mouse_gyro_zl_stick{linkage, true, "kledd_mouse_gyro_zl_stick",
+                                            Category::Controls};
+    // eden-kledd: right stick sensitivity while the mouse drives the stick (ZL held or toggle)
+    Setting<u8, true> kledd_mouse_stick_sensitivity{linkage, 50, 1, 100,
+                                                    "kledd_mouse_stick_sensitivity",
+                                                    Category::Controls};
 
     Setting<bool> emulate_analog_keyboard{linkage, false, "emulate_analog_keyboard",
                                           Category::Controls};

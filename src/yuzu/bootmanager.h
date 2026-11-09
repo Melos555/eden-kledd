@@ -14,6 +14,7 @@
 #include <QImage>
 #include <QObject>
 #include <QPoint>
+#include <QRect>
 #include <QString>
 #include <QStringList>
 #include <QThread>
@@ -79,6 +80,9 @@ public:
     qreal windowPixelRatio() const;
 
     std::pair<u32, u32> ScaleTouch(const QPointF& pos) const;
+
+    /// eden-kledd: the game picture inside this widget (black bars excluded), widget coordinates
+    QRect KleddPictureRect() const;
 
     void closeEvent(QCloseEvent* event) override;
     void leaveEvent(QEvent* event) override;
