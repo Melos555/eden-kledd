@@ -209,6 +209,7 @@ void TextureCache<P>::TickFrame() {
     sentenced_image_view.Tick();
     TickAsyncDecode();
     TickAsyncUnswizzle();
+    KleddRefreshWatchedPools();
 
     runtime.TickFrame();
     ++frame_tick;
@@ -1493,6 +1494,51 @@ void TextureCache<P>::RefreshContents(Image& image, ImageId image_id) {
     auto staging = runtime.UploadStagingBuffer(MapSizeBytes(image));
     UploadImageContents(image, staging);
     runtime.InsertUploadMemoryBarrier();
+}
+
+template <class P>
+void TextureCache<P>::KleddRefreshWatchedPools() {
+    // eden-kledd: with delta upload on, Metroid Prime 4's streamed texture pools only get the z
+    // groups the write watch noticed. Textures in them (Samus, the boss) went black or stale,
+    // while delta off (full uploads) showed them fine, so the watch seems to miss some writes.
+    // Safety net: each frame one group of one pool is marked written, cycling through all of
+    // them (6 pools x 63 groups = a full pass every ~3 s at 120 FPS), and the delta path then
+    // re-reads that group from guest memory. 2-5 MiB per frame instead of a full pool.
+    if (kledd_watches.empty() || !Settings::values.kledd_delta_upload.GetValue() ||
+        !Settings::values.kledd_delta_refresh.GetValue()) {
+        return;
+    }
+    auto it = kledd_watches.find(kledd_refresh_image);
+    if (it == kledd_watches.end() || kledd_refresh_group >= it->second.num_groups) {
+        // Next pool (map order is stable while no pool is added or removed)
+        if (it == kledd_watches.end()) {
+            it = kledd_watches.begin();
+        } else if (++it == kledd_watches.end()) {
+            it = kledd_watches.begin();
+        }
+        kledd_refresh_image = it->first;
+        kledd_refresh_group = 0;
+    }
+    KleddWatch& watch = it->second;
+    Image& image = slot_images[it->first];
+    if (watch.complete && kledd_refresh_group < watch.dirty.size() &&
+        False(image.flags & ImageFlagBits::IsDecoding) &&
+        False(image.flags & ImageFlagBits::GpuModified)) {
+        watch.dirty[kledd_refresh_group] = 1;
+        image.flags |= ImageFlagBits::CpuModified;
+        ++kledd_refresh_count;
+    }
+    ++kledd_refresh_group;
+
+    const auto now = std::chrono::steady_clock::now();
+    if (now - kledd_refresh_log > std::chrono::seconds(10)) {
+        if (kledd_refresh_count > 0) {
+            LOG_INFO(HW_GPU, "[Kledd] delta refresh: {} z groups re-read in the last 10 s ({} pools)",
+                     kledd_refresh_count, kledd_watches.size());
+        }
+        kledd_refresh_count = 0;
+        kledd_refresh_log = now;
+    }
 }
 
 template <class P>

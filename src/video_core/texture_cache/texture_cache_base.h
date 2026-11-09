@@ -334,6 +334,13 @@ private:
     ::Common::unordered_map<ImageId, KleddWatch> kledd_watches;
     std::chrono::steady_clock::time_point kledd_decline_log{};
     KleddWatch* KleddFindWatch(ImageId image_id);
+    /// Background refresh: one z group of one watched pool per frame is marked written, so the
+    /// delta path re-reads it from guest memory even if the write watch missed a write there
+    void KleddRefreshWatchedPools();
+    ImageId kledd_refresh_image{};
+    u32 kledd_refresh_group = 0;
+    u32 kledd_refresh_count = 0;
+    std::chrono::steady_clock::time_point kledd_refresh_log{};
     /// Calls func(cpu_addr, size) for every CPU page range owned by one z group. The groups
     /// partition the image's pages; sparse images go through their registered map views.
     template <typename Func>

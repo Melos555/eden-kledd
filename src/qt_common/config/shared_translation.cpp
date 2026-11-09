@@ -286,6 +286,11 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
     INSERT(Settings, kledd_gentle_gc, tr("[Kledd] Gentle texture cleanup"),
            tr("When texture memory is high, only delete textures that have not been used for a "
               "few seconds, instead of a few frames.\nExperimental: may use more VRAM."));
+    INSERT(Settings, kledd_delta_refresh, tr("[Kledd] Delta: background refresh (test)"),
+           tr("With delta texture upload on, re-reads one piece of a big streamed texture per "
+              "frame in the background, cycling through all of them (a full pass every few "
+              "seconds).\nCatches changes the delta watch missed (black or stale textures). "
+              "Takes effect after restarting the game."));
     // eden-kledd texture-switches test build: switchable again
     INSERT(Settings, kledd_delta_upload, tr("[Kledd] Delta texture upload (okboomerxd)"),
            tr("For huge streamed textures, upload only the parts the game changed.\n"
