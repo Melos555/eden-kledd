@@ -141,6 +141,13 @@ constexpr float kledd_gyro_degrees_per_pixel = 0.1f;
 constexpr float kledd_gyro_max_rps = 4.9f;
 // eden-kledd: maximum up/down tilt of the virtual controller (degrees from where it started)
 constexpr float kledd_gyro_pitch_limit = 75.0f;
+// eden-kledd: Metroid Prime 4 cursor mode: the controller angle that puts the reticle on the
+// screen edge, for an in-game aiming sensitivity of 0-100. Measured by Melos (0 -> 60,
+// 26 -> 18, 45 -> 12, 75 -> 8, 100 -> 6 degrees): the game behaves like (slider + 11.5).
+static float KleddDegreesForGameSensitivity(int sensitivity) {
+    return 692.0f / (static_cast<float>(std::clamp(sensitivity, 0, 100)) + 11.5f);
+}
+
 // eden-kledd: a calibration press that measures less than this hasn't reached the edge yet
 constexpr float kledd_calib_min_deg = 3.0f;
 
@@ -190,12 +197,19 @@ void Mouse::UpdateMotionInput(Common::SteadyClock::time_point timestamp) {
             // While calibrating, use wide ranges so the reticle can reach the picture's edges
             // well before the cursor does; the angle at which it gets there is what's measured
             const bool calibrating = kledd_calib_step.load() != 0;
+            // Edge angles: from Metroid Prime 4's in-game sensitivity (exact, with decimals), or
+            // the degree boxes for other games
+            const bool from_game = Settings::values.kledd_mouse_gyro_abs_from_game.GetValue();
             const float range_x =
                 calibrating ? kledd_calib_range_x.load()
+                : from_game ? KleddDegreesForGameSensitivity(
+                                  Settings::values.kledd_mouse_gyro_game_sens_x.GetValue())
                             : static_cast<float>(
                                   Settings::values.kledd_mouse_gyro_abs_range_x.GetValue());
             const float range_y =
                 calibrating ? kledd_calib_range_y.load()
+                : from_game ? KleddDegreesForGameSensitivity(
+                                  Settings::values.kledd_mouse_gyro_game_sens_y.GetValue())
                             : static_cast<float>(
                                   Settings::values.kledd_mouse_gyro_abs_range_y.GetValue());
             float target_yaw = -kledd_abs_pos[0] * range_x;
@@ -600,6 +614,11 @@ int Mouse::KleddCalibrateStep() {
         !Settings::values.kledd_mouse_gyro_absolute.GetValue()) {
         kledd_calib_step.store(0);
         return -1;
+    }
+    if (Settings::values.kledd_mouse_gyro_abs_from_game.GetValue()) {
+        // The edge angles come from the in-game sensitivity; nothing to calibrate
+        kledd_calib_step.store(0);
+        return -2;
     }
     switch (kledd_calib_step.load()) {
     case 0: {

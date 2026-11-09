@@ -1423,6 +1423,12 @@ void MainWindow::InitializeHotkeys() {
                       "Configure mouse panning first");
             timeout_ms = 6000;
             break;
+        case -2:
+            text = tr("No calibration needed: the edges come from your in-game sensitivity.\n"
+                      "Untick \"Use Metroid Prime 4's in-game sensitivity\" in Configure mouse "
+                      "panning to calibrate by hand");
+            timeout_ms = 6000;
+            break;
         case 1:
             text = tr("CALIBRATION 1/2  (only left/right moves)\nMove the game's reticle onto the "
                       "RIGHT edge of the picture, then press the calibration key\n%1")

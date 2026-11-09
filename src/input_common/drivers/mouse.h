@@ -109,7 +109,8 @@ public:
     bool KleddToggleStick();
     /// eden-kledd: next step of the absolute-mode edge calibration. The settings only change
     /// when both edges are measured.
-    /// @return -1 = absolute mode is off, 1 = started (reticle to the right edge next),
+    /// @return -1 = absolute mode is off, -2 = edge angles come from the in-game sensitivity,
+    ///         1 = started (reticle to the right edge next),
     ///         2 = side measured (reticle to the top edge next), 3 = done and saved to settings,
     ///         4 = the reticle has barely moved: not at the edge yet, same step again
     int KleddCalibrateStep();

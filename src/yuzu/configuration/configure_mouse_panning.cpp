@@ -37,6 +37,12 @@ void ConfigureMousePanning::SetConfiguration(float right_stick_deadzone, float r
     ui->kledd_mouse_gyro_absolute->setChecked(Settings::values.kledd_mouse_gyro_absolute.GetValue());
     ui->kledd_mouse_gyro_abs_range_x->setValue(Settings::values.kledd_mouse_gyro_abs_range_x.GetValue());
     ui->kledd_mouse_gyro_abs_range_y->setValue(Settings::values.kledd_mouse_gyro_abs_range_y.GetValue());
+    ui->kledd_mouse_gyro_abs_from_game->setChecked(
+        Settings::values.kledd_mouse_gyro_abs_from_game.GetValue());
+    ui->kledd_mouse_gyro_game_sens_x->setValue(
+        Settings::values.kledd_mouse_gyro_game_sens_x.GetValue());
+    ui->kledd_mouse_gyro_game_sens_y->setValue(
+        Settings::values.kledd_mouse_gyro_game_sens_y.GetValue());
     ui->kledd_mouse_gyro_abs_show_cursor->setChecked(Settings::values.kledd_mouse_gyro_abs_show_cursor.GetValue());
     ui->kledd_mouse_gyro_smoothing->setValue(Settings::values.kledd_mouse_gyro_smoothing.GetValue());
     ui->kledd_mouse_gyro_tilt_resync->setChecked(
@@ -86,6 +92,28 @@ void ConfigureMousePanning::ConnectEvents() {
     connect(ui->button_box, &QDialogButtonBox::accepted, this,
             &ConfigureMousePanning::ApplyConfiguration);
     connect(ui->button_box, &QDialogButtonBox::rejected, this, [this] { reject(); });
+
+    // eden-kledd: show the edge angles the in-game sensitivity gives (same formula as the mouse
+    // driver), and grey out whichever way of setting them isn't in use
+    const auto update_game_sens = [this] {
+        const auto degrees = [](int sensitivity) { return 692.0 / (sensitivity + 11.5); };
+        const bool from_game = ui->kledd_mouse_gyro_abs_from_game->isChecked();
+        ui->kledd_game_sens_result->setText(
+            tr("= %1° / %2°")
+                .arg(degrees(ui->kledd_mouse_gyro_game_sens_x->value()), 0, 'f', 1)
+                .arg(degrees(ui->kledd_mouse_gyro_game_sens_y->value()), 0, 'f', 1));
+        ui->kledd_mouse_gyro_game_sens_x->setEnabled(from_game);
+        ui->kledd_mouse_gyro_game_sens_y->setEnabled(from_game);
+        ui->kledd_game_sens_result->setEnabled(from_game);
+        ui->kledd_mouse_gyro_abs_range_x->setEnabled(!from_game);
+        ui->kledd_mouse_gyro_abs_range_y->setEnabled(!from_game);
+    };
+    connect(ui->kledd_mouse_gyro_abs_from_game, &QCheckBox::toggled, this, update_game_sens);
+    connect(ui->kledd_mouse_gyro_game_sens_x, qOverload<int>(&QSpinBox::valueChanged), this,
+            update_game_sens);
+    connect(ui->kledd_mouse_gyro_game_sens_y, qOverload<int>(&QSpinBox::valueChanged), this,
+            update_game_sens);
+    update_game_sens();
 }
 
 void ConfigureMousePanning::ApplyConfiguration() {
@@ -103,6 +131,12 @@ void ConfigureMousePanning::ApplyConfiguration() {
         static_cast<u8>(ui->kledd_mouse_gyro_abs_range_x->value());
     Settings::values.kledd_mouse_gyro_abs_range_y =
         static_cast<u8>(ui->kledd_mouse_gyro_abs_range_y->value());
+    Settings::values.kledd_mouse_gyro_abs_from_game =
+        ui->kledd_mouse_gyro_abs_from_game->isChecked();
+    Settings::values.kledd_mouse_gyro_game_sens_x =
+        static_cast<u8>(ui->kledd_mouse_gyro_game_sens_x->value());
+    Settings::values.kledd_mouse_gyro_game_sens_y =
+        static_cast<u8>(ui->kledd_mouse_gyro_game_sens_y->value());
     Settings::values.kledd_mouse_gyro_abs_show_cursor =
         ui->kledd_mouse_gyro_abs_show_cursor->isChecked();
     Settings::values.kledd_mouse_gyro_smoothing =

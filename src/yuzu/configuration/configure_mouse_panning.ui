@@ -103,6 +103,35 @@
     </layout>
    </item>
    <item>
+    <layout class="QHBoxLayout">
+     <item>
+      <widget class="QCheckBox" name="kledd_mouse_gyro_abs_from_game">
+       <property name="text">
+        <string>[Kledd] Use Metroid Prime 4's in-game sensitivity (X / Y):</string>
+       </property>
+       <property name="toolTip">
+        <string>Type the Aiming Sensitivity X and Y from the game's Cursor settings, and Eden works out the edge angles itself (no calibration needed, with decimals): degrees = 692 / (sensitivity + 11.5). The degree boxes above are ignored while this is on.</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QSpinBox" name="kledd_mouse_gyro_game_sens_x">
+       <property name="minimum"><number>0</number></property>
+       <property name="maximum"><number>100</number></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QSpinBox" name="kledd_mouse_gyro_game_sens_y">
+       <property name="minimum"><number>0</number></property>
+       <property name="maximum"><number>100</number></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="kledd_game_sens_result"/>
+     </item>
+    </layout>
+   </item>
+   <item>
     <widget class="QCheckBox" name="kledd_mouse_gyro_abs_show_cursor">
      <property name="text">
       <string>[Kledd] Absolute: show the real mouse cursor (calibration only)</string>

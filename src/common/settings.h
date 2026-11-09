@@ -907,6 +907,17 @@ struct Values {
     Setting<u8, true> kledd_mouse_gyro_abs_range_y{linkage, 17, 1, 75,
                                                    "kledd_mouse_gyro_abs_range_y",
                                                    Category::Controls};
+    // eden-kledd: absolute mode: instead of the degree boxes, take Metroid Prime 4's in-game
+    // cursor aiming sensitivity (0-100) and compute the edge angle from it:
+    // degrees = 692 / (sensitivity + 11.5), measured by Melos at 0, 26, 45, 75 and 100
+    Setting<bool> kledd_mouse_gyro_abs_from_game{linkage, true, "kledd_mouse_gyro_abs_from_game",
+                                                 Category::Controls};
+    Setting<u8, true> kledd_mouse_gyro_game_sens_x{linkage, 50, 0, 100,
+                                                   "kledd_mouse_gyro_game_sens_x",
+                                                   Category::Controls};
+    Setting<u8, true> kledd_mouse_gyro_game_sens_y{linkage, 50, 0, 100,
+                                                   "kledd_mouse_gyro_game_sens_y",
+                                                   Category::Controls};
     // eden-kledd: absolute mode: show the real mouse cursor (for calibration)
     Setting<bool> kledd_mouse_gyro_abs_show_cursor{linkage, false,
                                                    "kledd_mouse_gyro_abs_show_cursor",
@@ -924,7 +935,7 @@ struct Values {
                                               Category::Controls};
     // eden-kledd: camera (relative) mouse gyro: while ZL (lock-on) is held, the mouse drives the
     // right stick instead of the gyro (games that ignore motion while locked on)
-    Setting<bool> kledd_mouse_gyro_zl_stick{linkage, true, "kledd_mouse_gyro_zl_stick",
+    Setting<bool> kledd_mouse_gyro_zl_stick{linkage, false, "kledd_mouse_gyro_zl_stick",
                                             Category::Controls};
     // eden-kledd: right stick sensitivity while the mouse drives the stick (ZL held or toggle)
     Setting<u8, true> kledd_mouse_stick_sensitivity{linkage, 50, 1, 100,
