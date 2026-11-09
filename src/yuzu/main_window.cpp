@@ -1424,13 +1424,13 @@ void MainWindow::InitializeHotkeys() {
             timeout_ms = 6000;
             break;
         case 1:
-            text = tr("CALIBRATION 1/2\nMove the game's reticle onto the RIGHT edge of the "
-                      "picture, then press the calibration key\n%1")
+            text = tr("CALIBRATION 1/2  (only left/right moves)\nMove the game's reticle onto the "
+                      "RIGHT edge of the picture, then press the calibration key\n%1")
                        .arg(cancel_hint);
             break;
         case 2:
-            text = tr("CALIBRATION 2/2  (side: %1°)\nNow move the reticle onto the TOP edge "
-                      "of the picture, then press the calibration key\n%2")
+            text = tr("CALIBRATION 2/2  (side: %1°, now only up/down moves)\nMove the reticle "
+                      "up into the top corner, then press the calibration key\n%2")
                        .arg(mouse->KleddCalibratePendingX())
                        .arg(cancel_hint);
             break;

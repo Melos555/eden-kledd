@@ -194,8 +194,17 @@ void Mouse::UpdateMotionInput(Common::SteadyClock::time_point timestamp) {
                 calibrating ? kledd_calib_range_y.load()
                             : static_cast<float>(
                                   Settings::values.kledd_mouse_gyro_abs_range_y.GetValue());
-            const float target_yaw = -kledd_abs_pos[0] * range_x;
-            const float target_pitch = -kledd_abs_pos[1] * range_y;
+            float target_yaw = -kledd_abs_pos[0] * range_x;
+            float target_pitch = -kledd_abs_pos[1] * range_y;
+            // Calibration locks one axis per step: step 1 (side edge) only moves left/right with
+            // up/down held level; step 2 (top edge) keeps left/right where step 1 ended and only
+            // moves up/down, so each press measures exactly one thing
+            const int calib_step = kledd_calib_step.load();
+            if (calib_step == 1) {
+                target_pitch = 0.0f;
+            } else if (calib_step == 2) {
+                target_yaw = kledd_calib_locked_yaw.load();
+            }
             yaw = (target_yaw - kledd_gyro_yaw_deg) / 360.0f / dt;
             pitch = (target_pitch - kledd_gyro_pitch_deg) / 360.0f / dt;
         } else {
@@ -599,11 +608,14 @@ int Mouse::KleddCalibrateStep() {
     }
     case 1: {
         // The reticle sits on the right (or left) edge: the turn needed to get there is the range
-        const float yaw = std::abs(Common::KleddMouseGyro::tracked_yaw_deg.load());
+        const float signed_yaw = Common::KleddMouseGyro::tracked_yaw_deg.load();
+        const float yaw = std::abs(signed_yaw);
         if (yaw < kledd_calib_min_deg) {
             return 4;
         }
         kledd_calib_pending_x = static_cast<int>(std::clamp<long>(std::lround(yaw), 1, 90));
+        // Step 2 keeps left/right locked right here (at the edge) while up/down is measured
+        kledd_calib_locked_yaw.store(signed_yaw);
         kledd_calib_step.store(2);
         return 2;
     }

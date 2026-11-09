@@ -166,6 +166,8 @@ private:
     std::atomic<float> kledd_calib_range_x{60.0f};
     std::atomic<float> kledd_calib_range_y{40.0f};
     int kledd_calib_pending_x = 0;
+    // left/right angle where step 1 ended; held there during step 2 (degrees)
+    std::atomic<float> kledd_calib_locked_yaw{0.0f};
     // up/down tilt at the last re-sync, for the automatic tilt re-sync
     float kledd_last_resync_pitch{};
     Common::SteadyClock::time_point kledd_last_tilt_resync{};
