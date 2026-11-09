@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2023 yuzu Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <initializer_list>
+
 #include <QCloseEvent>
 #include <QMessageBox>
 
@@ -114,9 +116,70 @@ void ConfigureMousePanning::ConnectEvents() {
     connect(ui->kledd_mouse_gyro_game_sens_y, qOverload<int>(&QSpinBox::valueChanged), this,
             update_game_sens);
     update_game_sens();
+
+    // eden-kledd: one dropdown instead of a wall of checkboxes. The checkboxes still hold the
+    // settings, but only the boxes the chosen mode uses are shown; the rest are set to Melos's
+    // tested values when a gyro mode is saved (see ApplyConfiguration).
+    const int mode = !ui->enable->isChecked()          ? 0
+                     : !ui->kledd_mouse_gyro->isChecked() ? 1
+                     : ui->kledd_mouse_gyro_absolute->isChecked() ? 3
+                                                                  : 2;
+    ui->kledd_mode->setCurrentIndex(mode);
+
+    // Never shown: fixed in gyro modes, or only for debugging
+    for (QWidget* widget : std::initializer_list<QWidget*>{
+             ui->enable, ui->kledd_mouse_gyro, ui->kledd_mouse_gyro_absolute,
+             ui->kledd_mouse_gyro_yaw_z, ui->kledd_mouse_gyro_gravity,
+             ui->kledd_mouse_gyro_tilt_flip, ui->kledd_mouse_gyro_auto_level,
+             ui->kledd_mouse_gyro_no_fusion, ui->kledd_mouse_gyro_frame_avg,
+             ui->kledd_mouse_gyro_probe, ui->kledd_mouse_gyro_tilt_resync,
+             ui->kledd_mouse_gyro_r_recenter, ui->kledd_mouse_gyro_zl_stick,
+             ui->kledd_mouse_stick_sensitivity_label, ui->kledd_mouse_stick_sensitivity,
+             ui->kledd_mouse_gyro_smoothing_label, ui->kledd_mouse_gyro_smoothing}) {
+        widget->hide();
+    }
+
+    const auto update_mode = [this] {
+        const int index = ui->kledd_mode->currentIndex();
+        const bool stick = index == 1;
+        const bool camera = index == 2;
+        const bool cursor = index == 3;
+        // Sensitivity: the stick and camera modes; cursor mode aims by the mouse's position
+        ui->sensitivity_box->setVisible(stick || camera);
+        ui->deadzone_counterweight_box->setVisible(stick);
+        ui->decay_box->setVisible(stick);
+        for (QWidget* widget : std::initializer_list<QWidget*>{
+                 ui->kledd_abs_range_label, ui->kledd_mouse_gyro_abs_range_x,
+                 ui->kledd_mouse_gyro_abs_range_y, ui->kledd_mouse_gyro_abs_from_game,
+                 ui->kledd_mouse_gyro_game_sens_x, ui->kledd_mouse_gyro_game_sens_y,
+                 ui->kledd_game_sens_result, ui->kledd_mouse_gyro_abs_show_cursor}) {
+            widget->setVisible(cursor);
+        }
+        adjustSize();
+    };
+    connect(ui->kledd_mode, qOverload<int>(&QComboBox::currentIndexChanged), this, update_mode);
+    update_mode();
 }
 
 void ConfigureMousePanning::ApplyConfiguration() {
+    // eden-kledd: the dropdown decides the mode; the hidden checkboxes follow it
+    const int mode = ui->kledd_mode->currentIndex();
+    ui->enable->setChecked(mode != 0);
+    if (mode == 1) {
+        ui->kledd_mouse_gyro->setChecked(false);
+    } else if (mode >= 2) {
+        ui->kledd_mouse_gyro->setChecked(true);
+        ui->kledd_mouse_gyro_absolute->setChecked(mode == 3);
+        // The gyro modes' fixed setup (what Melos runs Metroid Prime 4 with)
+        ui->kledd_mouse_gyro_yaw_z->setChecked(true);
+        ui->kledd_mouse_gyro_gravity->setChecked(false);
+        ui->kledd_mouse_gyro_tilt_flip->setChecked(false);
+        ui->kledd_mouse_gyro_auto_level->setChecked(true);
+        ui->kledd_mouse_gyro_no_fusion->setChecked(true);
+        ui->kledd_mouse_gyro_frame_avg->setChecked(true);
+        ui->kledd_mouse_gyro_smoothing->setValue(1);
+    }
+
     Settings::values.mouse_panning = ui->enable->isChecked();
     Settings::values.kledd_mouse_gyro = ui->kledd_mouse_gyro->isChecked();
     Settings::values.kledd_mouse_gyro_yaw_z = ui->kledd_mouse_gyro_yaw_z->isChecked();

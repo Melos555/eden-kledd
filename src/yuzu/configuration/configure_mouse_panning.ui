@@ -7,6 +7,32 @@
   </property>
   <layout class="QVBoxLayout">
    <item>
+    <layout class="QHBoxLayout">
+     <item>
+      <widget class="QLabel" name="kledd_mode_label">
+       <property name="text">
+        <string>Mouse panning:</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QComboBox" name="kledd_mode">
+       <property name="toolTip">
+        <string>Off: the mouse doesn't move anything in the game.
+Stick: Eden's original mouse panning, the mouse moves the right stick.
+Gyro, camera: the mouse turns an imaginary motion controller (mouse look). Needs Motion 1 bound to the mouse.
+Gyro, cursor: the mouse's spot on the screen is where the controller points (pointer/cursor schemes). Needs Motion 1 bound to the mouse.
+Ctrl + F9 frees / captures the mouse.</string>
+       </property>
+       <item><property name="text"><string>Off</string></property></item>
+       <item><property name="text"><string>Mouse to stick (Eden's original mouse panning)</string></property></item>
+       <item><property name="text"><string>Mouse to camera (gyro, mouse look)</string></property></item>
+       <item><property name="text"><string>Mouse to cursor (gyro, reticle follows the mouse)</string></property></item>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
     <widget class="QCheckBox" name="enable">
      <property name="text">
       <string>Enable mouse panning</string>
@@ -82,7 +108,7 @@
      <item>
       <widget class="QLabel" name="kledd_abs_range_label">
        <property name="text">
-        <string>[Kledd] Absolute calibration: degrees at the side edges / top+bottom edges</string>
+        <string>Edge angles, side / top+bottom (for other games)</string>
        </property>
       </widget>
      </item>
@@ -107,7 +133,7 @@
      <item>
       <widget class="QCheckBox" name="kledd_mouse_gyro_abs_from_game">
        <property name="text">
-        <string>[Kledd] Use Metroid Prime 4's in-game sensitivity (X / Y):</string>
+        <string>Use Metroid Prime 4's in-game Aiming Sensitivity (X / Y):</string>
        </property>
        <property name="toolTip">
         <string>Type the Aiming Sensitivity X and Y from the game's Cursor settings, and Eden works out the edge angles itself (no calibration needed, with decimals): degrees = 692 / (sensitivity + 11.5). The degree boxes above are ignored while this is on.</string>
@@ -134,7 +160,7 @@
    <item>
     <widget class="QCheckBox" name="kledd_mouse_gyro_abs_show_cursor">
      <property name="text">
-      <string>[Kledd] Absolute: show the real mouse cursor (calibration only)</string>
+      <string>Show the real mouse cursor (for lining up)</string>
      </property>
      <property name="toolTip">
       <string>Shows the Windows cursor so you can line the reticle up under it: raise a degree value if the reticle stops short of the cursor near the edges, lower it if the reticle runs ahead of it.</string>
