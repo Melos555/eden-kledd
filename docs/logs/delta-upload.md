@@ -141,3 +141,20 @@ defaults on a new golden branch, switches kept; `main` untouched until Melos say
 
 **For any future session:** don't present another delta fix as solving the black unless Melos
 has seen it gone in game. The open lead, if anyone returns to this, is the GPU handoff test.
+
+## 2026-11-10: v2 golden = new main, delta off by default
+
+- **Change:** branch `kledd-prime4-v2-golden`, commit `cec02ef840` (defaults) + `a65557e867` (merge of
+  main's README / mod pack), pushed to `main` as `a65557e867` (fast-forward). Builds #137 (branch)
+  and #138 (main), same commit.
+- **Defaults changed** to Melos's 20:27 run on #135: delta upload off, resumable cleanup off,
+  ASTC recompression BC7, GPU BC7 on. Unchanged and already matching: async unswizzle GPU,
+  chunk 128, stride fix on, max descriptors 256, 5 s cleanup, audio hold on, cheat write fix on.
+  All switches stay in the settings.
+- **Melos:** "make a main version that has the settings that you saw in the logs ... and push it
+  in the main page as well."
+- **Also seen, not yet fixed:** after scanning for more than ~5 s, textures go black briefly and
+  come back quickly. Interpretation (not verified): the 5 s keep time of the texture cleanup
+  expires while the scan view hides the room. Possible fix: allow a longer keep time (10-15 s).
+- **Also seen:** one crash (Qt6Core.dll, BEX64) on alt-tab during a heavy door load, with
+  Explorer crashing at the same moment; no low-memory event. Cause unknown, watching for repeats.
