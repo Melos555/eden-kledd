@@ -564,8 +564,9 @@ struct Values {
                                                                true,
                                                                true};
 
+    // eden-kledd v2 golden: BC7 by default (Melos's tested setup, saves video memory)
     SwitchableSetting<AstcRecompression, true> astc_recompression{linkage,
-                                                                  AstcRecompression::Uncompressed,
+                                                                  AstcRecompression::Bc7,
                                                                   "astc_recompression",
                                                                   Category::RendererAdvanced};
 
@@ -668,8 +669,10 @@ struct Values {
     // eden-kledd "D" preset (Nov 3 2026 tests): delta upload on, early buffer release off,
     // texture cleanup keep 5 s, async unswizzle GPU / Normal are locked in code. Their settings
     // stay defined (hidden in the UI) only so existing config files still load cleanly.
-    // eden-kledd: okboomerxd's z-group delta upload for big streamed textures (Prime 4)
-    SwitchableSetting<bool> kledd_delta_upload{linkage, true, "kledd_delta_upload",
+    // eden-kledd: okboomerxd's z-group delta upload for big streamed textures (Prime 4).
+    // v2 golden: off by default; with it on, textures go black after doors in every test
+    // (docs/logs/delta-upload.md), with it off never
+    SwitchableSetting<bool> kledd_delta_upload{linkage, false, "kledd_delta_upload",
                                                Category::RendererHacks};
     // eden-kledd: with delta upload, re-read one z group of a watched pool per frame in the
     // background (catches writes the watch missed: black/stale textures in Prime 4)
@@ -695,8 +698,8 @@ struct Values {
     SwitchableSetting<bool> kledd_audio_hold{linkage, true, "kledd_audio_hold",
                                              Category::RendererHacks};
     // eden-kledd: John's resumable texture cleanup sweep (Unified-GC branch). Off = the 5 s
-    // cleanup with the old walk from the oldest image every frame.
-    SwitchableSetting<bool> kledd_resumable_gc{linkage, true, "kledd_resumable_gc",
+    // cleanup with the old walk from the oldest image every frame. v2 golden: off by default.
+    SwitchableSetting<bool> kledd_resumable_gc{linkage, false, "kledd_resumable_gc",
                                                Category::RendererHacks};
     // eden-kledd: Eden PR #4640, cheat writes that change nothing are skipped and only writes to
     // code drop translated code. Off = the old behaviour (slower over long sessions with cheats).
@@ -715,8 +718,8 @@ struct Values {
     SwitchableSetting<u32, true> kledd_gc_seconds{linkage,           5,   0, 120,
                                                   "kledd_gc_seconds", Category::RendererHacks,
                                                   Specialization::Countable};
-    // eden-kledd: with BC7 recompression + GPU ASTC decoding, encode BC7 on the GPU
-    SwitchableSetting<bool> kledd_gpu_bc7{linkage, false, "kledd_gpu_bc7",
+    // eden-kledd: with BC7 recompression + GPU ASTC decoding, encode BC7 on the GPU (v2 golden: on)
+    SwitchableSetting<bool> kledd_gpu_bc7{linkage, true, "kledd_gpu_bc7",
                                           Category::RendererHacks};
 
     SwitchableSetting<bool> emulate_bgr565{linkage, false, "emulate_bgr565",
