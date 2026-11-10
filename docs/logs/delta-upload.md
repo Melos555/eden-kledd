@@ -119,3 +119,25 @@ verified vs guessed, next step.
 - **Interpretation:** at this spot, delta off has no hitches at all, while earlier delta-on runs had
   200-500 ms freezes; it's one 23 s run, so not proven over a full route.
 - **Next:** Melos's call: delta off as the daily setup. The handoff on/off test is not done.
+
+## 2026-11-10: verdict - none of the delta "fixes" fixed the black
+
+Melos: "the extra bullshit that 'fixes shit' doesn't fix shit." Tested in game, each with delta on:
+
+| Attempt | Commit / build | Result in Melos's tests |
+|---|---|---|
+| Don't evict other unswizzle jobs | `82033d2` (#123) | Still black. The queue never filled (1 async delta job in the session). |
+| Background refresh | `fc77af1` (#124/#125) | Black still appears; comes back after a few seconds. Not fixed, only shortened. |
+| Chunk 256 (John's `113a0bf769` idea) | setting, #127 | Black "exactly the same"; worse slow frames than 128. |
+| After-door re-reads of remapped groups | `6ad0cbf` (#129) | "The textures always go black whenever the door closes or opens." |
+| Refresh speed setting | `7b89b7d` (#134) | Lanner at speed 2: black down to 2-3 s. Still black. Melos not tested. |
+| GPU handoff switch | `48ca548` (#135) | **Not tested** (handoff off vs on at the same doors). |
+
+**Only delta off has never shown black** (Melos, every build). The delta-off run on #135 (20:27)
+had zero frames over 50 ms.
+
+**Decision (Melos):** delta off. Proposed: delta off (and resumable cleanup off, chunk 128) as
+defaults on a new golden branch, switches kept; `main` untouched until Melos says so. Not done yet.
+
+**For any future session:** don't present another delta fix as solving the black unless Melos
+has seen it gone in game. The open lead, if anyone returns to this, is the GPU handoff test.
