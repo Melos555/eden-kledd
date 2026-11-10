@@ -88,21 +88,10 @@ TextureCache<P>::TextureCache(Runtime& runtime_, Tegra::MaxwellDeviceMemoryManag
         minimum_memory = 0;
     }
 
-    // eden-kledd texture-switches test build: async unswizzle mode and chunk size are adjustable
-    // again (defaults GPU / Normal = 128 slices, the D preset's locked values)
-    async_unswizzle_mode = Settings::values.async_unswizzle_mode.GetValue();
-
-    if (async_unswizzle_mode == Settings::AsyncUnswizzleMode::Off) {
-        async_unswizzle_slices_per_batch = 0;
-    } else switch (Settings::values.gpu_unswizzle_chunk_size.GetValue()) {
-    case Settings::GpuUnswizzleChunk::VeryLow: async_unswizzle_slices_per_batch = 32; break;
-    case Settings::GpuUnswizzleChunk::Low:     async_unswizzle_slices_per_batch = 64; break;
-    case Settings::GpuUnswizzleChunk::Normal:  async_unswizzle_slices_per_batch = 128; break;
-    case Settings::GpuUnswizzleChunk::Medium:  async_unswizzle_slices_per_batch = 256; break;
-    case Settings::GpuUnswizzleChunk::High:    async_unswizzle_slices_per_batch = 512; break;
-    case Settings::GpuUnswizzleChunk::Off:     async_unswizzle_slices_per_batch = 0; break;
-    default:                                   async_unswizzle_slices_per_batch = 128;
-    }
+    // eden-kledd v2 golden: locked to Melos's best run (Nov 10): async unswizzle GPU, chunk Normal
+    // (128 slices). The settings stay defined so old configs load, but are ignored and hidden.
+    async_unswizzle_mode = Settings::AsyncUnswizzleMode::Gpu;
+    async_unswizzle_slices_per_batch = 128;
 }
 
 template <class P>
@@ -171,7 +160,8 @@ void TextureCache<P>::RunGarbageCollector() {
     // longer eat the budget every frame at the head of the list and block the stale images
     // behind them; the sweep continues where it stopped on the next frame.
     // eden-kledd: switched off, the old walk from the oldest image every frame
-    const bool resumable = Settings::values.kledd_resumable_gc.GetValue();
+    // eden-kledd v2 golden: locked off (Melos's best run), setting ignored and hidden
+    constexpr bool resumable = false;
     const auto sweep = [&] {
         if (resumable) {
             lru_cache.ForEachItemBelowResumable(frame_tick - ticks_to_destroy, Cleanup);
@@ -1836,11 +1826,10 @@ bool TextureCache<P>::KleddTryDeltaUpload(Image& image, ImageId image_id) {
     const u64 guest_bytes = image.guest_size_bytes;
     KleddWatch* watch = KleddFindWatch(image_id);
     if (!watch) {
-        // eden-kledd texture-switches test build: delta upload can be switched off again (on by
-        // default, like the D preset). Off: big textures always take the full upload path.
-        if (!Settings::values.kledd_delta_upload.GetValue()) {
-            return false;
-        }
+        // eden-kledd v2 golden: delta upload locked off (black textures after doors in every
+        // delta-on test, docs/logs/delta-upload.md). No pool is ever watched, so the background
+        // refresh, after-door re-reads and GPU handoff never run either. Settings ignored, hidden.
+        return false;
         if (guest_bytes < min_bytes) {
             return false;
         }

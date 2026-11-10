@@ -245,17 +245,11 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
            tr("Makes the game believe GPU work finishes faster than it does, so it stops lowering "
               "resolution and render distance to fit the Switch's clocks."));
     // eden-kledd texture-switches test build: adjustable again
-    INSERT(Settings, gpu_unswizzle_chunk_size, tr("Async Unswizzle Chunk Size"),
-           tr("Determines the number of depth slices processed in a single dispatch.\n"
-              "Increasing this can improve throughput on high-end GPUs but may cause TDR or driver "
-              "timeouts on weaker hardware.\nKledd D preset value: Normal (128)."));
+    // eden-kledd v2 golden: locked in code, hidden
+    INSERT(Settings, gpu_unswizzle_chunk_size, QString(), QString());
     // eden-kledd texture-switches test build: adjustable again
-    INSERT(Settings, async_unswizzle_mode, tr("Async Unswizzle Mode"),
-           tr("This option controls how chunked texture uploads are unswizzled.\n"
-              "Off: Disables asynchronous texture unswizzling.\n"
-              "CPU: Uses the CPU for asynchronous unswizzling.\n"
-              "GPU: Accelerates BCn 3D texture decoding using GPU compute (recommended).\n"
-              "Kledd D preset value: GPU. Big delta uploads only use the queue with GPU."));
+    // eden-kledd v2 golden: locked in code, hidden
+    INSERT(Settings, async_unswizzle_mode, QString(), QString());
 
     INSERT(Settings, use_vulkan_driver_pipeline_cache, tr("Use Vulkan pipeline cache"),
            tr("Enables GPU vendor-specific pipeline cache.\nThis option can improve shader loading "
@@ -287,55 +281,29 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
            tr("Metroid Prime 4: Beyond 1.1.0 only. Writes the arm cannon's shot timers to "
               "log/kledd_shot_probe.txt every frame, to find what limits the fire rate.\n"
               "Log only, changes nothing in the game. For debugging only."));
-    INSERT(Settings, kledd_gentle_gc, tr("[Kledd] Gentle texture cleanup"),
-           tr("When texture memory is high, only delete textures that have not been used for a "
-              "few seconds, instead of a few frames.\nExperimental: may use more VRAM."));
-    INSERT(Settings, kledd_delta_refresh, tr("[Kledd] Delta: background refresh (test)"),
-           tr("With delta texture upload on, re-reads one piece of a big streamed texture per "
-              "frame in the background, cycling through all of them (a full pass every few "
-              "seconds).\nCatches changes the delta watch missed (black or stale textures). "
-              "Takes effect after restarting the game."));
-    INSERT(Settings, kledd_delta_async, tr("[Kledd] Delta: GPU handoff (test)"),
-           tr("With Async Unswizzle Mode GPU, big delta texture updates are handed to the "
-              "background GPU unswizzle.\nOff: they are done on the spot instead (like CPU "
-              "mode), while full texture uploads still use the GPU.\nTest for black textures "
-              "after doors."));
-    INSERT(Settings, kledd_delta_refresh_speed, tr("[Kledd] Delta: refresh speed (test)"),
-           tr("How many pieces of the streamed textures the background refresh re-reads per "
-              "frame. Higher = black or stale textures come back sooner, but more upload work "
-              "per frame.\n1 = the old pace (a full pass every ~5 s), 4 = about 1 s, 8 = about "
-              "half a second. A busy texture is retried instead of skipped."));
+    // eden-kledd v2 golden: locked in code, hidden
+    INSERT(Settings, kledd_gentle_gc, QString(), QString());
+    // eden-kledd v2 golden: locked in code, hidden
+    INSERT(Settings, kledd_delta_refresh, QString(), QString());
+    // eden-kledd v2 golden: locked in code, hidden
+    INSERT(Settings, kledd_delta_async, QString(), QString());
+    // eden-kledd v2 golden: locked in code, hidden
+    INSERT(Settings, kledd_delta_refresh_speed, QString(), QString());
     // eden-kledd texture-switches test build: switchable again
-    INSERT(Settings, kledd_delta_upload, tr("[Kledd] Delta texture upload (okboomerxd)"),
-           tr("For huge streamed textures, upload only the parts the game changed.\n"
-              "Off: big textures always go through the full upload path (and the async "
-              "unswizzle), like builds before Nov 1.\nTakes effect after restarting the game."));
+    // eden-kledd v2 golden: locked in code, hidden
+    INSERT(Settings, kledd_delta_upload, QString(), QString());
     // eden-kledd D preset: locked in code, hidden
     INSERT(Settings, kledd_early_buffer_release, QString(), QString());
-    INSERT(Settings, kledd_audio_hold, tr("[Kledd] Hold audio during stalls (okboomerxd)"),
-           tr("While the game stalls, pause the audio instead of looping a buffer (the loud "
-              "buzz).\nOff: the old behaviour, the buzz comes back. For testing whether the hold "
-              "itself causes hitches or the boot crash."));
-    INSERT(Settings, kledd_resumable_gc, tr("[Kledd] Resumable texture cleanup (John)"),
-           tr("Only changes HOW the cleanup walks through old textures, not how long they are "
-              "kept: the 5 s keep time applies either way.\nOn: the walk continues where it "
-              "stopped on the next frame, so textures still in use at the front of the list "
-              "no longer block the rest (more old textures get freed).\nOff: the walk starts at "
-              "the front every frame (stock Eden). From John's Unified-GC branch."));
-    INSERT(Settings, kledd_cheat_write_fix, tr("[Kledd] Cheat write fix (Eden PR #4640)"),
-           tr("Cheats rewrite their values about 12 times a second. With this on, a write that "
-              "changes nothing is skipped, only writes to code make the CPU re-translate it, and cheat "
-              "reads no longer ask the GPU for the memory first.\n"
-              "Off: the old behaviour, where performance drops over long sessions with cheats."));
-    INSERT(Settings, kledd_descriptor_stride_fix,
-           tr("[Kledd] Descriptor stride fix (Amicuchu, PR #4549)"),
-           tr("Indexes texture handle arrays inside structs by their real stride instead of the "
-              "power-of-two part of it, so fewer descriptors are bound per draw.\n"
-              "By Amicuchu, from Eden PR #4549. Experimental."));
-    INSERT(Settings, kledd_descriptor_max, tr("[Kledd] Max descriptors per array"),
-           tr("Upper limit for textures bound from one dynamically indexed array (Eden "
-              "default 1024, Kledd default 256). Lower can be faster; Metroid Prime 4 needs at least 128.\nRaise it if another game shows missing textures.\n"
-              "Idea from John's adjustable descriptor test build. Needs a game restart."));
+    // eden-kledd v2 golden: locked in code, hidden
+    INSERT(Settings, kledd_audio_hold, QString(), QString());
+    // eden-kledd v2 golden: locked in code, hidden
+    INSERT(Settings, kledd_resumable_gc, QString(), QString());
+    // eden-kledd v2 golden: locked in code, hidden
+    INSERT(Settings, kledd_cheat_write_fix, QString(), QString());
+    // eden-kledd v2 golden: locked in code, hidden
+    INSERT(Settings, kledd_descriptor_stride_fix, QString(), QString());
+    // eden-kledd v2 golden: locked in code, hidden
+    INSERT(Settings, kledd_descriptor_max, QString(), QString());
     // eden-kledd D preset: locked in code, hidden
     INSERT(Settings, kledd_gc_seconds, QString(), QString());
     // eden-kledd: replaced by "BC7 (GPU)" / "BC7 (CPU, slow)" in ASTC Recompression; kept hidden

@@ -81,7 +81,7 @@ void StandardVmCallbacks::MemoryReadUnsafe(VAddr address, void* data, u64 size) 
     // eden-kledd: with the cheat write fix on, cheat reads (pointer chains, conditions) skip the
     // GPU readback the normal read does: game variables are written by the CPU, and asking the
     // GPU side for them every tick only adds syncs.
-    if (Settings::values.kledd_cheat_write_fix.GetValue()) {
+    if (true) { // eden-kledd v2 golden: cheat write fix locked on, the setting is ignored
         process->GetMemory().ReadBlockUnsafe(address, data, size);
         return;
     }
@@ -111,7 +111,7 @@ void StandardVmCallbacks::MemoryWriteUnsafe(VAddr address, const void* data, u64
         }
     }
 
-    if (!Settings::values.kledd_cheat_write_fix.GetValue()) {
+    if (false) { // eden-kledd v2 golden: cheat write fix locked on, the setting is ignored
         // eden-kledd: the old behaviour, for A/B tests
         if (process->GetMemory().WriteBlock(address, data, size)) {
             Core::InvalidateInstructionCacheRange(process, address, size);
