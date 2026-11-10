@@ -1938,7 +1938,10 @@ bool TextureCache<P>::KleddTryDeltaUpload(Image& image, ImageId image_id) {
     // 16 MiB: the logs show smaller deltas at 0-2 ms on this thread, cheaper than a task
     constexpr u64 async_delta_min_bytes = 16_MiB;
     const u64 changed_bytes = static_cast<u64>(changed.size()) * watch->group_bytes;
-    if (async_unswizzle_mode == Settings::AsyncUnswizzleMode::Gpu &&
+    // eden-kledd test: "[Kledd] Delta: GPU handoff" off keeps big deltas on the on-the-spot path
+    // (as in CPU unswizzle mode) while full uploads still use the GPU unswizzle.
+    if (Settings::values.kledd_delta_async.GetValue() &&
+        async_unswizzle_mode == Settings::AsyncUnswizzleMode::Gpu &&
         True(image.flags & ImageFlagBits::Sparse) && changed_bytes >= async_delta_min_bytes) {
         if (unswizzle_queue.size() >= MAX_ASYNC_UNSWIZZLE_TASKS) {
             // eden-kledd: queue full. Don't throw out another texture's job for a delta (that

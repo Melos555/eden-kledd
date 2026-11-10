@@ -675,6 +675,10 @@ struct Values {
     // background (catches writes the watch missed: black/stale textures in Prime 4)
     SwitchableSetting<bool> kledd_delta_refresh{linkage, true, "kledd_delta_refresh",
                                                 Category::RendererHacks};
+    // eden-kledd: with async unswizzle GPU, hand big deltas (>= 16 MiB) to the GPU unswizzle
+    // queue. Off = do them on the spot, as in CPU mode (test for the black textures)
+    SwitchableSetting<bool> kledd_delta_async{linkage, true, "kledd_delta_async",
+                                              Category::RendererHacks};
     // eden-kledd: background refresh speed = z groups re-read per frame, spread round-robin
     // over the watched pools (1 = the old one-per-frame pace)
     SwitchableSetting<u32, true> kledd_delta_refresh_speed{linkage,           4, 1, 16,

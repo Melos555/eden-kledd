@@ -295,6 +295,11 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
               "frame in the background, cycling through all of them (a full pass every few "
               "seconds).\nCatches changes the delta watch missed (black or stale textures). "
               "Takes effect after restarting the game."));
+    INSERT(Settings, kledd_delta_async, tr("[Kledd] Delta: GPU handoff (test)"),
+           tr("With Async Unswizzle Mode GPU, big delta texture updates are handed to the "
+              "background GPU unswizzle.\nOff: they are done on the spot instead (like CPU "
+              "mode), while full texture uploads still use the GPU.\nTest for black textures "
+              "after doors."));
     INSERT(Settings, kledd_delta_refresh_speed, tr("[Kledd] Delta: refresh speed (test)"),
            tr("How many pieces of the streamed textures the background refresh re-reads per "
               "frame. Higher = black or stale textures come back sooner, but more upload work "

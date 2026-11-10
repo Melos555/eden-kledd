@@ -134,6 +134,7 @@ std::vector<std::string> KleddSettingsPairs() {
         fmt::format("Resumable cleanup={}", on(v.kledd_resumable_gc.GetValue())),
         fmt::format("Cheat write fix={}", on(v.kledd_cheat_write_fix.GetValue())),
         fmt::format("Delta upload={}", on(v.kledd_delta_upload.GetValue())),
+        fmt::format("Delta GPU handoff={}", on(v.kledd_delta_async.GetValue())),
         fmt::format("Delta refresh={} / speed {}", on(v.kledd_delta_refresh.GetValue()),
                     v.kledd_delta_refresh_speed.GetValue()),
         "Early buffer release=off (locked)",
