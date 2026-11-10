@@ -106,3 +106,16 @@ verified vs guessed, next step.
   2.9 GHz base (Melos keeps boost off on purpose, for fan noise), Eden ~4.5 cores, busiest core ~71%.
 - **Interpretation:** neither GPU nor CPU is maxed in good runs; the bad-run difference is
   stretches of steady low FPS (~33) that the long frame log (> 50 ms only) can't see. Cause open.
+
+## 2026-11-10 20:27: #135 (48ca548), delta off: cleanest run so far
+
+- **Settings (F7 summary):** delta upload off, GPU handoff off, refresh off (speed 4), resumable
+  cleanup off, async unswizzle GPU.
+- **Run:** 23.3 s, avg 78.0 / median 81.6 FPS, 1% low 44.8, 0.1% low 35.1, worst frame 28 ms,
+  0 frames over 50 ms.
+- **Melos:** "I have 90 FPS where the [game] crackled to 30 FPS" and "fuck the delta texture" -
+  wants delta off.
+- **Verified:** the recording above. Short stretch, one run.
+- **Interpretation:** at this spot, delta off has no hitches at all, while earlier delta-on runs had
+  200-500 ms freezes; it's one 23 s run, so not proven over a full route.
+- **Next:** Melos's call: delta off as the daily setup. The handoff on/off test is not done.
