@@ -15,10 +15,15 @@ layout (binding = 0) uniform sampler2D current_texture;
 layout (binding = 1) uniform sampler2D history_texture;
 
 // Weight of the current frame when the history agrees with it, and when it had to be clipped
-const float CURRENT_WEIGHT_STABLE = 0.12;
-const float CURRENT_WEIGHT_CLIPPED = 0.5;
+// (Kledd tune: 0.12 / 0.5 / 1.25 before; the current frame counts more and stale history is
+// thrown away sooner, so less smear and ghosting)
+const float CURRENT_WEIGHT_STABLE = 0.2;
+const float CURRENT_WEIGHT_CLIPPED = 0.6;
 // Width of the neighbourhood colour box in standard deviations
-const float CLIP_GAMMA = 1.25;
+const float CLIP_GAMMA = 1.0;
+// Sharpening of the brightness detail the blend softens (from the current frame, brightness only
+// so no colour fringes, kept inside the neighbourhood's range so it can't make halos)
+const float SHARPEN = 0.35;
 
 vec3 RgbToYCoCg(vec3 c) {
     return vec3(0.25 * c.r + 0.5 * c.g + 0.25 * c.b,
@@ -39,12 +44,20 @@ void main() {
 
     vec3 moment1 = vec3(0.0);
     vec3 moment2 = vec3(0.0);
+    float luma_min = current.x;
+    float luma_max = current.x;
+    float cross_luma = 0.0;
     for (int y = -1; y <= 1; ++y) {
         for (int x = -1; x <= 1; ++x) {
             const ivec2 sample_pos = clamp(pos + ivec2(x, y), ivec2(0), size - 1);
             const vec3 s = RgbToYCoCg(texelFetch(current_texture, sample_pos, 0).rgb);
             moment1 += s;
             moment2 += s * s;
+            luma_min = min(luma_min, s.x);
+            luma_max = max(luma_max, s.x);
+            if ((x == 0) != (y == 0)) {
+                cross_luma += s.x;
+            }
         }
     }
     const vec3 mean = moment1 / 9.0;
@@ -63,8 +76,13 @@ void main() {
     // Luma-weighted blend keeps bright pixels from flickering through the history
     const float weight_current = current_weight / (1.0 + current.x);
     const float weight_history = (1.0 - current_weight) / (1.0 + clipped.x);
-    const vec3 resolved =
+    vec3 resolved =
         (current * weight_current + clipped * weight_history) / (weight_current + weight_history);
+
+    // Put back some of the fine detail the blend softened: the current frame's brightness minus
+    // its 4 neighbours' average, limited to the neighbourhood's brightness range
+    const float detail = current.x - cross_luma * 0.25;
+    resolved.x = clamp(resolved.x + SHARPEN * detail, luma_min, luma_max);
 
     frag_color = vec4(YCoCgToRgb(resolved), center.a);
 }

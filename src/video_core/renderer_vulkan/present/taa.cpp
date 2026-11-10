@@ -14,7 +14,7 @@
 namespace Vulkan {
 
 TAA::TAA(const Device& device, MemoryAllocator& allocator, size_t image_count, VkExtent2D extent)
-    : m_fxaa(device, allocator, image_count, extent)
+    : m_smaa(device, allocator, image_count, extent)
     , m_extent(extent)
     , m_image_count(u32(image_count))
 {
@@ -114,8 +114,9 @@ void TAA::UploadImages(const Device& device, Scheduler& scheduler) {
 }
 
 void TAA::Draw(const Device& device, Scheduler& scheduler, size_t image_index, VkImage* inout_image, VkImageView* inout_image_view) {
-    // FXAA smooths edges within the frame, the temporal pass then steadies them across frames
-    m_fxaa.Draw(device, scheduler, image_index, inout_image, inout_image_view);
+    // SMAA smooths edges within the frame (sharper than FXAA), the temporal pass then steadies
+    // them across frames
+    m_smaa.Draw(device, scheduler, image_index, inout_image, inout_image_view);
 
     // The previous output is the history; on the first frame (or if it would alias the image
     // being written) the current frame stands in for it, which resolves to the current frame

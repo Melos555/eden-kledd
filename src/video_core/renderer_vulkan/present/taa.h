@@ -4,7 +4,7 @@
 #pragma once
 
 #include "video_core/renderer_vulkan/present/anti_alias_pass.h"
-#include "video_core/renderer_vulkan/present/fxaa.h"
+#include "video_core/renderer_vulkan/present/smaa.h"
 #include "video_core/vulkan_common/vulkan_memory_allocator.h"
 #include "video_core/vulkan_common/vulkan_wrapper.h"
 
@@ -13,8 +13,9 @@ namespace Vulkan {
 class Device;
 class Scheduler;
 
-/// FXAA followed by a temporal resolve against the previous output. There are no motion
-/// vectors, so the history is clipped to the current neighbourhood instead of reprojected.
+/// SMAA followed by a temporal resolve against the previous output. There are no motion
+/// vectors, so the history is clipped to the current neighbourhood instead of reprojected,
+/// and the detail the blend softens is sharpened back in from the current frame.
 class TAA final : public AntiAliasPass {
 public:
     explicit TAA(const Device& device, MemoryAllocator& allocator, size_t image_count, VkExtent2D extent);
@@ -41,7 +42,7 @@ private:
         vk::Image image{};
         vk::ImageView image_view{};
     };
-    FXAA m_fxaa;
+    SMAA m_smaa;
     std::vector<Image> m_dynamic_images{};
     const VkExtent2D m_extent;
     const u32 m_image_count;
