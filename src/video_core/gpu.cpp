@@ -20,6 +20,7 @@
 #include "core/frontend/emu_window.h"
 #include "core/frontend/graphics_context.h"
 #include "core/hle/service/nvdrv/nvdata.h"
+#include "core/kledd_shot_probe.h"
 #include "core/perf_stats.h"
 #include "video_core/cdma_pusher.h"
 #include "video_core/control/channel_state.h"
@@ -171,6 +172,8 @@ struct GPU::Impl {
 
     void RendererFrameEndNotify() {
         system.GetPerfStats().EndGameFrame();
+        // eden-kledd: MP4 shot probe (does nothing unless switched on)
+        Core::KleddShotProbe::OnGameFrame(system);
     }
 
     /// Performs any additional setup necessary in order to begin GPU emulation.

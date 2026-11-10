@@ -283,6 +283,11 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
     INSERT(Settings, kledd_frame_log, tr("[Kledd] Long frame log"),
            tr("Writes a log line for every frame that takes longer than 50 ms, listing the "
               "texture and shader work done in it.\nFor debugging only."));
+    INSERT(Settings, kledd_shot_probe, tr("[Kledd] Shot probe (MP4 Beyond)"),
+           tr("Metroid Prime 4: Beyond 1.1.0 only. Writes the arm cannon's shot timers to "
+              "log/kledd_shot_probe.txt every frame, to find what limits the fire rate.
+"
+              "Log only, changes nothing in the game. For debugging only."));
     INSERT(Settings, kledd_gentle_gc, tr("[Kledd] Gentle texture cleanup"),
            tr("When texture memory is high, only delete textures that have not been used for a "
               "few seconds, instead of a few frames.\nExperimental: may use more VRAM."));

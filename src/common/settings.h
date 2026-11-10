@@ -659,6 +659,9 @@ struct Values {
     // eden-kledd: log frames that take too long, with texture/pipeline work done in them
     SwitchableSetting<bool> kledd_frame_log{linkage, false, "kledd_frame_log",
                                             Category::RendererHacks};
+    // eden-kledd: MP4 Beyond 1.1.0 shot probe, writes log/kledd_shot_probe.txt (log only)
+    SwitchableSetting<bool> kledd_shot_probe{linkage, false, "kledd_shot_probe",
+                                             Category::RendererHacks};
     // eden-kledd: keep recently used textures longer before the garbage collector deletes them
     SwitchableSetting<bool> kledd_gentle_gc{linkage, false, "kledd_gentle_gc",
                                             Category::RendererHacks};
