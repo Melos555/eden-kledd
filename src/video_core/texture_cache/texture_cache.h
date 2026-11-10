@@ -1506,8 +1506,36 @@ void TextureCache<P>::KleddRefreshWatchedPools() {
     // re-reads that group from guest memory. 2-5 MiB per frame instead of a full pool.
     if (kledd_watches.empty() || !Settings::values.kledd_delta_upload.GetValue() ||
         !Settings::values.kledd_delta_refresh.GetValue()) {
+        kledd_followups.clear();
         return;
     }
+
+    // After-door re-reads first: the remapped groups, 0.25 s and 1 s after the remap
+    if (!kledd_followups.empty()) {
+        const auto now = std::chrono::steady_clock::now();
+        std::erase_if(kledd_followups, [&](const KleddFollowUp& follow_up) {
+            if (now < follow_up.due) {
+                return false;
+            }
+            KleddWatch* watch = KleddFindWatch(follow_up.image_id);
+            if (!watch) {
+                return true; // the pool is gone
+            }
+            Image& image = slot_images[follow_up.image_id];
+            if (!watch->complete || True(image.flags & ImageFlagBits::IsDecoding) ||
+                True(image.flags & ImageFlagBits::GpuModified)) {
+                return false; // busy: try again next frame
+            }
+            for (u32 group = follow_up.group_begin;
+                 group < follow_up.group_end && group < watch->dirty.size(); ++group) {
+                watch->dirty[group] = 1;
+                ++kledd_followup_count;
+            }
+            image.flags |= ImageFlagBits::CpuModified;
+            return true;
+        });
+    }
+
     auto it = kledd_watches.find(kledd_refresh_image);
     if (it == kledd_watches.end() || kledd_refresh_group >= it->second.num_groups) {
         // Next pool (map order is stable while no pool is added or removed)
@@ -1532,11 +1560,15 @@ void TextureCache<P>::KleddRefreshWatchedPools() {
 
     const auto now = std::chrono::steady_clock::now();
     if (now - kledd_refresh_log > std::chrono::seconds(10)) {
-        if (kledd_refresh_count > 0) {
-            LOG_INFO(HW_GPU, "[Kledd] delta refresh: {} z groups re-read in the last 10 s ({} pools)",
-                     kledd_refresh_count, kledd_watches.size());
+        if (kledd_refresh_count > 0 || kledd_followup_count > 0) {
+            LOG_INFO(HW_GPU,
+                     "[Kledd] delta refresh: {} z groups re-read in the last 10 s, {} of them "
+                     "after doors ({} pools)",
+                     kledd_refresh_count + kledd_followup_count, kledd_followup_count,
+                     kledd_watches.size());
         }
         kledd_refresh_count = 0;
+        kledd_followup_count = 0;
         kledd_refresh_log = now;
     }
 }
@@ -1643,6 +1675,20 @@ void TextureCache<P>::KleddMarkRemapped(ImageId image_id, const ImageBase& image
     }
     watch.dirty_by_remap++;
     KleddMarkGroups(image_id, image, watch, begin - image_begin, end - image_begin);
+    // eden-kledd: the game fills the swapped pages a moment after the remap, after this upload
+    // may already have read them, and those writes can slip past the watch (black textures at
+    // doors until the background refresh comes round). Re-read these groups again shortly.
+    if (Settings::values.kledd_delta_refresh.GetValue() && watch.group_bytes > 0 &&
+        kledd_followups.size() < 1024) {
+        const u32 g_begin = static_cast<u32>((begin - image_begin) / watch.group_bytes);
+        const u32 g_end = (std::min)(
+            static_cast<u32>((end - image_begin + watch.group_bytes - 1) / watch.group_bytes),
+            watch.num_groups);
+        const auto now = std::chrono::steady_clock::now();
+        for (const auto delay : {std::chrono::milliseconds(250), std::chrono::milliseconds(1000)}) {
+            kledd_followups.push_back({image_id, g_begin, g_end, now + delay});
+        }
+    }
     // The page table entry is still being written when this is called, so the new mapping is
     // read later, by KleddRebuildViews. Pages of one map call arrive in order: merge them.
     auto& ranges = watch.remapped;

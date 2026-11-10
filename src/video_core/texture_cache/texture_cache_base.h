@@ -341,6 +341,16 @@ private:
     u32 kledd_refresh_group = 0;
     u32 kledd_refresh_count = 0;
     std::chrono::steady_clock::time_point kledd_refresh_log{};
+    /// After-door re-reads: z groups of a watched pool that were remapped (Metroid Prime 4 swaps
+    /// pool pages at doors and fills them a moment later), re-read again when `due` is reached
+    struct KleddFollowUp {
+        ImageId image_id;
+        u32 group_begin;
+        u32 group_end;
+        std::chrono::steady_clock::time_point due;
+    };
+    std::vector<KleddFollowUp> kledd_followups;
+    u32 kledd_followup_count = 0;
     /// Calls func(cpu_addr, size) for every CPU page range owned by one z group. The groups
     /// partition the image's pages; sparse images go through their registered map views.
     template <typename Func>
