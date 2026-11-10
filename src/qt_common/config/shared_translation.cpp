@@ -295,6 +295,11 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
               "frame in the background, cycling through all of them (a full pass every few "
               "seconds).\nCatches changes the delta watch missed (black or stale textures). "
               "Takes effect after restarting the game."));
+    INSERT(Settings, kledd_delta_refresh_speed, tr("[Kledd] Delta: refresh speed (test)"),
+           tr("How many pieces of the streamed textures the background refresh re-reads per "
+              "frame. Higher = black or stale textures come back sooner, but more upload work "
+              "per frame.\n1 = the old pace (a full pass every ~5 s), 4 = about 1 s, 8 = about "
+              "half a second. A busy texture is retried instead of skipped."));
     // eden-kledd texture-switches test build: switchable again
     INSERT(Settings, kledd_delta_upload, tr("[Kledd] Delta texture upload (okboomerxd)"),
            tr("For huge streamed textures, upload only the parts the game changed.\n"

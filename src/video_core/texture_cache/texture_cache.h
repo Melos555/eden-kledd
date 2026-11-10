@@ -1536,36 +1536,47 @@ void TextureCache<P>::KleddRefreshWatchedPools() {
         });
     }
 
+    // Several groups per frame (setting), round-robin over the pools: one group of one pool per
+    // step. A pool that is busy (upload in flight, GPU-written) is passed over for this frame
+    // but keeps its cursor, so its next group is retried next frame instead of a lap later.
+    const u32 budget =
+        std::clamp<u32>(Settings::values.kledd_delta_refresh_speed.GetValue(), 1U, 16U);
     auto it = kledd_watches.find(kledd_refresh_image);
-    if (it == kledd_watches.end() || kledd_refresh_group >= it->second.num_groups) {
-        // Next pool (map order is stable while no pool is added or removed)
-        if (it == kledd_watches.end()) {
-            it = kledd_watches.begin();
-        } else if (++it == kledd_watches.end()) {
+    if (it == kledd_watches.end()) {
+        it = kledd_watches.begin();
+    }
+    u32 marked = 0;
+    const size_t max_steps = kledd_watches.size() * budget;
+    for (size_t step = 0; step < max_steps && marked < budget; ++step) {
+        KleddWatch& watch = it->second;
+        Image& image = slot_images[it->first];
+        if (watch.complete && !watch.dirty.empty() &&
+            False(image.flags & ImageFlagBits::IsDecoding) &&
+            False(image.flags & ImageFlagBits::GpuModified)) {
+            if (watch.refresh_cursor >= watch.dirty.size()) {
+                watch.refresh_cursor = 0;
+            }
+            watch.dirty[watch.refresh_cursor] = 1;
+            ++watch.refresh_cursor;
+            image.flags |= ImageFlagBits::CpuModified;
+            ++kledd_refresh_count;
+            ++marked;
+        }
+        if (++it == kledd_watches.end()) {
             it = kledd_watches.begin();
         }
-        kledd_refresh_image = it->first;
-        kledd_refresh_group = 0;
     }
-    KleddWatch& watch = it->second;
-    Image& image = slot_images[it->first];
-    if (watch.complete && kledd_refresh_group < watch.dirty.size() &&
-        False(image.flags & ImageFlagBits::IsDecoding) &&
-        False(image.flags & ImageFlagBits::GpuModified)) {
-        watch.dirty[kledd_refresh_group] = 1;
-        image.flags |= ImageFlagBits::CpuModified;
-        ++kledd_refresh_count;
-    }
-    ++kledd_refresh_group;
+    kledd_refresh_image = it->first;
 
     const auto now = std::chrono::steady_clock::now();
     if (now - kledd_refresh_log > std::chrono::seconds(10)) {
         if (kledd_refresh_count > 0 || kledd_followup_count > 0) {
             LOG_INFO(HW_GPU,
                      "[Kledd] delta refresh: {} z groups re-read in the last 10 s, {} of them "
-                     "after doors ({} pools)",
+                     "after doors ({} pools, speed {})",
                      kledd_refresh_count + kledd_followup_count, kledd_followup_count,
-                     kledd_watches.size());
+                     kledd_watches.size(),
+                     Settings::values.kledd_delta_refresh_speed.GetValue());
         }
         kledd_refresh_count = 0;
         kledd_followup_count = 0;

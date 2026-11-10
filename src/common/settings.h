@@ -675,6 +675,12 @@ struct Values {
     // background (catches writes the watch missed: black/stale textures in Prime 4)
     SwitchableSetting<bool> kledd_delta_refresh{linkage, true, "kledd_delta_refresh",
                                                 Category::RendererHacks};
+    // eden-kledd: background refresh speed = z groups re-read per frame, spread round-robin
+    // over the watched pools (1 = the old one-per-frame pace)
+    SwitchableSetting<u32, true> kledd_delta_refresh_speed{linkage,           4, 1, 16,
+                                                           "kledd_delta_refresh_speed",
+                                                           Category::RendererHacks,
+                                                           Specialization::Countable};
     // eden-kledd: hand the frame buffer back right after compose (Eden #4548) instead of on the
     // next compose. Off = the older behaviour, where the game can't queue frames as far ahead.
     SwitchableSetting<bool> kledd_early_buffer_release{linkage, false,

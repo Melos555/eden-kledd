@@ -330,15 +330,18 @@ private:
         /// GPU ranges of the image whose page mapping changed; their map views are rebuilt from
         /// the page table before their groups are protected again
         std::vector<std::pair<GPUVAddr, GPUVAddr>> remapped;
+        /// Background refresh: next z group to re-read. Only advances when that group was
+        /// actually marked, so a busy pool resumes where it was instead of losing a lap
+        u32 refresh_cursor = 0;
     };
     ::Common::unordered_map<ImageId, KleddWatch> kledd_watches;
     std::chrono::steady_clock::time_point kledd_decline_log{};
     KleddWatch* KleddFindWatch(ImageId image_id);
-    /// Background refresh: one z group of one watched pool per frame is marked written, so the
-    /// delta path re-reads it from guest memory even if the write watch missed a write there
+    /// Background refresh: a few z groups per frame (kledd_delta_refresh_speed), round-robin over
+    /// the watched pools, are marked written, so the delta path re-reads them from guest memory
+    /// even if the write watch missed a write there
     void KleddRefreshWatchedPools();
     ImageId kledd_refresh_image{};
-    u32 kledd_refresh_group = 0;
     u32 kledd_refresh_count = 0;
     std::chrono::steady_clock::time_point kledd_refresh_log{};
     /// After-door re-reads: z groups of a watched pool that were remapped (Metroid Prime 4 swaps
