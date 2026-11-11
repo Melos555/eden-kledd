@@ -37,7 +37,7 @@ constexpr u32 DESCRIPTOR_SIZE_SHIFT = u32(std::countr_zero(DESCRIPTOR_SIZE));
 // eden-kledd: adjustable via "[Kledd] Max descriptors per array" (default 1024 = Eden's value).
 // Idea from John's "Adjustable Descriptor" test commit (MP4 needs at least 128).
 u32 DESCRIPTOR_MAX_COUNT() {
-    return 256U; // eden-kledd v2 golden: locked to Melos's setting, the setting is ignored
+    return std::clamp<u32>(Settings::values.kledd_descriptor_max.GetValue(), 32U, 1024U);
 }
 
 u32 DynamicDescriptorSizeShift(const IR::U32& dynamic_offset) {
@@ -63,7 +63,7 @@ u32 MAX_CBUF_SIZE() {
 /// handles, when it is an index times a constant (e.g. FindUMsb(light_mask) * 304). Returns an
 /// empty index otherwise.
 std::pair<IR::U32, u32> DynamicDescriptorIndex(const IR::U32& dynamic_offset) {
-    if (true) { // eden-kledd v2 golden: stride fix locked on, the setting is ignored
+    if (Settings::values.kledd_descriptor_stride_fix.GetValue()) {
         const IR::Inst* const inst{dynamic_offset.TryInstRecursive()};
         if (inst != nullptr) {
             switch (inst->GetOpcode()) {

@@ -29,16 +29,3 @@ Melos's Nov 10 long-frame logs texture memory sat around the "expected" line (~2
 
 **Next (not done, needs Melos's go):** bring the keep-seconds box back and make the code read it,
 and decide whether Gentle cleanup should do anything.
-
-## 2026-11-10: v2 golden locks Melos's best-run settings in code
-
-- **Melos:** "Hardwire my latest settings, except for BC7, leave that as is."
-- **Locked in code, switch hidden** (the settings stay defined so old configs load; the code
-  ignores them): delta upload **off** (so background refresh, after-door re-reads, GPU handoff and
-  refresh speed never run either), resumable cleanup **off**, async unswizzle **GPU / chunk 128**,
-  descriptor stride fix **on**, max descriptors **256**, audio hold **on**, cheat write fix **on**.
-  Gentle cleanup hidden too (it had no effect, see above). Keep seconds stays the fixed 5.
-- **Left changeable:** ASTC recompression / BC7, and the debug logs (DMA readback, long frame log,
-  shot probe).
-- The F7 summary prints the locked values as "(locked)".
-- Not compiled locally; the CI build of this commit is the first check.
