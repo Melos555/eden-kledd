@@ -172,8 +172,8 @@ struct GPU::Impl {
 
     void RendererFrameEndNotify() {
         system.GetPerfStats().EndGameFrame();
-        // eden-kledd: MP4 shot probe (does nothing unless switched on)
-        Core::KleddShotProbe::OnGameFrame(system);
+        // eden-kledd v2 golden: the MP4 shot probe is not hooked up in the release (this version
+        // froze the client; the fixed one lives on the kledd-prime4-v1-golden-shot-probe lab branch)
     }
 
     /// Performs any additional setup necessary in order to begin GPU emulation.
