@@ -29,3 +29,17 @@ Melos's Nov 10 long-frame logs texture memory sat around the "expected" line (~2
 
 **Next (not done, needs Melos's go):** bring the keep-seconds box back and make the code read it,
 and decide whether Gentle cleanup should do anything.
+
+## 2026-11-11: John's resumable cleanup, Melos's verdict "legit good"
+
+- **Melos:** "John's Garbage Collector? Legit good."
+- **Recordings (build #136, kledd-prime4-v1-golden-shot-probe 68db0e6; delta off, chunk Normal,
+  ASTC recompression 0, shot probe on in some runs):**
+  - 11:53, resumable **on**: 38 s, avg 81.6, 1% low 12.7, 8 hitches > 100 ms, worst 354 ms.
+  - 11:55, resumable **on**: 61 s, avg 85.6, 1% low 18.9, 4 hitches, worst 214 ms.
+  - 12:01, resumable **off**: 100 s, avg 80.0, 1% low 14.6, 12 hitches, worst 328 ms.
+- **Interpretation:** per minute, on = ~7.3 hitches (both runs together), off = ~7.2; the best
+  single run had it on. Not worse by the numbers, better by feel. Short runs, routes not identical.
+- **Note:** v0.3 (main) locks resumable cleanup **off** (`d6b2ccc460`). The lab branch
+  (kledd-prime4-v2-golden) has the switch again (default off). If it stays good over longer runs,
+  the next release could ship it on.
