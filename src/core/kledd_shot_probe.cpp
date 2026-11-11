@@ -32,7 +32,10 @@ constexpr u64 kTitleId = 0x010019A01E2F2000ULL;
 constexpr u64 kGunVtableOffset = 0x180CE08;
 
 constexpr std::size_t kSnapshotSize = 0x300; // bytes of the component that are sampled
-constexpr u64 kScanChunk = 16ULL * 1024 * 1024; // heap bytes scanned per frame while searching
+// Heap scan budget per frame while searching. Small on purpose: this runs on the GPU frame-end
+// path, so a frame only pays for ~2 MB of copying (a few seconds per GB of heap).
+constexpr u64 kScanChunk = 2ULL * 1024 * 1024; // mapped bytes read per frame
+constexpr u64 kScanMaxBlocksPerFrame = 1024;  // address checks per frame (64 MB of range)
 constexpr u64 kScanBlock = 0x10000;
 constexpr std::size_t kMaxGuns = 4;
 
@@ -89,8 +92,9 @@ State& GetState() {
 
 void Write(State& s, const std::string& line) {
     if (s.file && s.file->IsOpen()) {
-        void(s.file->WriteString(line));
-        void(s.file->WriteString("\n"));
+        // one std::string: a "\n" literal would be passed as a 2-char span and write a NUL byte
+        const std::string out = line + '\n';
+        void(s.file->WriteString(out));
     }
 }
 
@@ -140,12 +144,18 @@ void StartScan(State& s, Kernel::KProcess& process) {
 void ContinueScan(State& s, Core::Memory::Memory& memory) {
     const u64 vt = s.main_begin + kGunVtableOffset;
     std::vector<u8> buf(kScanBlock);
-    const u64 stop = std::min(s.scan_end, s.scan_pos + kScanChunk);
-    for (; s.scan_pos < stop; s.scan_pos += kScanBlock) {
+    u64 read_bytes = 0;
+    u64 checks = 0;
+    for (; s.scan_pos < s.scan_end && read_bytes < kScanChunk && checks < kScanMaxBlocksPerFrame;
+         s.scan_pos += kScanBlock) {
+        ++checks;
         if (!memory.IsValidVirtualAddressRange(s.scan_pos, kScanBlock)) {
-            continue;
+            continue; // unmapped: skip without reading
         }
-        memory.ReadBlock(s.scan_pos, buf.data(), kScanBlock);
+        // ReadBlockUnsafe = plain copy. The safe ReadBlock first asks the GPU to download
+        // GPU-cached pages, which waits on the GPU thread we are running on: that froze the client.
+        memory.ReadBlockUnsafe(s.scan_pos, buf.data(), kScanBlock);
+        read_bytes += kScanBlock;
         for (std::size_t i = 0; i + 8 <= kScanBlock; i += 8) {
             u64 v;
             std::memcpy(&v, buf.data() + i, 8);
@@ -209,7 +219,7 @@ void Sample(State& s, Core::Memory::Memory& memory) {
             lost = true;
             continue;
         }
-        memory.ReadBlock(s.guns[g], cur.data(), kSnapshotSize);
+        memory.ReadBlockUnsafe(s.guns[g], cur.data(), kSnapshotSize); // never ReadBlock here
         if (Load(cur.data(), 8) != vt) {
             lost = true; // object was freed or moved
             continue;
