@@ -91,3 +91,33 @@ jobs:
           name: ${{ env.ARTIFACT_NAME }}
           path: out/
           retention-days: 30
+
+  # eden-kledd: lab builds (any branch but main) also go into the private "Lab" draft release,
+  # replacing the previous Windows file there, so the newest one downloads instantly
+  lab-release:
+    needs: build
+    if: github.ref_name != 'main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    concurrency:
+      group: lab-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+      - uses: actions/download-artifact@v4
+        with:
+          path: dl
+      - name: Upload to the Lab release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          dir=$(find dl -mindepth 1 -maxdepth 1 -type d | head -1)
+          (cd "$dir" && zip -qr "$GITHUB_WORKSPACE/eden-kledd-lab-windows.zip" .)
+          bash .github/scripts/lab-release.sh \
+            "Windows #${GITHUB_RUN_NUMBER} [${GITHUB_REF_NAME} ${GITHUB_SHA::7}]" \
+            eden-kledd-lab-windows.zip
