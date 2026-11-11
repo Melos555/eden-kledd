@@ -116,8 +116,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
+          # Same naming as the Actions download: the zip holds a folder like
+          # "#144 [prime4-v2-golden 0d27806]", so "Extract All" makes that folder directly.
+          # The file name carries the build too (GitHub doesn't allow # [ ] or spaces there).
+          branch="${GITHUB_REF_NAME#kledd-}"; branch="${branch#lab-}"
+          folder="#${GITHUB_RUN_NUMBER} [${branch} ${GITHUB_SHA::7}]"
+          file="eden-kledd-lab-${GITHUB_RUN_NUMBER}-${branch}-${GITHUB_SHA::7}-windows.zip"
+          file=$(printf '%s' "$file" | tr -c 'A-Za-z0-9._\n-' '-')
           dir=$(find dl -mindepth 1 -maxdepth 1 -type d | head -1)
-          (cd "$dir" && zip -qr "$GITHUB_WORKSPACE/eden-kledd-lab-windows.zip" .)
-          bash .github/scripts/lab-release.sh \
-            "Windows #${GITHUB_RUN_NUMBER} [${GITHUB_REF_NAME} ${GITHUB_SHA::7}]" \
-            eden-kledd-lab-windows.zip
+          mkdir -p "pack/$folder"
+          cp -a "$dir"/. "pack/$folder/"
+          (cd pack && zip -qr "$GITHUB_WORKSPACE/$file" "$folder")
+          bash .github/scripts/lab-release.sh "Windows $folder" '-windows\.zip$' "$file"

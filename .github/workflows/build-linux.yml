@@ -145,6 +145,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # File names carry the build, like the Actions downloads ("#101 [prime4-v2-golden d91b302]")
+          branch="${GITHUB_REF_NAME#kledd-}"; branch="${branch#lab-}"
+          stem="eden-kledd-lab-${GITHUB_RUN_NUMBER}-${branch}-${GITHUB_SHA::7}"
+          stem=$(printf '%s' "$stem" | tr -c 'A-Za-z0-9._\n-' '-')
+          cp "$(find dl -type f -name '*linux-x86_64.tar.gz' | head -1)" "$stem-linux-x86_64.tar.gz"
+          cp "$(find dl -type f -name '*.AppImage' | head -1)" "$stem-x86_64.AppImage"
           bash .github/scripts/lab-release.sh \
-            "Linux #${GITHUB_RUN_NUMBER} [${GITHUB_REF_NAME} ${GITHUB_SHA::7}]" \
-            $(find dl -type f -name 'eden-kledd-lab-*')
+            "Linux #${GITHUB_RUN_NUMBER} [${branch} ${GITHUB_SHA::7}]" \
+            '(-linux-x86_64\.tar\.gz|-x86_64\.AppImage)$' \
+            "$stem-linux-x86_64.tar.gz" "$stem-x86_64.AppImage"
