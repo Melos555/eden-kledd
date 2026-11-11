@@ -158,3 +158,14 @@ has seen it gone in game. The open lead, if anyone returns to this, is the GPU h
   expires while the scan view hides the room. Possible fix: allow a longer keep time (10-15 s).
 - **Also seen:** one crash (Qt6Core.dll, BEX64) on alt-tab during a heavy door load, with
   Explorer crashing at the same moment; no low-memory event. Cause unknown, watching for repeats.
+
+## 2026-11-11: v0.3 released
+
+- **Release:** `v0.3` "Eden Kledd v0.3: Metroid Prime 4 performance build", marked Latest, tagged on
+  main `d91b302e1e` (locked best-run settings `d6b2ccc460` + shot probe hidden and unhooked).
+  Files: Windows zip from run 42986200649, Linux tarball + AppImage from run 42986223648.
+  README download section updated (`b41d47f479`, skip ci).
+- **Tester feedback before release (Akario, on #140):** "Definitely better! Only minor stutters,
+  texture pop-in (mainly during cutscenes), and the bugged lighting remain, but they're much less
+  frequent." Crashed the first ~3 launches, then not.
+- **Melos:** the bugged lighting stays for a while after pausing or scanning for more than ~5 s.
