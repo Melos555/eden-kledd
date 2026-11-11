@@ -18,9 +18,9 @@ Not affiliated with or endorsed by the Eden team. Please don't report bugs from 
   <a href="https://github.com/Melos555/eden-kledd/releases/latest"><b>⬇️ Download the latest release (Windows / Linux)</b></a>
 </p>
 
-- **Windows:** `eden-kledd-scanfix-windows.zip`. Unzip anywhere and run `eden.exe`. It uses your normal Eden user folder (`%APPDATA%\eden`), so settings, keys and games carry over.
-- **Linux:** `eden-kledd-scanfix-linux-x86_64.tar.gz`. Built on Ubuntu 26.04; needs the usual Eden runtime libraries (Qt 6, SDL2 etc.).
-- The release build has the scan fix **always on**, with no toggle. No login needed to download.
+- **Windows:** `eden-kledd-v0.3-windows.zip`. Unzip anywhere and run `eden.exe`. It uses your normal Eden user folder (`%APPDATA%\eden`), so settings, keys and games carry over.
+- **Linux:** `eden-kledd-v0.3-linux-x86_64.tar.gz` or `eden-kledd-v0.3-x86_64.AppImage`. Built on Debian 13 (glibc 2.41, same as SteamOS), so the AppImage also runs on the Steam Deck.
+- **v0.3** is the Metroid Prime 4 performance build: scan fix always on, plus the texture, audio and mouse-gyro work listed below. No login needed to download.
 
 ## Mods: 1080p + 120 FPS that don't break the scan visor
 
@@ -42,29 +42,46 @@ In Eden's Vulkan backend, downloading a `D24S8` image created the depth and sten
 writes overlapped and the object IDs came back garbled. This fork downloads depth and stencil into separate regions, merges them back into
 the guest format on the CPU, and does it asynchronously and only for the requested region, so there's no FPS cost.
 
-In the **release build** (branch `kledd-fix-always-on`) the fix is always on. The test builds on other branches have it behind
-`[Kledd] DMA readback fix` (plus `[Kledd] DMA readback log` for debugging) under **Graphics → Extras**.
+The fix is always on in the release.
 
-Experimental extras (gentle texture cleanup, GPU BC7 recompression, frame logging) live on the `kledd-lab` test branch only. They are
-**not** in the release.
+### New in v0.3 (Metroid Prime 4 performance build)
 
-Tested on Windows with an RTX 2060 Mobile (6GB VRAM), in both Accurate and Fast GPU mode.
+Settings that won the A/B tests are built in (locked in code), so a config can't put them back:
+
+- **Texture uploads:** the async GPU unswizzle with 128-slice chunks, and textures kept for at least 5 s of real time before the
+  cleanup may delete them (fewer re-uploads when you turn around or pause). okboomerxd's delta texture upload is **off**: in every
+  test it left textures black after doors.
+- **Descriptor stride fix** (Amicuchu, Eden PR #4549, pointed out by John) with max 256 descriptors per array (John's idea): fixes
+  wrong textures/lighting in Prime 4.
+- **Hold audio during stalls** (okboomerxd): no buzzing loop when the game hitches.
+- **Cheat write fix** (Eden PR #4640): no slowdown over long sessions with cheats.
+- **ASTC recompression BC7 on the GPU** by default (less video memory); changeable in Graphics.
+- **Mouse gyro** (Controls → Mouse panning → Configure): *Mouse to camera* (mouse look through the gyro) or *Mouse to cursor*
+  (the reticle sits where the mouse is; type in Prime 4's in-game cursor sensitivity and the angles are worked out for you),
+  plus a Gravity Check key.
+- **TAA** tuned (SMAA inside instead of FXAA, less smear), and a **frame recorder** (Shift+F7 on/off, F7 saves a summary to
+  `log/`).
+
+Tested on Windows with an RTX 2060 Mobile (6GB VRAM); testers on Linux and AMD.
 
 ## Verify the build yourself
 
 - All changes are in this repository's commit history, on top of upstream Eden snapshot `d8c6c59b6`.
 - Builds are made by **GitHub Actions** from this public source (see the [Actions tab](../../actions) and
   `.github/workflows/`). Nothing is compiled by hand.
-- The `v0.1-scanfix` release files are the Actions artifacts of runs
-  [39457072636](../../actions/runs/39457072636) (Windows) and [39457537419](../../actions/runs/39457537419) (Linux),
-  repackaged into a zip / renamed and uploaded to the release.
+- The `v0.3` release files are the Actions artifacts of runs
+  [42986200649](../../actions/runs/42986200649) (Windows) and [42986223648](../../actions/runs/42986223648) (Linux), commit `d91b302`,
+  renamed and uploaded to the release. (`v0.1-scanfix`: runs [39457072636](../../actions/runs/39457072636) and
+  [39457537419](../../actions/runs/39457537419).)
 - The commit hash in Eden's title bar matches the commit the build came from.
 
 ## Credits
 
 - **Eden team** and yuzu contributors: the emulator itself.
-- **Melos**: testing, investigation, and pointing at the depth buffer.
-- **Claude (Anthropic AI), a.k.a. Kledd**: reverse engineering, root-cause analysis and the patch. This fork was made with AI assistance.
+- **Melos**: testing, investigation, and pointing at the depth buffer; the 5 s texture cleanup and the v0.3 settings.
+- **John, okboomerxd, Amicuchu**: the descriptor fixes, audio hold and other changes credited above; **Lanner, Akario** and the
+  other testers.
+- **Claude (Anthropic AI), a.k.a. Kledd**: reverse engineering, root-cause analysis and the patches. This fork was made with AI assistance.
 
 ---
 
