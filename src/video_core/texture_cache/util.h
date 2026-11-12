@@ -108,6 +108,12 @@ struct SparsePageLayout {
 [[nodiscard]] std::optional<SparsePageLayout> ComputeSparsePageLayout(const ImageInfo& info,
                                                                      u64 page_size);
 
+/// Page layout of one mip level of a layer, for any number of levels and layers: nullopt unless
+/// the level starts on a page boundary and its pages are whole boxes of texels. Only used for
+/// diagnostics so far.
+[[nodiscard]] std::optional<SparsePageLayout> ComputeSparseLevelLayout(const ImageInfo& info,
+                                                                      u32 level, u64 page_size);
+
 void ConvertImage(std::span<const u8> input, const ImageInfo& info, std::span<u8> output,
                   std::span<BufferImageCopy> copies);
 

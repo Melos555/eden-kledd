@@ -1075,6 +1075,45 @@ std::optional<SparsePageLayout> ComputeSparsePageLayout(const ImageInfo& info, u
     };
 }
 
+std::optional<SparsePageLayout> ComputeSparseLevelLayout(const ImageInfo& info, u32 level,
+                                                        u64 page_size) {
+    if (info.type == ImageType::Linear || info.type == ImageType::Buffer ||
+        info.num_samples != 1 || level >= static_cast<u32>(info.resources.levels) ||
+        level >= MAX_MIP_LEVELS) {
+        return std::nullopt;
+    }
+    const LevelInfo level_info = MakeLevelInfo(info);
+    const Extent3D shift = TileShift(level_info, level);
+    const Extent2D gobs = NumGobs(level_info, level);
+    const Extent3D blocks = NumLevelBlocks(level_info, level);
+    const u64 block_bytes = u64{GOB_SIZE} << (shift.width + shift.height + shift.depth);
+    const u64 blocks_x = Common::DivCeilLog2(gobs.width, shift.width);
+    const u64 blocks_y = Common::DivCeilLog2(gobs.height, shift.height);
+    const u64 blocks_z = Common::DivCeilLog2(blocks.depth, shift.depth);
+    const u64 level_bytes = blocks_x * blocks_y * blocks_z * block_bytes;
+    const u64 level_offset = CalculateMipLevelOffsets(info)[level];
+    if (level_bytes != CalculateLevelSize(level_info, level) || page_size % block_bytes != 0 ||
+        (blocks_x * block_bytes) % page_size != 0 || level_offset % page_size != 0) {
+        return std::nullopt;
+    }
+    const Extent2D tile_size = DefaultBlockSize(info.format);
+    const u64 blocks_per_page = page_size / block_bytes;
+    return SparsePageLayout{
+        .page_texels =
+            {
+                .width = static_cast<u32>(blocks_per_page *
+                                          ((GOB_SIZE_X << shift.width) >> level_info.bpp_log2) *
+                                          tile_size.width),
+                .height = (GOB_SIZE_Y << shift.height) * tile_size.height,
+                .depth = 1U << shift.depth,
+            },
+        .pages_x = static_cast<u32>(blocks_x / blocks_per_page),
+        .pages_y = static_cast<u32>(blocks_y),
+        .pages_z = static_cast<u32>(blocks_z),
+        .level_bytes = level_bytes,
+    };
+}
+
 void ConvertImage(std::span<const u8> input, const ImageInfo& info, std::span<u8> output,
                   std::span<BufferImageCopy> copies) {
     u32 output_offset = 0;
