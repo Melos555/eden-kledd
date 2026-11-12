@@ -43,6 +43,11 @@ public:
         return KnownGpuTick() >= tick;
     }
 
+    /// The timeline semaphore, or null when the device uses fences instead.
+    [[nodiscard]] VkSemaphore TimelineHandle() const noexcept {
+        return semaphore ? *semaphore : VK_NULL_HANDLE;
+    }
+
     /// Advance to the logical tick and return the old one
     [[nodiscard]] u64 NextTick() noexcept {
         return current_tick.fetch_add(1, std::memory_order_release);

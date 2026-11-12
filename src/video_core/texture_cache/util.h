@@ -8,6 +8,8 @@
 
 #include <optional>
 #include <span>
+#include <utility>
+#include <vector>
 #include <boost/container/small_vector.hpp>
 
 #include "common/common_types.h"
@@ -68,6 +70,43 @@ struct OverlapResult {
 [[nodiscard]] boost::container::small_vector<BufferImageCopy, 16> UnswizzleImage(
     Tegra::MemoryManager& gpu_memory, GPUVAddr gpu_addr, const ImageInfo& info,
     std::span<const u8> input, std::span<u8> output);
+
+/// Unswizzles only the swizzle blocks of a single-level, single-layer block linear image that
+/// intersect `ranges` (byte offsets from gpu_addr, half-open). Each run of consecutive blocks
+/// along X is decoded as its own small block linear texture into `output`, and one copy per run
+/// covers its texels. Returns nullopt when the image's layout isn't one this handles, so the
+/// caller uploads the whole image instead.
+[[nodiscard]] std::optional<boost::container::small_vector<BufferImageCopy, 16>>
+UnswizzleImageRanges(Tegra::MemoryManager& gpu_memory, GPUVAddr gpu_addr, const ImageInfo& info,
+                     u64 guest_size_bytes, std::span<const std::pair<u64, u64>> ranges,
+                     std::vector<u8>& output, std::vector<u8>& scratch);
+
+/// How the guest pages of a single-level, single-layer block linear image map onto texel boxes:
+/// page p covers page_texels starting at PageOffset(p). Only exists when every page is exactly
+/// one such box (whole swizzle blocks, consecutive along X, rows of blocks a whole number of
+/// pages), which is what a sparse image needs to bind one host tile per guest page.
+struct SparsePageLayout {
+    Extent3D page_texels;
+    u32 pages_x;
+    u32 pages_y;
+    u32 pages_z;
+    u64 level_bytes;
+
+    [[nodiscard]] u32 NumPages() const noexcept {
+        return pages_x * pages_y * pages_z;
+    }
+
+    [[nodiscard]] Offset3D PageOffset(u32 page) const noexcept {
+        return Offset3D{
+            .x = static_cast<s32>((page % pages_x) * page_texels.width),
+            .y = static_cast<s32>((page / pages_x % pages_y) * page_texels.height),
+            .z = static_cast<s32>((page / pages_x / pages_y) * page_texels.depth),
+        };
+    }
+};
+
+[[nodiscard]] std::optional<SparsePageLayout> ComputeSparsePageLayout(const ImageInfo& info,
+                                                                     u64 page_size);
 
 void ConvertImage(std::span<const u8> input, const ImageInfo& info, std::span<u8> output,
                   std::span<BufferImageCopy> copies);

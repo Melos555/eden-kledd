@@ -321,6 +321,27 @@ public:
         return features.features.sparseBinding && graphics_family_sparse_binding;
     }
 
+    /// True when 2D or 3D images can be partially resident.
+    bool IsSparseResidencyImageSupported(bool is_3d) const {
+        return IsSparseBindingSupported() && (is_3d ? features.features.sparseResidencyImage3D
+                                                    : features.features.sparseResidencyImage2D);
+    }
+
+    /// True when several regions of sparse images can be bound to the same memory.
+    bool IsSparseResidencyAliasedSupported() const {
+        return features.features.sparseResidencyAliased;
+    }
+
+    /// True when the device promises that unbound regions of sparse images read as zero.
+    bool IsSparseResidencyNonResidentStrict() const {
+        return properties.properties.sparseProperties.residencyNonResidentStrict;
+    }
+
+    /// Sparse image properties: standard block shapes and the non-resident read guarantee.
+    const VkPhysicalDeviceSparseProperties& GetSparseProperties() const {
+        return properties.properties.sparseProperties;
+    }
+
     /// Returns true for tile-based deferred renderers.
     bool IsTiler() const {
         switch (GetDriverID()) {

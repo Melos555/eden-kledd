@@ -126,6 +126,13 @@ class TextureCache : public VideoCommon::ChannelSetupCaches<TextureCacheChannelI
 
     static constexpr s64 DEFAULT_EXPECTED_MEMORY = 1_GiB + 125_MiB;
     static constexpr s64 DEFAULT_CRITICAL_MEMORY = 1_GiB + 625_MiB;
+    static constexpr u64 HEAP_PRESSURE_HEADROOM = 512_MiB;
+    /// Sparse images at least this large are only collected under real device memory pressure,
+    /// after LARGE_IMAGE_IDLE_FRAMES without use.
+    static constexpr u64 LARGE_IMAGE_BYTES = 64_MiB;
+    static constexpr u64 LARGE_IMAGE_IDLE_FRAMES = 600;
+    /// More pending ranges than this and a partial refresh becomes a whole one.
+    static constexpr size_t MAX_PARTIAL_RANGES = 65536;
     static constexpr size_t GC_EMERGENCY_COUNTS = 2;
     static constexpr size_t MAX_ASYNC_UNSWIZZLE_TASKS = 18;
 
@@ -447,6 +454,26 @@ private:
 
     void RefreshContents(Image& image, ImageId image_id);
 
+    /// Uploads only the given byte ranges of a sparse image; false when its layout isn't one
+    /// UnswizzleImageRanges handles (the caller then uploads all of it).
+    bool TryPartialRefresh(Image& image, std::span<const std::pair<u64, u64>> ranges);
+
+    /// For a mostly unmapped sparse image: zero-fills it on the GPU and uploads only its mapped
+    /// pages. False when it doesn't apply (the caller uploads all of it).
+    bool TryUploadMappedPagesOnly(Image& image);
+
+    /// Records a range of a partially refreshed image, falling back to a whole refresh when
+    /// there are too many.
+    void AddPartialRange(Image& image, ImageId image_id, u64 begin, u64 end);
+
+    /// Refreshes a sparse resident image: binds tiles to newly mapped pages and unbinds them
+    /// from unmapped ones, then uploads the pages that were bound now or are in `dirty`
+    /// (every mapped page when `dirty` is null).
+    void RefreshSparseResident(Image& image, const std::vector<std::pair<u64, u64>>* dirty);
+
+    /// Rebuilds a registered sparse image's CPU page views from its current GPU mapping.
+    void RefreshSparseRegistration(Image& image, ImageId image_id);
+
     /// Upload data from guest to an image
     template <typename StagingBuffer>
     void UploadImageContents(Image& image, StagingBuffer& staging_buffer);
@@ -676,6 +703,8 @@ private:
     ::Common::unordered_map<GPUVAddr, ImageAllocId> image_allocs_table;
 
     Common::ScratchBuffer<u8> swizzle_data_buffer;
+    std::vector<u8> partial_output;
+    std::vector<u8> partial_scratch;
     Common::ScratchBuffer<u8> unswizzle_data_buffer;
 
     u64 modification_tick = 0;

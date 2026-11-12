@@ -12,6 +12,8 @@
 #include <memory>
 #include <utility>
 #include <vector>
+#include <mutex>
+#include <string>
 #include <boost/container/small_vector.hpp>
 #include <bit>
 #include <numeric>
@@ -948,8 +950,9 @@ TextureCacheRuntime::TextureCacheRuntime(const Device& device_, Scheduler& sched
                                          DescriptorPool& descriptor_pool,
                                          ComputePassDescriptorQueue& compute_pass_descriptor_queue)
     : device{device_}, scheduler{scheduler_}, memory_allocator{memory_allocator_},
-      staging_buffer_pool{staging_buffer_pool_}, blit_image_helper{blit_image_helper_},
-      render_pass_cache{render_pass_cache_}, resolution{Settings::values.resolution_info} {
+      staging_buffer_pool{staging_buffer_pool_}, sparse_tiles{device_},
+      blit_image_helper{blit_image_helper_}, render_pass_cache{render_pass_cache_},
+      resolution{Settings::values.resolution_info} {
     if (Settings::values.accelerate_astc.GetValue() == Settings::AstcDecodeMode::Gpu) {
         astc_decoder_pass.emplace(device, scheduler, descriptor_pool, staging_buffer_pool,
                                   compute_pass_descriptor_queue, memory_allocator);
@@ -1135,6 +1138,7 @@ void TextureCacheRuntime::BarrierFeedbackLoop() {
 
 void TextureCacheRuntime::ReinterpretImage(Image& dst, Image& src,
                                            std::span<const VideoCommon::ImageCopy> copies) {
+    dst.PrepareSparseWrite();
     if (ENABLE_MSAA_RESOLVE_CONSUME) {
         InvalidateResolveShadow(dst.Handle());
     }
@@ -1544,6 +1548,7 @@ bool TextureCacheRuntime::IsFormatScalable(PixelFormat format) {
 
 void TextureCacheRuntime::CopyImage(Image& dst, Image& src,
                                     std::span<const VideoCommon::ImageCopy> copies) {
+    dst.PrepareSparseWrite();
     if (ENABLE_MSAA_RESOLVE_CONSUME) {
         InvalidateResolveShadow(dst.Handle());
     }
@@ -1659,6 +1664,7 @@ void TextureCacheRuntime::CopyImage(Image& dst, Image& src,
 
 void TextureCacheRuntime::CopyImageMSAA(Image& dst, Image& src,
                                         std::span<const VideoCommon::ImageCopy> copies) {
+    dst.PrepareSparseWrite();
     const bool msaa_to_non_msaa = src.info.num_samples > 1 && dst.info.num_samples == 1;
     const u32 num_samples = msaa_to_non_msaa ? src.info.num_samples : dst.info.num_samples;
     if (ENABLE_MSAA_RESOLVE_CONSUME && msaa_to_non_msaa && copies.size() == 1 &&
@@ -1865,6 +1871,7 @@ void TextureCacheRuntime::ReleaseMsaaScratchImage(VkImage image) {
 }
 
 void TextureCacheRuntime::TickFrame() {
+    sparse_tiles.Tick(scheduler.GetMasterSemaphore().KnownGpuTick());
     static constexpr u32 MAX_UNUSED_SCRATCH_FRAMES = 60;
     std::erase_if(msaa_scratch_images, [this](MsaaScratchImage& scratch) {
         if (!scheduler.IsFree(scratch.tick)) {
@@ -1894,8 +1901,6 @@ Image::Image(TextureCacheRuntime& runtime_, const ImageInfo& info_, GPUVAddr gpu
              VAddr cpu_addr_)
     : VideoCommon::ImageBase(info_, gpu_addr_, cpu_addr_), scheduler{&runtime_.scheduler},
       runtime{&runtime_},
-      original_image(MakeImage(runtime_.device, runtime_.memory_allocator, info,
-                               runtime->ViewFormats(info.format))),
       aspect_mask(ImageAspectMask(info.format)) {
     if (IsPixelFormatASTC(info.format) && !runtime->device.IsOptimalAstcSupported()) {
         switch (Settings::values.accelerate_astc.GetValue()) {
@@ -1920,6 +1925,11 @@ Image::Image(TextureCacheRuntime& runtime_, const ImageInfo& info_, GPUVAddr gpu
     if (IsPixelFormatBCn(info.format) && info.type == ImageType::e3D && info.resources.levels == 1 && info.resources.layers == 1 && info.is_sparse) {
         flags |= VideoCommon::ImageFlagBits::SparseUpload;
     }
+    // The flags above decide whether the image can be sparse resident.
+    if (!TryCreateSparseResident()) {
+        original_image = MakeImage(runtime->device, runtime->memory_allocator, info,
+                                   runtime->ViewFormats(info.format));
+    }
     if (runtime->device.HasDebuggingToolAttached()) {
         original_image.SetObjectNameEXT(VideoCommon::Name(*this).c_str());
     }
@@ -1935,9 +1945,545 @@ Image::Image(TextureCacheRuntime& runtime_, const ImageInfo& info_, GPUVAddr gpu
     }
 }
 
+SparseTilePool::SparseTilePool(const Device& device_) : device{device_} {}
+
+SparseTilePool::~SparseTilePool() {
+    const auto& dld = device.GetDispatchLoader();
+    for (const Chunk& chunk : chunks) {
+        if (chunk.buffer) {
+            dld.vkDestroyBuffer(*device.GetLogical(), chunk.buffer, nullptr);
+        }
+    }
+}
+
+std::optional<SparseTilePool::Tile> SparseTilePool::Allocate(u32 memory_type) {
+    std::scoped_lock lock{mutex};
+    for (u32 index = 0; index < chunks.size(); ++index) {
+        Chunk& chunk = chunks[index];
+        if (chunk.memory_type == memory_type && !chunk.free_slots.empty()) {
+            const u32 slot = chunk.free_slots.back();
+            chunk.free_slots.pop_back();
+            return Tile{.memory = *chunk.memory, .offset = slot * TileSize, .chunk = index};
+        }
+    }
+    Chunk chunk{.memory_type = memory_type};
+    try {
+        chunk.memory = device.GetLogical().AllocateMemory(VkMemoryAllocateInfo{
+            .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+            .pNext = nullptr,
+            .allocationSize = TileSize * ChunkTiles,
+            .memoryTypeIndex = memory_type,
+        });
+    } catch (const vk::Exception& exception) {
+        LOG_ERROR(Render_Vulkan, "Sparse tile memory allocation failed: {}", exception.what());
+        return std::nullopt;
+    }
+    const VkBufferCreateInfo buffer_ci{
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .size = TileSize * ChunkTiles,
+        .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .queueFamilyIndexCount = 0,
+        .pQueueFamilyIndices = nullptr,
+    };
+    const auto& dld = device.GetDispatchLoader();
+    if (dld.vkCreateBuffer(*device.GetLogical(), &buffer_ci, nullptr, &chunk.buffer) ==
+        VK_SUCCESS) {
+        const VkMemoryRequirements requirements =
+            device.GetLogical().GetBufferMemoryRequirements(chunk.buffer);
+        if ((requirements.memoryTypeBits & (1U << memory_type)) != 0 &&
+            requirements.size <= TileSize * ChunkTiles) {
+            vk::Check(dld.vkBindBufferMemory(*device.GetLogical(), chunk.buffer, *chunk.memory, 0));
+        } else {
+            dld.vkDestroyBuffer(*device.GetLogical(), chunk.buffer, nullptr);
+            chunk.buffer = VK_NULL_HANDLE;
+        }
+    } else {
+        chunk.buffer = VK_NULL_HANDLE;
+    }
+    chunk.free_slots.reserve(ChunkTiles);
+    for (u32 slot = ChunkTiles; slot-- > 1;) {
+        chunk.free_slots.push_back(slot);
+    }
+    const u32 index = static_cast<u32>(chunks.size());
+    const VkDeviceMemory memory = *chunk.memory;
+    chunks.push_back(std::move(chunk));
+    return Tile{.memory = memory, .offset = 0, .chunk = index};
+}
+
+std::optional<SparseTilePool::Tile> SparseTilePool::ZeroRegion(u32 memory_type, u32 tiles,
+                                                              Scheduler& scheduler) {
+    std::scoped_lock lock{mutex};
+    for (const ZeroRegionEntry& entry : zero_regions) {
+        if (entry.memory_type == memory_type && entry.tiles >= tiles) {
+            return Tile{.memory = *entry.memory, .offset = 0, .chunk = ~0U};
+        }
+    }
+    const VkDeviceSize size = TileSize * tiles;
+    const auto& dld = device.GetDispatchLoader();
+    const VkDevice logical = *device.GetLogical();
+    // Zero it on the GPU through a buffer over the same memory.
+    const VkBufferCreateInfo buffer_ci{
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .size = size,
+        .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .queueFamilyIndexCount = 0,
+        .pQueueFamilyIndices = nullptr,
+    };
+    VkBuffer buffer{};
+    if (dld.vkCreateBuffer(logical, &buffer_ci, nullptr, &buffer) != VK_SUCCESS) {
+        return std::nullopt;
+    }
+    const VkMemoryRequirements requirements =
+        device.GetLogical().GetBufferMemoryRequirements(buffer);
+    if ((requirements.memoryTypeBits & (1U << memory_type)) == 0 || requirements.size > size) {
+        dld.vkDestroyBuffer(logical, buffer, nullptr);
+        return std::nullopt;
+    }
+    vk::DeviceMemory memory;
+    try {
+        memory = device.GetLogical().AllocateMemory(VkMemoryAllocateInfo{
+            .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+            .pNext = nullptr,
+            .allocationSize = size,
+            .memoryTypeIndex = memory_type,
+        });
+    } catch (const vk::Exception&) {
+        dld.vkDestroyBuffer(logical, buffer, nullptr);
+        return std::nullopt;
+    }
+    vk::Check(dld.vkBindBufferMemory(logical, buffer, *memory, 0));
+    scheduler.RequestOutsideRenderPassOperationContext();
+    scheduler.Record([buffer, size](vk::CommandBuffer cmdbuf) {
+        cmdbuf.FillBuffer(buffer, 0, size, 0);
+    });
+    scheduler.Finish();
+    dld.vkDestroyBuffer(logical, buffer, nullptr);
+    const VkDeviceMemory handle = *memory;
+    // Smaller regions stay alive: images created earlier are bound to them.
+    zero_regions.push_back(ZeroRegionEntry{
+        .memory_type = memory_type, .tiles = tiles, .memory = std::move(memory)});
+    return Tile{.memory = handle, .offset = 0, .chunk = ~0U};
+}
+
+void SparseTilePool::Free(const Tile& tile, u64 tick) {
+    std::scoped_lock lock{mutex};
+    pending_free.emplace_back(tile, tick);
+}
+
+void SparseTilePool::RecordZeroFill(const Tile& tile, Scheduler& scheduler) {
+    VkBuffer buffer{};
+    {
+        std::scoped_lock lock{mutex};
+        buffer = tile.chunk < chunks.size() ? chunks[tile.chunk].buffer : VK_NULL_HANDLE;
+    }
+    if (!buffer) {
+        return;
+    }
+    const VkMemoryBarrier barrier{
+        .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+        .pNext = nullptr,
+        .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+    };
+    scheduler.RecordWithUploadBuffer(
+        [buffer, offset = tile.offset, barrier](vk::CommandBuffer, vk::CommandBuffer upload) {
+            upload.FillBuffer(buffer, offset, TileSize, 0);
+            upload.PipelineBarrier(VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                   VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, barrier);
+        });
+}
+
+void SparseTilePool::Tick(u64 completed_tick) {
+    std::scoped_lock lock{mutex};
+    while (!pending_free.empty() && pending_free.front().second <= completed_tick) {
+        const Tile& tile = pending_free.front().first;
+        chunks[tile.chunk].free_slots.push_back(static_cast<u32>(tile.offset / TileSize));
+        pending_free.pop_front();
+    }
+}
+
+namespace {
+/// Logs once what the GPU supports for sparse residency, and why it can't be used if it can't.
+void LogSparseDeviceOnce(const Device& device) {
+    static std::once_flag once;
+    std::call_once(once, [&device] {
+        const auto& properties = device.GetSparseProperties();
+        LOG_INFO(Render_Vulkan,
+                 "Sparse residency support: binding={} image2D={} image3D={} aliased={} "
+                 "nonResidentStrict={} standardShape2D={} standardShape3D={}",
+                 device.IsSparseBindingSupported(), device.IsSparseResidencyImageSupported(false),
+                 device.IsSparseResidencyImageSupported(true),
+                 device.IsSparseResidencyAliasedSupported(),
+                 device.IsSparseResidencyNonResidentStrict(),
+                 properties.residencyStandard2DBlockShape != VK_FALSE,
+                 properties.residencyStandard3DBlockShape != VK_FALSE);
+        std::string problems;
+        const auto add = [&problems](std::string_view problem) {
+            problems += problems.empty() ? "" : "; ";
+            problems += problem;
+        };
+        if (!device.IsSparseBindingSupported()) {
+            add("no sparse binding on the graphics queue");
+        } else {
+            if (!device.IsSparseResidencyImageSupported(false)) {
+                add("no sparse residency for 2D images");
+            }
+            if (!device.IsSparseResidencyImageSupported(true)) {
+                add("no sparse residency for 3D images");
+            }
+        }
+        if (!device.IsSparseResidencyAliasedSupported() &&
+            !device.IsSparseResidencyNonResidentStrict()) {
+            add("neither aliased binding nor zero reads from unbound regions");
+        }
+        if (properties.residencyStandard2DBlockShape == VK_FALSE) {
+            add("non-standard 2D sparse tile shapes");
+        }
+        if (properties.residencyStandard3DBlockShape == VK_FALSE) {
+            add("non-standard 3D sparse tile shapes");
+        }
+        if (!problems.empty()) {
+            LOG_WARNING(Render_Vulkan,
+                        "Sparse textures will use regular images where affected: {}", problems);
+        }
+    });
+}
+} // Anonymous namespace
+
+bool Image::TryCreateSparseResident() {
+    const Device& device = runtime->device;
+    const bool is_3d = info.type == ImageType::e3D;
+    if (info.is_sparse) {
+        LogSparseDeviceOnce(device);
+    }
+    // Compressed formats only: they can't be render targets, so the GPU writes them only through
+    // copies and reinterpreting views, which PrepareSparseWrite guards.
+    if (!info.is_sparse || (info.type != ImageType::e2D && !is_3d) || info.rescaleable ||
+        VideoCore::Surface::DefaultBlockWidth(info.format) == 1 ||
+        True(flags & (VideoCommon::ImageFlagBits::Converted |
+                      VideoCommon::ImageFlagBits::AcceleratedUpload |
+                      VideoCommon::ImageFlagBits::AsynchronousDecode)) ||
+        !device.IsSparseResidencyImageSupported(is_3d)) {
+        return false;
+    }
+    // Pages without data must read as zero. Unbound regions don't on every driver that says
+    // so (RADV, 3D BC images on RDNA3), so they're bound to a shared zero tile where aliasing is
+    // supported, and left unbound only where it isn't but the device promises zeros.
+    const bool use_zero_tile = device.IsSparseResidencyAliasedSupported();
+    if (!use_zero_tile && !device.IsSparseResidencyNonResidentStrict()) {
+        return false;
+    }
+    const auto layout = VideoCommon::ComputeSparsePageLayout(info, SparseTilePool::TileSize);
+    if (!layout) {
+        return false;
+    }
+    VkImageCreateInfo image_ci = MakeImageCreateInfo(device, info, std::nullopt);
+    // Sparse images can't be 2D-array or cube compatible.
+    image_ci.flags &= ~(VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT |
+                        VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT);
+    image_ci.flags |= VK_IMAGE_CREATE_SPARSE_BINDING_BIT | VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT;
+    if (use_zero_tile) {
+        image_ci.flags |= VK_IMAGE_CREATE_SPARSE_ALIASED_BIT;
+    }
+    const std::span<const VkFormat> view_formats = runtime->ViewFormats(info.format);
+    const VkImageFormatListCreateInfo image_format_list{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO,
+        .pNext = nullptr,
+        .viewFormatCount = static_cast<u32>(view_formats.size()),
+        .pViewFormats = view_formats.data(),
+    };
+    if (view_formats.size() > 1) {
+        image_ci.flags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT | VK_IMAGE_CREATE_EXTENDED_USAGE_BIT;
+        if (device.IsKhrImageFormatListSupported()) {
+            image_ci.pNext = &image_format_list;
+        }
+    }
+    // The device's sparse block must be exactly the box one guest page covers.
+    const auto format_properties = device.GetPhysical().GetSparseImageFormatProperties(
+        image_ci.format, image_ci.imageType, image_ci.samples, image_ci.usage, image_ci.tiling);
+    if (format_properties.size() != 1 ||
+        format_properties[0].imageGranularity.width != layout->page_texels.width ||
+        format_properties[0].imageGranularity.height != layout->page_texels.height ||
+        format_properties[0].imageGranularity.depth != layout->page_texels.depth) {
+        return false;
+    }
+    const auto& dld = device.GetDispatchLoader();
+    const VkDevice logical = *device.GetLogical();
+    VkImage handle{};
+    if (dld.vkCreateImage(logical, &image_ci, nullptr, &handle) != VK_SUCCESS) {
+        return false;
+    }
+    VkMemoryRequirements requirements{};
+    dld.vkGetImageMemoryRequirements(logical, handle, &requirements);
+    u32 num_sparse_requirements = 0;
+    dld.vkGetImageSparseMemoryRequirements(logical, handle, &num_sparse_requirements, nullptr);
+    std::vector<VkSparseImageMemoryRequirements> sparse_requirements(num_sparse_requirements);
+    dld.vkGetImageSparseMemoryRequirements(logical, handle, &num_sparse_requirements,
+                                           sparse_requirements.data());
+    // Level 0 must not be part of a mip tail (which needs opaque binds).
+    const bool level0_in_tail = std::ranges::any_of(
+        sparse_requirements, [](const VkSparseImageMemoryRequirements& requirement) {
+            return requirement.imageMipTailFirstLod == 0;
+        });
+    const auto memory_properties = device.GetPhysical().GetMemoryProperties().memoryProperties;
+    std::optional<u32> memory_type;
+    for (u32 type = 0; type < memory_properties.memoryTypeCount; ++type) {
+        if ((requirements.memoryTypeBits & (1U << type)) != 0 &&
+            (memory_properties.memoryTypes[type].propertyFlags &
+             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != 0) {
+            memory_type = type;
+            break;
+        }
+    }
+    if (num_sparse_requirements == 0 || level0_in_tail || !memory_type ||
+        SparseTilePool::TileSize % requirements.alignment != 0) {
+        dld.vkDestroyImage(logical, handle, nullptr);
+        return false;
+    }
+    original_image = vk::Image(handle, image_ci.usage, logical, runtime->memory_allocator.Handle(),
+                               VK_NULL_HANDLE, dld);
+    sparse = std::make_unique<SparseState>();
+    sparse->layout = *layout;
+    sparse->memory_type = *memory_type;
+    sparse->tiles.resize(layout->NumPages());
+    if (use_zero_tile) {
+        // Zeros are bound in the largest boxes a zero region of at most MaxZeroTiles covers.
+        constexpr u32 MaxZeroTiles = 256; // 16 MiB
+        const u32 slab_pages = layout->pages_x * layout->pages_y;
+        sparse->zero_box_pages = slab_pages <= MaxZeroTiles      ? slab_pages
+                                 : layout->pages_x <= MaxZeroTiles ? layout->pages_x
+                                                                   : 1;
+        sparse->zero_tile =
+            runtime->sparse_tiles.ZeroRegion(*memory_type, sparse->zero_box_pages, *scheduler);
+        if (!sparse->zero_tile && !device.IsSparseResidencyNonResidentStrict()) {
+            // No zero tile and no promise about unbound reads: use a regular image.
+            sparse.reset();
+            original_image.reset();
+            return false;
+        }
+    }
+    LOG_DEBUG(Render_Vulkan,
+             "Sparse resident image at {:#x}: {}x{}x{}, {} pages of {}x{}x{} texels",
+             gpu_addr, info.size.width, info.size.height, info.size.depth, layout->NumPages(),
+             layout->page_texels.width, layout->page_texels.height, layout->page_texels.depth);
+    return true;
+}
+
+void Image::UpdateResidency(std::span<const u32> bind, std::span<const u32> unbind) {
+    const auto& layout = sparse->layout;
+    const auto make_bind = [&](u32 page, VkDeviceMemory memory, VkDeviceSize offset) {
+        const VideoCommon::Offset3D origin = layout.PageOffset(page);
+        return VkSparseImageMemoryBind{
+            .subresource = {.aspectMask = aspect_mask, .mipLevel = 0, .arrayLayer = 0},
+            .offset = {origin.x, origin.y, origin.z},
+            .extent =
+                {
+                    (std::min)(layout.page_texels.width, info.size.width - origin.x),
+                    (std::min)(layout.page_texels.height, info.size.height - origin.y),
+                    (std::min)(layout.page_texels.depth,
+                               (info.type == ImageType::e3D ? info.size.depth : 1U) - origin.z),
+                },
+            .memory = memory,
+            .memoryOffset = offset,
+            .flags = 0,
+        };
+    };
+    const auto in_image = [&](u32 page) {
+        const VideoCommon::Offset3D origin = layout.PageOffset(page);
+        const u32 depth = info.type == ImageType::e3D ? info.size.depth : 1U;
+        return page < sparse->tiles.size() && static_cast<u32>(origin.x) < info.size.width &&
+               static_cast<u32>(origin.y) < info.size.height && static_cast<u32>(origin.z) < depth;
+    };
+    std::vector<VkSparseImageMemoryBind> binds;
+    const u64 free_tick = scheduler->CurrentTick();
+    for (const u32 page : unbind) {
+        if (!in_image(page) || !sparse->tiles[page]) {
+            continue;
+        }
+        if (sparse->materialized) {
+            // Keeps its tile, which reads as zero like an unmapped page.
+            runtime->sparse_tiles.RecordZeroFill(*sparse->tiles[page], *scheduler);
+            continue;
+        }
+        binds.push_back(sparse->zero_tile
+                            ? make_bind(page, sparse->zero_tile->memory, 0)
+                            : make_bind(page, VK_NULL_HANDLE, 0));
+        runtime->sparse_tiles.Free(*sparse->tiles[page], free_tick);
+        sparse->tiles[page].reset();
+    }
+    if (sparse->zero_tile && !sparse->zero_bound) {
+        // First update: zeros everywhere, in big boxes, before the tiles go over them.
+        sparse->zero_bound = true;
+        const u32 width = info.size.width;
+        const u32 height = info.size.height;
+        const u32 depth = info.type == ImageType::e3D ? info.size.depth : 1U;
+        const u32 box_w = sparse->zero_box_pages >= layout.pages_x ? width : layout.page_texels.width;
+        const u32 box_h = sparse->zero_box_pages >= layout.pages_x * layout.pages_y
+                              ? height
+                              : layout.page_texels.height;
+        const u32 box_d = layout.page_texels.depth;
+        std::vector<VkSparseImageMemoryBind> zero_binds;
+        for (u32 z = 0; z < depth; z += box_d) {
+            for (u32 y = 0; y < height; y += box_h) {
+                for (u32 x = 0; x < width; x += box_w) {
+                    zero_binds.push_back(VkSparseImageMemoryBind{
+                        .subresource = {.aspectMask = aspect_mask, .mipLevel = 0, .arrayLayer = 0},
+                        .offset = {static_cast<s32>(x), static_cast<s32>(y), static_cast<s32>(z)},
+                        .extent = {(std::min)(box_w, width - x), (std::min)(box_h, height - y),
+                                   (std::min)(box_d, depth - z)},
+                        .memory = sparse->zero_tile->memory,
+                        .memoryOffset = 0,
+                        .flags = 0,
+                    });
+                }
+            }
+        }
+        SubmitSparseBinds(zero_binds);
+    }
+    for (const u32 page : bind) {
+        if (!in_image(page) || sparse->tiles[page]) {
+            continue;
+        }
+        const auto tile = runtime->sparse_tiles.Allocate(sparse->memory_type);
+        if (!tile) {
+            break; // out of memory: the remaining pages read as zero
+        }
+        binds.push_back(make_bind(page, tile->memory, tile->offset));
+        sparse->tiles[page] = tile;
+    }
+    if (!binds.empty()) {
+        SubmitSparseBinds(binds);
+    }
+}
+
+u64 Image::ResidentBytes() const noexcept {
+    if (!sparse) {
+        return 0;
+    }
+    return SparseTilePool::TileSize *
+           std::ranges::count_if(sparse->tiles, [](const auto& tile) { return tile.has_value(); });
+}
+
+void Image::UploadSparsePages(const StagingBufferRef& map,
+                              std::span<const VideoCommon::BufferImageCopy> copies) {
+    sparse->uploading_pages = true;
+    UploadMemory(map, copies);
+    sparse->uploading_pages = false;
+}
+
+void Image::PrepareSparseWrite() {
+    if (!sparse || !sparse->zero_tile || sparse->materialized || sparse->uploading_pages) {
+        return;
+    }
+    sparse->materialized = true;
+    const auto& layout = sparse->layout;
+    std::vector<VkSparseImageMemoryBind> binds;
+    const u32 depth = info.type == ImageType::e3D ? info.size.depth : 1U;
+    for (u32 page = 0; page < sparse->tiles.size(); ++page) {
+        const VideoCommon::Offset3D origin = layout.PageOffset(page);
+        if (sparse->tiles[page] || static_cast<u32>(origin.x) >= info.size.width ||
+            static_cast<u32>(origin.y) >= info.size.height ||
+            static_cast<u32>(origin.z) >= depth) {
+            continue;
+        }
+        const auto tile = runtime->sparse_tiles.Allocate(sparse->memory_type);
+        if (!tile) {
+            LOG_ERROR(Render_Vulkan, "Out of memory for the tiles of a written sparse image");
+            break;
+        }
+        runtime->sparse_tiles.RecordZeroFill(*tile, *scheduler);
+        sparse->tiles[page] = tile;
+        binds.push_back(VkSparseImageMemoryBind{
+            .subresource = {.aspectMask = aspect_mask, .mipLevel = 0, .arrayLayer = 0},
+            .offset = {origin.x, origin.y, origin.z},
+            .extent = {(std::min)(layout.page_texels.width, info.size.width - origin.x),
+                       (std::min)(layout.page_texels.height, info.size.height - origin.y),
+                       (std::min)(layout.page_texels.depth, depth - origin.z)},
+            .memory = tile->memory,
+            .memoryOffset = tile->offset,
+            .flags = 0,
+        });
+    }
+    LOG_DEBUG(Render_Vulkan, "Sparse image {:#x} is written by the GPU: {} pages get own tiles",
+              gpu_addr, binds.size());
+    if (!binds.empty()) {
+        SubmitSparseBinds(binds);
+    }
+}
+
+void Image::SubmitSparseBinds(std::span<const VkSparseImageMemoryBind> binds) {
+    // The work already submitted may still sample the image: an unbound tile would vanish under
+    // it, and a newly bound one would show its old contents until the upload recorded next runs.
+    // So the binds wait for that work, and the fence below for the binds.
+    const VkSemaphore timeline = scheduler->GetMasterSemaphore().TimelineHandle();
+    const u64 last_submitted = scheduler->CurrentTick() - 1;
+    if (!timeline) {
+        scheduler->Finish();
+    }
+    const bool wait_timeline = timeline && last_submitted > 0;
+    const VkTimelineSemaphoreSubmitInfo timeline_info{
+        .sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO,
+        .pNext = nullptr,
+        .waitSemaphoreValueCount = 1,
+        .pWaitSemaphoreValues = &last_submitted,
+        .signalSemaphoreValueCount = 0,
+        .pSignalSemaphoreValues = nullptr,
+    };
+    const VkSparseImageMemoryBindInfo image_bind{
+        .image = *original_image,
+        .bindCount = static_cast<u32>(binds.size()),
+        .pBinds = binds.data(),
+    };
+    const VkBindSparseInfo bind_info{
+        .sType = VK_STRUCTURE_TYPE_BIND_SPARSE_INFO,
+        .pNext = wait_timeline ? &timeline_info : nullptr,
+        .waitSemaphoreCount = wait_timeline ? 1U : 0U,
+        .pWaitSemaphores = wait_timeline ? &timeline : nullptr,
+        .bufferBindCount = 0,
+        .pBufferBinds = nullptr,
+        .imageOpaqueBindCount = 0,
+        .pImageOpaqueBinds = nullptr,
+        .imageBindCount = 1,
+        .pImageBinds = &image_bind,
+        .signalSemaphoreCount = 0,
+        .pSignalSemaphores = nullptr,
+    };
+    vk::Fence fence = runtime->device.GetLogical().CreateFence(VkFenceCreateInfo{
+        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+    });
+    VkResult result = VK_ERROR_UNKNOWN;
+    {
+        std::scoped_lock lock{scheduler->submit_mutex};
+        result = runtime->device.GetGraphicsQueue().BindSparse(bind_info, *fence);
+    }
+    if (result == VK_SUCCESS) {
+        fence.Wait();
+    } else {
+        LOG_ERROR(Render_Vulkan, "vkQueueBindSparse failed: {}", static_cast<int>(result));
+    }
+}
+
 Image::Image(const VideoCommon::NullImageParams& params) : VideoCommon::ImageBase{params} {}
 
 Image::~Image() {
+    if (sparse && runtime != nullptr) {
+        // Nothing submitted after now can use the image: its tiles are free once the GPU gets
+        // past the current tick.
+        const u64 tick = scheduler->CurrentTick();
+        for (const auto& tile : sparse->tiles) {
+            if (tile) {
+                runtime->sparse_tiles.Free(*tile, tick);
+            }
+        }
+    }
     if (ENABLE_MSAA_RESOLVE_CONSUME && runtime != nullptr) {
         if (original_image) {
             runtime->EraseResolveShadow(*original_image);
@@ -1993,6 +2539,7 @@ void Image::AllocateComputeUnswizzleBuffer(u32 max_slices) {
 
 void Image::UploadMemory(VkBuffer buffer, VkDeviceSize offset,
                          std::span<const VideoCommon::BufferImageCopy> copies) {
+    PrepareSparseWrite();
     // TODO: Move this to another API
     if (ENABLE_MSAA_RESOLVE_CONSUME && runtime != nullptr) {
         runtime->InvalidateResolveShadow(Handle());
@@ -2394,6 +2941,7 @@ void Image::DownloadMemory(const StagingBufferRef& map, std::span<const BufferIm
 }
 
 VkImageView Image::StorageImageView(s32 level) noexcept {
+    PrepareSparseWrite();
     auto& view = storage_image_views[level];
     if (!view) {
         auto format_info =
@@ -2572,6 +3120,13 @@ ImageView::ImageView(TextureCacheRuntime& runtime, const VideoCommon::ImageViewI
       device{&runtime.device}, image_handle{image.Handle()},
       samples(ConvertSampleCount(image.info.num_samples)) {
     using Shader::TextureType;
+
+    if (image.IsSparseResident() && image.info.type == VideoCommon::ImageType::e3D &&
+        info.type != VideoCommon::ImageViewType::e3D) {
+        // Sparse images can't be 2D-array compatible, so 2D views of a 3D one are invalid.
+        LOG_WARNING(Render_Vulkan, "2D view of a sparse resident 3D image at {:#x}",
+                    image.gpu_addr);
+    }
 
     const VkImageAspectFlags aspect_mask = ImageViewAspectMask(info);
     std::array<SwizzleSource, 4> swizzle{
