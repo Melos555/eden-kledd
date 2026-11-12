@@ -7,10 +7,6 @@
 #include <algorithm>
 #include <cstring>
 #include <iostream>
-#include <cstdlib>
-#include <mutex>
-#include <string>
-#include <unordered_map>
 #include <span>
 
 #include <boost/container/small_vector.hpp>
@@ -42,29 +38,6 @@
 
 namespace Vulkan {
 namespace {
-// EDEN_DESC_DIAG=1: for dynamically indexed texture arrays, logs the compiled array size against
-// how many elements fit in the bound constant buffer and how many of those hold a handle. Each
-// distinct case is logged at its 1st, 10th, 100th... draw.
-bool DescDiagEnabled() {
-    static const bool enabled = std::getenv("EDEN_DESC_DIAG") != nullptr;
-    return enabled;
-}
-
-u64 DescDiagCount(const std::string& key) {
-    static std::mutex mutex;
-    static std::unordered_map<std::string, u64> counts;
-    std::scoped_lock lock{mutex};
-    if (counts.size() >= 512 && !counts.contains(key)) {
-        return 0;
-    }
-    const u64 count = ++counts[key];
-    u64 power = 1;
-    while (power < count) {
-        power *= 10;
-    }
-    return power == count ? count : 0;
-}
-
 using boost::container::small_vector;
 using boost::container::static_vector;
 using Shader::ImageBufferDescriptor;
@@ -443,35 +416,6 @@ bool GraphicsPipeline::ConfigureImpl(bool is_indexed) {
             }
         }
         for (const auto& desc : info.texture_descriptors) {
-            if (desc.count > 1 && DescDiagEnabled() &&
-                desc.cbuf_index != Shader::ATTRIBUTE_HANDLE_CBUF_INDEX) {
-                const auto& cbuf = cbufs[desc.cbuf_index];
-                const u32 fit = cbuf.size > desc.cbuf_offset
-                                    ? ((cbuf.size - desc.cbuf_offset) >> desc.size_shift)
-                                    : 0;
-                const std::string key = std::format("{}|{}|{}|{}|{}|{}|{}", stage, desc.cbuf_index,
-                                                    desc.cbuf_offset, desc.count, desc.size_shift,
-                                                    cbuf.size, desc.has_index_cbuf);
-                if (const u64 seen = DescDiagCount(key)) {
-                    u32 nonzero = 0;
-                    u32 last_nonzero = 0;
-                    const u32 scan = (std::min)(fit, desc.count);
-                    for (u32 i = 0; i < scan; ++i) {
-                        const u32 raw = gpu_memory->Read<u32>(
-                            cbuf.address + desc.cbuf_offset + (i << desc.size_shift));
-                        if ((raw & desc.mask) != 0) {
-                            ++nonzero;
-                            last_nonzero = i + 1;
-                        }
-                    }
-                    LOG_INFO(Render_Vulkan,
-                             "DescDiag (x{}): stage {} cbuf {} offset {:#x} array {} stride {} | "
-                             "cbuf size {:#x} fits {} | nonzero handles {} (last at {}){}",
-                             seen, stage, desc.cbuf_index, desc.cbuf_offset, desc.count,
-                             1U << desc.size_shift, cbuf.size, fit, nonzero, last_nonzero,
-                             desc.has_index_cbuf ? " | index from cbuf" : "");
-                }
-            }
             for (u32 index = 0; index < desc.count; ++index) {
                 const auto handle{read_handle(desc, index)};
                 views.push_back({handle.first});
