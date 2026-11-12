@@ -7,8 +7,6 @@
 #include <algorithm>
 #include <cstring>
 #include <iostream>
-#include <optional>
-#include <vector>
 #include <cstdlib>
 #include <mutex>
 #include <string>
@@ -444,37 +442,6 @@ bool GraphicsPipeline::ConfigureImpl(bool is_indexed) {
                 add_image(desc, false);
             }
         }
-        // Elements of a texture array whose handle lies past the end of the bound constant
-        // buffer read handle 0 on hardware (out of range constant buffer reads return zero).
-        // Only the first of them is resolved; the rest copy it, so a large array costs only
-        // as much as the part of it that can hold handles.
-        // Returns how many elements lie inside the constant buffer and where the first one is;
-        // the base is only set when the handles can be read as one block.
-        struct ResolvedRange {
-            u32 count;
-            std::optional<u32> base;
-        };
-        const auto resolved_count{[&](const auto& desc) -> ResolvedRange {
-            if (desc.count <= 1 || desc.cbuf_index == Shader::ATTRIBUTE_HANDLE_CBUF_INDEX ||
-                desc.has_secondary || !cbufs[desc.cbuf_index].enabled) {
-                return {desc.count, std::nullopt};
-            }
-            u32 base{desc.cbuf_offset};
-            if (desc.has_index_cbuf) {
-                base += gpu_memory->Read<u32>(cbufs[desc.index_cbuf_index].address +
-                                              desc.index_cbuf_offset)
-                        << desc.index_shift;
-            }
-            const u32 size{cbufs[desc.cbuf_index].size};
-            constexpr u32 handle_size{sizeof(u32)};
-            if (size < base || size - base < handle_size) {
-                return {0, base};
-            }
-            return {(std::min)(desc.count, ((size - base - handle_size) >> desc.size_shift) + 1),
-                    base};
-        }};
-        // Handles of one array, read from guest memory as a single block.
-        thread_local std::vector<u8> handle_bytes;
         for (const auto& desc : info.texture_descriptors) {
             if (desc.count > 1 && DescDiagEnabled() &&
                 desc.cbuf_index != Shader::ATTRIBUTE_HANDLE_CBUF_INDEX) {
@@ -482,10 +449,10 @@ bool GraphicsPipeline::ConfigureImpl(bool is_indexed) {
                 const u32 fit = cbuf.size > desc.cbuf_offset
                                     ? ((cbuf.size - desc.cbuf_offset) >> desc.size_shift)
                                     : 0;
-                const std::string diag_key = std::format("{}|{}|{}|{}|{}|{}|{}", stage, desc.cbuf_index,
+                const std::string key = std::format("{}|{}|{}|{}|{}|{}|{}", stage, desc.cbuf_index,
                                                     desc.cbuf_offset, desc.count, desc.size_shift,
                                                     cbuf.size, desc.has_index_cbuf);
-                if (const u64 seen = DescDiagCount(diag_key)) {
+                if (const u64 seen = DescDiagCount(key)) {
                     u32 nonzero = 0;
                     u32 last_nonzero = 0;
                     const u32 scan = (std::min)(fit, desc.count);
@@ -505,38 +472,8 @@ bool GraphicsPipeline::ConfigureImpl(bool is_indexed) {
                              desc.has_index_cbuf ? " | index from cbuf" : "");
                 }
             }
-            const auto [resolved, base]{resolved_count(desc)};
-            const u32 stride{1U << desc.size_shift};
-            const bool block_read{base.has_value() && resolved > 1};
-            if (block_read) {
-                handle_bytes.resize(size_t{resolved - 1} * stride + sizeof(u32));
-                gpu_memory->ReadBlockUnsafe(cbufs[desc.cbuf_index].address + *base,
-                                            handle_bytes.data(), handle_bytes.size());
-            }
-            std::pair<u32, u32> previous_handle{};
             for (u32 index = 0; index < desc.count; ++index) {
-                if (index > resolved) {
-                    views.push_back({.index = 0, .blacklist = false, .copy_previous = true});
-                    samplers.push_back(samplers.back());
-                    continue;
-                }
-                std::pair<u32, u32> handle;
-                if (index == resolved) {
-                    handle = TexturePair(0, via_header_index);
-                } else if (block_read) {
-                    u32 raw;
-                    std::memcpy(&raw, handle_bytes.data() + size_t{index} * stride, sizeof(raw));
-                    handle = TexturePair(raw & desc.mask, via_header_index);
-                } else {
-                    handle = read_handle(desc, index);
-                }
-                // The same handle resolves to the same view and sampler within a draw.
-                if (index > 0 && handle == previous_handle) {
-                    views.push_back({.index = 0, .blacklist = false, .copy_previous = true});
-                    samplers.push_back(samplers.back());
-                    continue;
-                }
-                previous_handle = handle;
+                const auto handle{read_handle(desc, index)};
                 views.push_back({handle.first});
 
                 VideoCommon::SamplerId sampler{texture_cache.GetSamplerId(handle.second, false)};
