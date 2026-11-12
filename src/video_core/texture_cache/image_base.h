@@ -8,6 +8,7 @@
 
 #include <array>
 #include <optional>
+#include <utility>
 #include <vector>
 #include <boost/container/small_vector.hpp>
 
@@ -95,6 +96,17 @@ struct ImageBase {
     u32 scale_rating = 0;
     u64 scale_tick = 0;
     bool has_scaled = false;
+    /// The frame the image was last used (registered or prepared).
+    u64 last_use_tick = 0;
+    /// What the image counts for in the texture cache's memory total (its resident memory for a
+    /// sparse resident image).
+    u64 accounted_bytes = 0;
+    /// The image is CPU-modified only because these byte ranges (from gpu_addr, half-open) were
+    /// written or (un)mapped, so a refresh can upload just them. Sparse images only.
+    bool partial_refresh = false;
+    std::vector<std::pair<u64, u64>> partial_ranges;
+    /// GPU pages of this sparse image were (un)mapped since its CPU page views were built.
+    bool sparse_mapping_stale = false;
 
     size_t channel = 0;
 

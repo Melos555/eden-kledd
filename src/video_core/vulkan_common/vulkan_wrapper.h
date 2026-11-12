@@ -187,6 +187,8 @@ struct InstanceDispatch {
     PFN_vkGetPhysicalDeviceProperties2 vkGetPhysicalDeviceProperties2{};
     PFN_vkGetPhysicalDeviceToolProperties vkGetPhysicalDeviceToolProperties{};
     PFN_vkGetPhysicalDeviceQueueFamilyProperties vkGetPhysicalDeviceQueueFamilyProperties{};
+    PFN_vkGetPhysicalDeviceSparseImageFormatProperties
+        vkGetPhysicalDeviceSparseImageFormatProperties{};
     PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR vkGetPhysicalDeviceSurfaceCapabilitiesKHR{};
     PFN_vkGetPhysicalDeviceSurfaceFormatsKHR vkGetPhysicalDeviceSurfaceFormatsKHR{};
     PFN_vkGetPhysicalDeviceSurfacePresentModesKHR vkGetPhysicalDeviceSurfacePresentModesKHR{};
@@ -315,6 +317,8 @@ struct DeviceDispatch : InstanceDispatch {
     PFN_vkDestroyFence vkDestroyFence{};
     PFN_vkDestroyFramebuffer vkDestroyFramebuffer{};
     PFN_vkDestroyImage vkDestroyImage{};
+    PFN_vkGetImageMemoryRequirements vkGetImageMemoryRequirements{};
+    PFN_vkGetImageSparseMemoryRequirements vkGetImageSparseMemoryRequirements{};
     PFN_vkDestroyImageView vkDestroyImageView{};
     PFN_vkDestroyPipeline vkDestroyPipeline{};
     PFN_vkDestroyPipelineCache vkDestroyPipelineCache{};
@@ -334,7 +338,6 @@ struct DeviceDispatch : InstanceDispatch {
     PFN_vkGetDeviceQueue vkGetDeviceQueue{};
     PFN_vkGetEventStatus vkGetEventStatus{};
     PFN_vkGetFenceStatus vkGetFenceStatus{};
-    PFN_vkGetImageMemoryRequirements vkGetImageMemoryRequirements{};
     PFN_vkGetPipelineCacheData vkGetPipelineCacheData{};
     PFN_vkGetMemoryFdKHR vkGetMemoryFdKHR{};
 #ifdef _WIN32
@@ -1197,6 +1200,10 @@ public:
     std::vector<VkExtensionProperties> EnumerateDeviceExtensionProperties() const;
 
     std::vector<VkQueueFamilyProperties> GetQueueFamilyProperties() const;
+
+    std::vector<VkSparseImageFormatProperties> GetSparseImageFormatProperties(
+        VkFormat format, VkImageType type, VkSampleCountFlagBits samples, VkImageUsageFlags usage,
+        VkImageTiling tiling) const;
 
     std::vector<VkPhysicalDeviceToolProperties> GetPhysicalDeviceToolProperties() const;
 

@@ -7,6 +7,9 @@
 #pragma once
 
 #include <span>
+#include <optional>
+#include <mutex>
+#include <deque>
 
 #include "video_core/texture_cache/texture_cache_base.h"
 
@@ -15,6 +18,7 @@
 #include "video_core/renderer_vulkan/vk_render_pass_cache.h"
 #include "video_core/renderer_vulkan/vk_staging_buffer_pool.h"
 #include "video_core/texture_cache/image_view_base.h"
+#include "video_core/texture_cache/util.h"
 #include "video_core/vulkan_common/vulkan_memory_allocator.h"
 #include "video_core/vulkan_common/vulkan_wrapper.h"
 
@@ -39,6 +43,60 @@ class Framebuffer;
 class RenderPassCache;
 class StagingBufferPool;
 class Scheduler;
+
+/// 64 KiB tiles of device memory for sparse resident images, carved from larger allocations.
+/// Freed tiles are reused only once the GPU is past the tick they were freed at.
+class SparseTilePool {
+public:
+    static constexpr VkDeviceSize TileSize = 64 * 1024;
+
+    struct Tile {
+        VkDeviceMemory memory{};
+        VkDeviceSize offset{};
+        u32 chunk{};
+    };
+
+    explicit SparseTilePool(const Device& device_);
+    ~SparseTilePool();
+
+    SparseTilePool(const SparseTilePool&) = delete;
+    SparseTilePool& operator=(const SparseTilePool&) = delete;
+
+    [[nodiscard]] std::optional<Tile> Allocate(u32 memory_type);
+
+    /// A zero-filled region of at least `tiles` tiles of this memory type, shared (bound
+    /// aliased) by every page that has no data of its own. Null when it can't be made.
+    [[nodiscard]] std::optional<Tile> ZeroRegion(u32 memory_type, u32 tiles, Scheduler& scheduler);
+
+    void Free(const Tile& tile, u64 tick);
+
+    /// Records a zero fill of the tile, run at the start of the next submission.
+    void RecordZeroFill(const Tile& tile, Scheduler& scheduler);
+
+    /// Makes tiles freed at or before completed_tick available again.
+    void Tick(u64 completed_tick);
+
+private:
+    static constexpr u32 ChunkTiles = 512; // 32 MiB allocations
+
+    struct Chunk {
+        vk::DeviceMemory memory;
+        u32 memory_type{};
+        std::vector<u32> free_slots;
+        VkBuffer buffer{}; ///< over the whole chunk, for zero fills
+    };
+
+    const Device& device;
+    std::mutex mutex;
+    std::vector<Chunk> chunks;
+    std::deque<std::pair<Tile, u64>> pending_free;
+    struct ZeroRegionEntry {
+        u32 memory_type;
+        u32 tiles;
+        vk::DeviceMemory memory;
+    };
+    std::vector<ZeroRegionEntry> zero_regions;
+};
 
 class TextureCacheRuntime {
 public:
@@ -159,6 +217,7 @@ public:
     Scheduler& scheduler;
     MemoryAllocator& memory_allocator;
     StagingBufferPool& staging_buffer_pool;
+    SparseTilePool sparse_tiles;
     BlitImageHelper& blit_image_helper;
     RenderPassCache& render_pass_cache;
     std::optional<ASTCDecoderPass> astc_decoder_pass;
@@ -409,12 +468,66 @@ public:
 
     bool ScaleDown(bool ignore = false);
 
+    /// The image only has memory where guest pages are mapped (one 64 KiB tile per page).
+    [[nodiscard]] bool IsSparseResident() const noexcept {
+        return sparse != nullptr;
+    }
+
+    [[nodiscard]] const VideoCommon::SparsePageLayout& SparseLayout() const noexcept {
+        return sparse->layout;
+    }
+
+    [[nodiscard]] bool IsPageResident(u32 page) const noexcept {
+        return page < sparse->tiles.size() && sparse->tiles[page].has_value();
+    }
+
+    /// Binds a tile to each page in `bind` and unbinds each page in `unbind`. Pages outside the
+    /// image's texels are never bound.
+    void UpdateResidency(std::span<const u32> bind, std::span<const u32> unbind);
+
+    /// Memory bound to the image's own tiles.
+    [[nodiscard]] u64 ResidentBytes() const noexcept;
+
+    /// Uploads into pages that have their own tiles (TextureCache's sparse refresh), without the
+    /// guard of other writes.
+    void UploadSparsePages(const StagingBufferRef& map,
+                           std::span<const VideoCommon::BufferImageCopy> copies);
+
+    /// Called before the GPU writes the image: a sparse resident image whose unmapped pages
+    /// share the zero region first gets its own zero-filled tile for every page, so the write
+    /// can't reach the shared memory.
+    void PrepareSparseWrite();
+
     u64 allocation_tick;
 
     friend class BlockLinearUnswizzle3DPass;
 
 private:
     bool BlitScaleHelper(bool scale_up);
+
+    /// Creates original_image as a sparse resident image when the guest layout and the device
+    /// allow it; false leaves it to the regular path.
+    bool TryCreateSparseResident();
+
+    /// Submits sparse binds for original_image after the work already submitted, and waits
+    /// for them to be in place.
+    void SubmitSparseBinds(std::span<const VkSparseImageMemoryBind> binds);
+
+    struct SparseState {
+        VideoCommon::SparsePageLayout layout;
+        u32 memory_type{};
+        std::vector<std::optional<SparseTilePool::Tile>> tiles;
+        /// Pages without a tile of their own are bound to a shared zero region, at first in
+        /// boxes of zero_box_pages pages (whole slabs or rows of pages, fewer binds).
+        std::optional<SparseTilePool::Tile> zero_tile;
+        u32 zero_box_pages = 1;
+        bool zero_bound = false;
+        /// Every page has its own tile (the image was written by the GPU): unmapping a page
+        /// zero-fills its tile instead of rebinding the zero region.
+        bool materialized = false;
+        bool uploading_pages = false;
+    };
+    std::unique_ptr<SparseState> sparse;
 
     bool NeedsScaleHelper() const;
 

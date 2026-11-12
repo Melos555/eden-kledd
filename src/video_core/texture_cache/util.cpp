@@ -922,6 +922,159 @@ boost::container::small_vector<BufferImageCopy, 16> UnswizzleImage(Tegra::Memory
     return copies;
 }
 
+std::optional<boost::container::small_vector<BufferImageCopy, 16>> UnswizzleImageRanges(
+    Tegra::MemoryManager& gpu_memory, GPUVAddr gpu_addr, const ImageInfo& info,
+    u64 guest_size_bytes, std::span<const std::pair<u64, u64>> ranges, std::vector<u8>& output,
+    std::vector<u8>& scratch) {
+    if (info.type == ImageType::Linear || info.type == ImageType::Buffer ||
+        info.resources.levels != 1 || info.resources.layers != 1 || info.num_samples != 1) {
+        return std::nullopt;
+    }
+    const u32 bpp_log2 = BytesPerBlockLog2(info.format);
+    const Extent2D tile_size = DefaultBlockSize(info.format);
+    const LevelInfo level_info = MakeLevelInfo(info);
+    const Extent3D num_tiles = AdjustTileSize(info.size, tile_size);
+    const Extent3D block = AdjustMipBlockSize(num_tiles, level_info.block, 0, 1);
+    // The run decode uses GOB-exact strides; the image's own rows of blocks are padded to
+    // 1 << tile_width_spacing GOBs (as NumGobs does), which only changes blocks_x below.
+    const Extent2D gob = GobSize(bpp_log2, block.height, 0);
+    const Extent2D spaced_gob = GobSize(bpp_log2, block.height, info.tile_width_spacing);
+    if (IsSmallerThanGobSize(num_tiles, spaced_gob, block.depth)) {
+        return std::nullopt;
+    }
+    // A swizzle block: one GOB (64 bytes) wide, 8 << block.height rows, 1 << block.depth slices.
+    const u32 elems_per_block_x = GOB_SIZE_X >> bpp_log2;
+    const u32 rows_per_block = GOB_SIZE_Y << block.height;
+    const u32 slices_per_block = 1U << block.depth;
+    const u64 block_bytes = u64{GOB_SIZE} << (block.height + block.depth);
+    const u64 blocks_x = Common::AlignUpLog2(
+        Common::DivCeil(u64{num_tiles.width} << bpp_log2, u64{GOB_SIZE_X}),
+        info.tile_width_spacing);
+    const u64 blocks_y = Common::DivCeil(u64{num_tiles.height}, u64{rows_per_block});
+    const u64 blocks_z = Common::DivCeil(u64{num_tiles.depth}, u64{slices_per_block});
+    const u64 level_bytes = blocks_x * blocks_y * blocks_z * block_bytes;
+    // The guest size can add padding after the level (layer alignment), never inside it.
+    if (level_bytes != CalculateLevelSizes(level_info, 1)[0] || level_bytes > guest_size_bytes) {
+        return std::nullopt;
+    }
+
+    std::vector<u64> indices;
+    for (const auto& [begin, end] : ranges) {
+        if (begin >= end || begin >= level_bytes) {
+            continue;
+        }
+        const u64 last = (std::min)(end, level_bytes) - 1;
+        for (u64 index = begin / block_bytes; index <= last / block_bytes; ++index) {
+            indices.push_back(index);
+        }
+    }
+    std::ranges::sort(indices);
+    indices.erase(std::unique(indices.begin(), indices.end()), indices.end());
+
+    boost::container::small_vector<BufferImageCopy, 16> copies;
+    output.clear();
+    for (size_t i = 0; i < indices.size();) {
+        // A run: consecutive block indices on one row of blocks.
+        const u64 first = indices[i];
+        const u64 row = first / blocks_x;
+        size_t j = i + 1;
+        while (j < indices.size() && indices[j] == indices[j - 1] + 1 &&
+               indices[j] / blocks_x == row) {
+            ++j;
+        }
+        const u32 count = static_cast<u32>(j - i);
+        i = j;
+
+        const u32 bx = static_cast<u32>(first % blocks_x);
+        const u32 by = static_cast<u32>(row % blocks_y);
+        const u32 bz = static_cast<u32>(row / blocks_y);
+        const u32 run_width = count * elems_per_block_x;
+        const size_t run_guest = static_cast<size_t>(count * block_bytes);
+        const size_t run_host =
+            (static_cast<size_t>(run_width) * rows_per_block * slices_per_block) << bpp_log2;
+
+        scratch.resize(run_guest);
+        gpu_memory.ReadBlockUnsafe(gpu_addr + first * block_bytes, scratch.data(), run_guest);
+        const size_t host_offset = output.size();
+        output.resize(host_offset + run_host);
+        UnswizzleTexture(std::span<u8>(output).subspan(host_offset, run_host), scratch,
+                         1U << bpp_log2, run_width, rows_per_block, slices_per_block,
+                         block.height, block.depth, gob.width);
+
+        // Texels this run covers, clipped to the image (the last row or slice of blocks can
+        // extend past it).
+        const u32 x = bx * elems_per_block_x * tile_size.width;
+        const u32 y = by * rows_per_block * tile_size.height;
+        const u32 z = bz * slices_per_block;
+        if (x >= info.size.width || y >= info.size.height || z >= info.size.depth) {
+            continue;
+        }
+        copies.push_back(BufferImageCopy{
+            .buffer_offset = host_offset,
+            .buffer_size = run_host,
+            .buffer_row_length = run_width * tile_size.width,
+            .buffer_image_height = rows_per_block * tile_size.height,
+            .image_subresource =
+                {
+                    .base_level = 0,
+                    .base_layer = 0,
+                    .num_layers = 1,
+                },
+            .image_offset = {static_cast<s32>(x), static_cast<s32>(y), static_cast<s32>(z)},
+            .image_extent =
+                {
+                    (std::min)(run_width * tile_size.width, info.size.width - x),
+                    (std::min)(rows_per_block * tile_size.height, info.size.height - y),
+                    (std::min)(slices_per_block, info.size.depth - z),
+                },
+        });
+    }
+    return copies;
+}
+
+std::optional<SparsePageLayout> ComputeSparsePageLayout(const ImageInfo& info, u64 page_size) {
+    if (info.type == ImageType::Linear || info.type == ImageType::Buffer ||
+        info.resources.levels != 1 || info.resources.layers != 1 || info.num_samples != 1) {
+        return std::nullopt;
+    }
+    const u32 bpp_log2 = BytesPerBlockLog2(info.format);
+    const Extent2D tile_size = DefaultBlockSize(info.format);
+    const LevelInfo level_info = MakeLevelInfo(info);
+    const Extent3D num_tiles = AdjustTileSize(info.size, tile_size);
+    const Extent3D block = AdjustMipBlockSize(num_tiles, level_info.block, 0, 1);
+    const Extent2D spaced_gob = GobSize(bpp_log2, block.height, info.tile_width_spacing);
+    if (IsSmallerThanGobSize(num_tiles, spaced_gob, block.depth)) {
+        return std::nullopt;
+    }
+    const u32 elems_per_block_x = GOB_SIZE_X >> bpp_log2;
+    const u32 rows_per_block = GOB_SIZE_Y << block.height;
+    const u32 slices_per_block = 1U << block.depth;
+    const u64 block_bytes = u64{GOB_SIZE} << (block.height + block.depth);
+    const u64 blocks_x = Common::AlignUpLog2(
+        Common::DivCeil(u64{num_tiles.width} << bpp_log2, u64{GOB_SIZE_X}),
+        info.tile_width_spacing);
+    const u64 blocks_y = Common::DivCeil(u64{num_tiles.height}, u64{rows_per_block});
+    const u64 blocks_z = Common::DivCeil(u64{num_tiles.depth}, u64{slices_per_block});
+    const u64 level_bytes = blocks_x * blocks_y * blocks_z * block_bytes;
+    if (level_bytes != CalculateLevelSizes(level_info, 1)[0] || page_size % block_bytes != 0 ||
+        (blocks_x * block_bytes) % page_size != 0) {
+        return std::nullopt;
+    }
+    const u64 blocks_per_page = page_size / block_bytes;
+    return SparsePageLayout{
+        .page_texels =
+            {
+                .width = static_cast<u32>(blocks_per_page * elems_per_block_x * tile_size.width),
+                .height = rows_per_block * tile_size.height,
+                .depth = slices_per_block,
+            },
+        .pages_x = static_cast<u32>(blocks_x / blocks_per_page),
+        .pages_y = static_cast<u32>(blocks_y),
+        .pages_z = static_cast<u32>(blocks_z),
+        .level_bytes = level_bytes,
+    };
+}
+
 void ConvertImage(std::span<const u8> input, const ImageInfo& info, std::span<u8> output,
                   std::span<BufferImageCopy> copies) {
     u32 output_offset = 0;

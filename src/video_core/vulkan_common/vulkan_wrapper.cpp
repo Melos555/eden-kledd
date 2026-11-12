@@ -199,6 +199,8 @@ void Load(VkDevice device, DeviceDispatch& dld) noexcept {
     X(vkDestroyFence);
     X(vkDestroyFramebuffer);
     X(vkDestroyImage);
+    X(vkGetImageMemoryRequirements);
+    X(vkGetImageSparseMemoryRequirements);
     X(vkDestroyImageView);
     X(vkDestroyPipeline);
     X(vkDestroyPipelineCache);
@@ -218,7 +220,6 @@ void Load(VkDevice device, DeviceDispatch& dld) noexcept {
     X(vkGetDeviceQueue);
     X(vkGetEventStatus);
     X(vkGetFenceStatus);
-    X(vkGetImageMemoryRequirements);
     X(vkGetPipelineCacheData);
     X(vkGetMemoryFdKHR);
 #ifdef _WIN32
@@ -320,6 +321,7 @@ bool Load(VkInstance instance, InstanceDispatch& dld) noexcept {
     X(vkGetPhysicalDeviceSurfacePresentModesKHR);
     X(vkGetPhysicalDeviceSurfaceSupportKHR);
     X(vkGetPhysicalDeviceToolProperties);
+    X(vkGetPhysicalDeviceSparseImageFormatProperties);
     X(vkGetSwapchainImagesKHR);
     X(vkQueuePresentKHR);
 
@@ -957,6 +959,22 @@ std::vector<VkExtensionProperties> PhysicalDevice::EnumerateDeviceExtensionPrope
     dld->vkEnumerateDeviceExtensionProperties(physical_device, nullptr, &num, nullptr);
     std::vector<VkExtensionProperties> properties(num);
     dld->vkEnumerateDeviceExtensionProperties(physical_device, nullptr, &num, properties.data());
+    return properties;
+}
+
+std::vector<VkSparseImageFormatProperties> PhysicalDevice::GetSparseImageFormatProperties(
+    VkFormat format, VkImageType type, VkSampleCountFlagBits samples, VkImageUsageFlags usage,
+    VkImageTiling tiling) const {
+    if (!dld->vkGetPhysicalDeviceSparseImageFormatProperties) {
+        return {};
+    }
+    u32 num = 0;
+    dld->vkGetPhysicalDeviceSparseImageFormatProperties(physical_device, format, type, samples,
+                                                        usage, tiling, &num, nullptr);
+    std::vector<VkSparseImageFormatProperties> properties(num);
+    dld->vkGetPhysicalDeviceSparseImageFormatProperties(physical_device, format, type, samples,
+                                                        usage, tiling, &num, properties.data());
+    properties.resize(num);
     return properties;
 }
 

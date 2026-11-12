@@ -105,6 +105,12 @@ namespace Vulkan {
 
         vk::Image CreateImage(const VkImageCreateInfo &ci) const;
 
+        /// The VMA allocator, for images created outside it (sparse images) to be destroyed by
+        /// vk::Image like the others.
+        [[nodiscard]] VmaAllocator Handle() const noexcept {
+            return allocator;
+        }
+
         vk::Buffer CreateBuffer(const VkBufferCreateInfo &ci, MemoryUsage usage) const;
 
         vk::Buffer CreateBuffer(const VkBufferCreateInfo &ci, MemoryUsage usage,
