@@ -312,8 +312,14 @@ void TextureCache<P>::FillImageViews(std::span<ImageViewInOut> views, bool compu
         if (blacklist) {
             has_blacklisted = false;
         }
+        ImageViewId previous{};
         for (ImageViewInOut& view : views) {
+            if (view.copy_previous) {
+                view.id = previous;
+                continue;
+            }
             view.id = VisitImageView(view.index, compute);
+            previous = view.id;
             if (blacklist) {
                 if (view.blacklist && view.id != NULL_IMAGE_VIEW_ID) {
                     const ImageViewBase& image_view = slot_image_views[view.id];

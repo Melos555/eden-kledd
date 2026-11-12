@@ -361,9 +361,20 @@ inline void PushImageDescriptors(TextureCache& texture_cache,
     views += num_image_buffers;
     for (const auto& desc : info.texture_descriptors) {
         bool is_rescaled{};
+        // Consecutive elements often repeat a view and sampler (array elements past the end of
+        // their constant buffer), so the previous element's handles are reused for them.
+        VideoCommon::ImageViewId last_view_id{};
+        VideoCommon::SamplerId last_sampler_id{};
+        VkImageView last_vk_image_view{};
+        VkSampler last_vk_sampler{};
+        bool has_last{};
         for (u32 index = 0; index < desc.count; ++index) {
             const VideoCommon::ImageViewId image_view_id{(views++)->id};
             const VideoCommon::SamplerId sampler_id{*(samplers++)};
+            if (has_last && image_view_id == last_view_id && sampler_id == last_sampler_id) {
+                guest_descriptor_queue.AddSampledImage(last_vk_image_view, last_vk_sampler);
+                continue;
+            }
             ImageView& image_view{texture_cache.GetImageView(image_view_id)};
             VkImageView vk_image_view{image_view.Handle(desc.type)};
             if (vk_image_view == VK_NULL_HANDLE) {
@@ -371,10 +382,15 @@ inline void PushImageDescriptors(TextureCache& texture_cache,
                 if (null_image_view != VK_NULL_HANDLE) vk_image_view = null_image_view;
             }
             Sampler& sampler{texture_cache.GetSampler(sampler_id)};
-            guest_descriptor_queue.AddSampledImage(vk_image_view,
-                                                   sampler.HandleFor(image_view, desc.is_depth));
+            const VkSampler vk_sampler{sampler.HandleFor(image_view, desc.is_depth)};
+            guest_descriptor_queue.AddSampledImage(vk_image_view, vk_sampler);
             const bool element_rescaled{texture_cache.IsRescaling(image_view)};
             is_rescaled |= element_rescaled;
+            last_view_id = image_view_id;
+            last_sampler_id = sampler_id;
+            last_vk_image_view = vk_image_view;
+            last_vk_sampler = vk_sampler;
+            has_last = true;
         }
         rescaling.PushTexture(is_rescaled);
     }
