@@ -23,6 +23,7 @@
 #include "video_core/engines/kepler_compute.h"
 #include "video_core/guest_memory.h"
 #include "video_core/host1x/gpu_device_memory_manager.h"
+#include "video_core/texture_cache/accelerated_swizzle.h"
 #include "video_core/texture_cache/image_view_base.h"
 #include "video_core/texture_cache/samples_helper.h"
 #include "video_core/texture_cache/texture_cache_base.h"
@@ -625,7 +626,7 @@ void TextureCache<P>::WriteMemory(DAddr cpu_addr, size_t size) {
         map.picked = false;
         const ImageId image_id = map.image_id;
         Image& image = slot_images[image_id];
-        if (True(image.flags & ImageFlagBits::Sparse) &&
+        if ((True(image.flags & ImageFlagBits::Sparse) || IsPartialAstcRefreshable(image)) &&
             True(image.flags & ImageFlagBits::Registered) &&
             (False(image.flags & ImageFlagBits::CpuModified) || image.partial_refresh)) {
             const DAddr written_begin = (std::max<DAddr>)(cpu_addr, map.cpu_addr);
@@ -1449,6 +1450,126 @@ void TextureCache<P>::DownloadImageIntoBuffer(typename TextureCache<P>::Image* i
 }
 
 template <class P>
+bool TextureCache<P>::IsPartialAstcRefreshable(const Image& image) const {
+    using StagingRef = decltype(runtime.UploadStagingBuffer(size_t{}));
+    if constexpr (!requires(Image& img, StagingRef& staging) {
+                      runtime.AccelerateAstcRows(
+                          img, staging, std::span<const SwizzleParameters>{},
+                          std::span<const std::pair<u32, u32>>{});
+                  }) {
+        return false;
+    } else {
+        // EDEN_NO_PARTIAL_ASTC=1 turns partial refreshes off, for A/B testing.
+        static const bool disabled = std::getenv("EDEN_NO_PARTIAL_ASTC") != nullptr;
+        return !disabled && True(image.flags & ImageFlagBits::AcceleratedUpload) &&
+               False(image.flags & ImageFlagBits::Rescaled) &&
+               IsPixelFormatASTC(image.info.format) && image.info.type == ImageType::e2D &&
+               image.info.num_samples == 1;
+    }
+}
+
+template <class P>
+bool TextureCache<P>::TryPartialAstcRefresh(Image& image,
+                                            std::span<const std::pair<u64, u64>> ranges) {
+    using StagingRef = decltype(runtime.UploadStagingBuffer(size_t{}));
+    if constexpr (requires(Image& img, StagingRef& staging) {
+                      runtime.AccelerateAstcRows(
+                          img, staging, std::span<const SwizzleParameters>{},
+                          std::span<const std::pair<u32, u32>>{});
+                  }) {
+        // The guest streams data into textures it is already sampling, often a few KiB at a
+        // time. Decode only the block rows each level had written, instead of the whole image.
+        const ImageInfo& info = image.info;
+        const auto swizzles = FullUploadSwizzles(info);
+        const u32 num_layers = static_cast<u32>(info.resources.layers);
+        const u64 layer_size = CalculateLayerSize(info);
+        const u64 layer_stride = num_layers > 1 ? info.layer_stride : layer_size;
+        boost::container::small_vector<SwizzleParameters, 16> parts;
+        boost::container::small_vector<std::pair<u32, u32>, 16> rows;
+        // Guest bytes the decoded rows read: only these are copied to the staging buffer.
+        boost::container::small_vector<std::pair<u64, u64>, 32> spans;
+        u64 total_rows = 0;
+        u64 decoded_rows = 0;
+        for (size_t i = 0; i < swizzles.size(); ++i) {
+            const SwizzleParameters& swizzle = swizzles[i];
+            const u64 level_begin = swizzle.buffer_offset;
+            const u64 level_end = i + 1 < swizzles.size() ? swizzles[i + 1].buffer_offset : layer_size;
+            const auto params = Accelerated::MakeBlockLinearSwizzle2DParams(swizzle, info);
+            const u64 row_bytes = params.block_size;
+            const u32 rows_per_row = 8U << swizzle.block.height;
+            const u32 height = swizzle.num_tiles.height;
+            total_rows += height;
+            if (row_bytes == 0) {
+                return false;
+            }
+            u32 first = (std::numeric_limits<u32>::max)();
+            u32 last = 0;
+            for (const auto& [begin, end] : ranges) {
+                for (u32 layer = 0; layer < num_layers; ++layer) {
+                    const u64 base = layer * layer_stride + level_begin;
+                    const u64 local_begin = (std::max)(begin, base);
+                    const u64 local_end = (std::min)(end, base + (level_end - level_begin));
+                    if (local_begin >= local_end) {
+                        continue;
+                    }
+                    const u64 row_begin = (local_begin - base) / row_bytes;
+                    const u64 row_end = Common::DivCeil(local_end - base, row_bytes);
+                    first = (std::min)(first, static_cast<u32>(row_begin * rows_per_row));
+                    last = (std::max)(last, static_cast<u32>(row_end * rows_per_row));
+                }
+            }
+            last = (std::min)(last, height);
+            if (first < last) {
+                parts.push_back(swizzle);
+                rows.emplace_back(first, last);
+                decoded_rows += last - first;
+                const u64 span_begin = (first / rows_per_row) * row_bytes;
+                const u64 span_end = (std::min)(Common::DivCeil<u64>(last, rows_per_row) * row_bytes,
+                                                level_end - level_begin);
+                for (u32 layer = 0; layer < num_layers; ++layer) {
+                    const u64 base = layer * layer_stride + level_begin;
+                    spans.emplace_back(base + span_begin, base + span_end);
+                }
+            }
+        }
+        if (parts.empty()) {
+            return true; // Only padding between levels or layers was written.
+        }
+        if (decoded_rows * 4 >= total_rows * 3) {
+            return false; // Most of it changed: a whole upload is as cheap.
+        }
+        auto staging = runtime.UploadStagingBuffer(MapSizeBytes(image));
+        const u64 staging_size = staging.mapped_span.size_bytes();
+        for (const auto& [span_begin, span_end] : spans) {
+            const u64 end = (std::min)(span_end, staging_size);
+            if (span_begin < end) {
+                gpu_memory->ReadBlock(image.gpu_addr + span_begin,
+                                      staging.mapped_span.data() + span_begin, end - span_begin,
+                                      VideoCommon::CacheType::NoTextureCache);
+            }
+        }
+        static const bool log_partial = std::getenv("EDEN_TEX_GARBAGE") != nullptr;
+        if (log_partial) {
+            u64 copied = 0;
+            for (const auto& [span_begin, span_end] : spans) {
+                copied += span_end - span_begin;
+            }
+            LOG_INFO(HW_GPU,
+                     "TexPartial frame {} at {:#x}: {} {}x{} | decoded {} of {} block rows in {} "
+                     "levels, copied {} of {} bytes",
+                     frame_tick, image.gpu_addr, image.info.format, image.info.size.width,
+                     image.info.size.height, decoded_rows, total_rows, parts.size(), copied,
+                     image.guest_size_bytes);
+        }
+        runtime.AccelerateAstcRows(image, staging, parts, rows);
+        runtime.InsertUploadMemoryBarrier();
+        return true;
+    } else {
+        return false;
+    }
+}
+
+template <class P>
 bool TextureCache<P>::TryPartialRefresh(Image& image,
                                         std::span<const std::pair<u64, u64>> ranges) {
     auto copies = UnswizzleImageRanges(*gpu_memory, image.gpu_addr, image.info,
@@ -1675,6 +1796,14 @@ void TextureCache<P>::RefreshContents(Image& image, ImageId image_id) {
             return;
         }
     }
+    if (image.partial_refresh && IsPartialAstcRefreshable(image)) {
+        auto ranges = std::move(image.partial_ranges);
+        image.partial_ranges.clear();
+        image.partial_refresh = false;
+        if (TryPartialAstcRefresh(image, ranges)) {
+            return;
+        }
+    }
     constexpr ImageFlagBits not_partial = ImageFlagBits::Converted |
                                           ImageFlagBits::AcceleratedUpload |
                                           ImageFlagBits::AsynchronousDecode |
@@ -1717,7 +1846,8 @@ void TextureCache<P>::RefreshContents(Image& image, ImageId image_id) {
 // uploaded again at an address that had them) is logged, to find textures uploaded before the
 // game finished writing them.
 template <class P>
-void TextureCache<P>::ReportAstcGarbage(const Image& image, std::span<const u8> data) {
+void TextureCache<P>::ReportAstcGarbage(const Image& image, std::span<const u8> data,
+                                        bool partial) {
     static const bool enabled = std::getenv("EDEN_TEX_GARBAGE") != nullptr;
     if (!enabled) {
         return;
@@ -1752,12 +1882,13 @@ void TextureCache<P>::ReportAstcGarbage(const Image& image, std::span<const u8> 
     const u32 count = had_garbage ? ++it->second : (uploads_with_garbage[image.gpu_addr] = 1);
     LOG_INFO(HW_GPU,
              "TexGarbage frame {} upload #{} at {:#x}: {} {}x{} levels {} | {} blocks, {} zero, "
-             "{} reserved (~{:.1f}% garbage){}",
+             "{} reserved (~{:.1f}% garbage){}{}",
              frame_tick, count, image.gpu_addr, image.info.format, image.info.size.width,
              image.info.size.height, image.info.resources.levels, blocks, zero, reserved,
              blocks ? 100.0 * static_cast<double>(reserved) / 0.094 / static_cast<double>(blocks)
                     : 0.0,
-             True(image.flags & ImageFlagBits::GpuModified) ? " | GPU-modified" : "");
+             True(image.flags & ImageFlagBits::GpuModified) ? " | GPU-modified" : "",
+             partial ? " | partial (rows only)" : "");
 }
 
 template <class P>
