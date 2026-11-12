@@ -245,11 +245,17 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
            tr("Makes the game believe GPU work finishes faster than it does, so it stops lowering "
               "resolution and render distance to fit the Switch's clocks."));
     // eden-kledd texture-switches test build: adjustable again
-    // eden-kledd v2 golden: locked in code, hidden
-    INSERT(Settings, gpu_unswizzle_chunk_size, QString(), QString());
+    INSERT(Settings, gpu_unswizzle_chunk_size, tr("Async Unswizzle Chunk Size"),
+           tr("Determines the number of depth slices processed in a single dispatch.\n"
+              "Increasing this can improve throughput on high-end GPUs but may cause TDR or driver "
+              "timeouts on weaker hardware.\nv2 golden value: Normal (128)."));
     // eden-kledd texture-switches test build: adjustable again
-    // eden-kledd v2 golden: locked in code, hidden
-    INSERT(Settings, async_unswizzle_mode, QString(), QString());
+    INSERT(Settings, async_unswizzle_mode, tr("Async Unswizzle Mode"),
+           tr("This option controls how chunked texture uploads are unswizzled.\n"
+              "Off: Disables asynchronous texture unswizzling.\n"
+              "CPU: Uses the CPU for asynchronous unswizzling.\n"
+              "GPU: Accelerates BCn 3D texture decoding using GPU compute.\n"
+              "v2 golden value: GPU. Takes effect after restarting the game."));
 
     INSERT(Settings, use_vulkan_driver_pipeline_cache, tr("Use Vulkan pipeline cache"),
            tr("Enables GPU vendor-specific pipeline cache.\nThis option can improve shader loading "
@@ -294,8 +300,18 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
     INSERT(Settings, kledd_early_buffer_release, QString(), QString());
     // eden-kledd v2 golden: locked in code, hidden
     INSERT(Settings, kledd_audio_hold, QString(), QString());
-    // eden-kledd v2 golden: locked in code, hidden
-    INSERT(Settings, kledd_resumable_gc, QString(), QString());
+    INSERT(Settings, kledd_resumable_gc, tr("[Kledd] Resumable texture cleanup (John)"),
+           tr("The cleanup continues where it stopped on the next frame instead of starting from "
+              "the oldest texture again.\nFrees more memory, but in Melos's tests it made the "
+              "mouse lose movement during door hitches. Default: off."));
+    INSERT(Settings, kledd_sparse_fixes, tr("[Kledd] Sparse texture fixes (Nomad)"),
+           tr("Nomad's fix for Metroid Prime 4's big lighting volumes: refresh only the changed "
+              "pages, sparse residency, and keep them alive while in use (no door freezes).\n"
+              "Off: the old full-upload path. Takes effect after restarting the game."));
+    INSERT(Settings, kledd_partial_astc, tr("[Kledd] Partial ASTC refresh (Nomad)"),
+           tr("When a game streams data into an ASTC texture it already uses, re-decode only the "
+              "rewritten rows.\nNot used with ASTC Recompression BC7 (the BC7 path needs whole "
+              "levels)."));
     // eden-kledd v2 golden: locked in code, hidden
     INSERT(Settings, kledd_cheat_write_fix, QString(), QString());
     // eden-kledd v2 golden: locked in code, hidden

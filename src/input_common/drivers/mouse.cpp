@@ -238,9 +238,13 @@ void Mouse::UpdateMotionInput(Common::SteadyClock::time_point timestamp) {
                 // Average over the game's last frame: the game reads the gyro once per frame and
                 // multiplies it by its frame time, so the speed must cover that same window. Then a
                 // long frame (hitch) gets the hand's whole movement, not a 5 ms snapshot of it.
+                // The window used to stop at 100 ms, so in a longer hitch (a door) the start of the
+                // hand's movement was dropped. With the hitch window it follows frames up to 1 s.
+                const float max_window =
+                    Settings::values.kledd_mouse_gyro_hitch_window.GetValue() ? 1.0f : 0.1f;
                 const float frame_s = std::clamp(
                     static_cast<float>(Common::KleddMouseGyro::game_frame_ns.load()) * 1e-9f, 0.005f,
-                    0.1f);
+                    max_window);
                 for (std::size_t i = 1; i <= size && sum_dt < frame_s; ++i) {
                     const std::size_t idx = (kledd_gyro_hist_pos + size - i) % size;
                     const float tick_dt = kledd_gyro_hist_dt[idx];

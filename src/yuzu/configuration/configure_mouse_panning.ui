@@ -275,6 +275,16 @@ Ctrl + F9 frees / captures the mouse.</string>
     </widget>
    </item>
    <item>
+    <widget class="QCheckBox" name="kledd_mouse_gyro_hitch_window">
+     <property name="text">
+      <string>[Kledd] Mouse gyro: keep the whole movement through hitches (door loads)</string>
+     </property>
+     <property name="toolTip">
+      <string>Eden turns your mouse movement into a gyro speed over the game's last frame. That window used to stop at 100 ms, so in a longer hitch (a door load) the start of your turn was lost: you aim for 10 cm and land at 8. With this on, the window follows frames up to 1 second, so the camera ends where your hand went.</string>
+     </property>
+    </widget>
+   </item>
+   <item>
     <widget class="QCheckBox" name="kledd_mouse_gyro_zl_stick">
      <property name="text">
       <string>[Kledd] Mouse gyro: while ZL (lock-on) is held, the mouse moves the right stick</string>

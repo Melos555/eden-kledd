@@ -55,6 +55,8 @@ void ConfigureMousePanning::SetConfiguration(float right_stick_deadzone, float r
         Settings::values.kledd_mouse_gyro_tilt_resync.GetValue());
     ui->kledd_mouse_gyro_r_recenter->setChecked(
         Settings::values.kledd_mouse_gyro_r_recenter.GetValue());
+    ui->kledd_mouse_gyro_hitch_window->setChecked(
+        Settings::values.kledd_mouse_gyro_hitch_window.GetValue());
     ui->kledd_mouse_gyro_zl_stick->setChecked(Settings::values.kledd_mouse_gyro_zl_stick.GetValue());
     ui->kledd_mouse_stick_sensitivity->setValue(
         Settings::values.kledd_mouse_stick_sensitivity.GetValue());
@@ -136,7 +138,7 @@ void ConfigureMousePanning::ConnectEvents() {
              ui->kledd_mouse_gyro_yaw_z, ui->kledd_mouse_gyro_gravity,
              ui->kledd_mouse_gyro_tilt_flip, ui->kledd_mouse_gyro_auto_level,
              ui->kledd_mouse_gyro_no_fusion, ui->kledd_mouse_gyro_frame_avg,
-             ui->kledd_mouse_gyro_tilt_resync, ui->kledd_mouse_gyro_r_recenter,
+             ui->kledd_mouse_gyro_tilt_resync,
              ui->kledd_mouse_gyro_zl_stick, ui->kledd_mouse_stick_sensitivity_label,
              ui->kledd_mouse_stick_sensitivity, ui->kledd_mouse_gyro_smoothing_label,
              ui->kledd_mouse_gyro_smoothing, ui->deadzone_counterweight_box, ui->decay_box,
@@ -248,6 +250,7 @@ void ConfigureMousePanning::ConnectEvents() {
                  ui->kledd_question, ui->kledd_box_x_label, ui->kledd_box_x,
                  ui->kledd_box_y_label, ui->kledd_box_y, ui->kledd_box_hint,
                  ui->kledd_gravity_key_label, ui->kledd_gravity_key,
+                 ui->kledd_mouse_gyro_hitch_window, ui->kledd_mouse_gyro_r_recenter,
                  ui->kledd_mouse_gyro_probe}) {
             widget->setVisible(gyro);
         }
@@ -276,7 +279,7 @@ void ConfigureMousePanning::ApplyConfiguration() {
         ui->kledd_mouse_gyro_no_fusion->setChecked(true);
         ui->kledd_mouse_gyro_frame_avg->setChecked(true);
         ui->kledd_mouse_gyro_tilt_resync->setChecked(false);
-        ui->kledd_mouse_gyro_r_recenter->setChecked(false);
+        // eden-kledd v3 + Nomad lab: "R also does a Gravity Check" is a visible box again
         ui->kledd_mouse_gyro_zl_stick->setChecked(false);
         ui->kledd_mouse_gyro_smoothing->setValue(1);
         ui->deadzone_counterweight->setValue(0);
@@ -317,6 +320,8 @@ void ConfigureMousePanning::ApplyConfiguration() {
         static_cast<u8>(ui->kledd_mouse_gyro_smoothing->value());
     Settings::values.kledd_mouse_gyro_tilt_resync = ui->kledd_mouse_gyro_tilt_resync->isChecked();
     Settings::values.kledd_mouse_gyro_r_recenter = ui->kledd_mouse_gyro_r_recenter->isChecked();
+    Settings::values.kledd_mouse_gyro_hitch_window =
+        ui->kledd_mouse_gyro_hitch_window->isChecked();
     Settings::values.kledd_mouse_gyro_zl_stick = ui->kledd_mouse_gyro_zl_stick->isChecked();
     Settings::values.kledd_mouse_stick_sensitivity =
         static_cast<u8>(ui->kledd_mouse_stick_sensitivity->value());

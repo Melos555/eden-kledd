@@ -701,6 +701,15 @@ struct Values {
     // cleanup with the old walk from the oldest image every frame. v2 golden: off by default.
     SwitchableSetting<bool> kledd_resumable_gc{linkage, false, "kledd_resumable_gc",
                                                Category::RendererHacks};
+    // eden-kledd v3 + Nomad lab: Nomad's (vasishath) sparse texture fixes: page-level refresh of
+    // Metroid Prime 4's big lighting volumes, sparse residency, keep them alive while in use.
+    // Off = the old full-upload path. Takes effect after restarting the game.
+    SwitchableSetting<bool> kledd_sparse_fixes{linkage, true, "kledd_sparse_fixes",
+                                               Category::RendererHacks};
+    // eden-kledd v3 + Nomad lab: Nomad's partial ASTC refresh (re-decode only rewritten rows).
+    // Never used together with BC7 recompression.
+    SwitchableSetting<bool> kledd_partial_astc{linkage, true, "kledd_partial_astc",
+                                               Category::RendererHacks};
     // eden-kledd: Eden PR #4640, cheat writes that change nothing are skipped and only writes to
     // code drop translated code. Off = the old behaviour (slower over long sessions with cheats).
     SwitchableSetting<bool> kledd_cheat_write_fix{linkage, true, "kledd_cheat_write_fix",
@@ -947,6 +956,10 @@ struct Values {
                                                Category::Controls};
     // eden-kledd: pressing R (the game's own gyro re-center in Metroid Prime 4) also does a
     // Gravity Check, so the mouse/aim and the game's reticle re-center together
+    // eden-kledd: the mouse movement window follows long frames up to 1 s (was capped at 100 ms),
+    // so a door hitch no longer drops the start of a turn
+    Setting<bool> kledd_mouse_gyro_hitch_window{linkage, true, "kledd_mouse_gyro_hitch_window",
+                                                Category::Controls};
     Setting<bool> kledd_mouse_gyro_r_recenter{linkage, false, "kledd_mouse_gyro_r_recenter",
                                               Category::Controls};
     // eden-kledd: camera (relative) mouse gyro: while ZL (lock-on) is held, the mouse drives the

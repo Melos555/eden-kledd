@@ -90,10 +90,20 @@ TextureCache<P>::TextureCache(Runtime& runtime_, Tegra::MaxwellDeviceMemoryManag
         minimum_memory = 0;
     }
 
-    // eden-kledd v2 golden: locked to Melos's best run (Nov 10): async unswizzle GPU, chunk Normal
-    // (128 slices). The settings stay defined so old configs load, but are ignored and hidden.
-    async_unswizzle_mode = Settings::AsyncUnswizzleMode::Gpu;
-    async_unswizzle_slices_per_batch = 128;
+    // eden-kledd v3 + Nomad lab: async unswizzle mode and chunk size are adjustable again
+    // (defaults GPU / Normal = 128 slices, the v2 golden values)
+    async_unswizzle_mode = Settings::values.async_unswizzle_mode.GetValue();
+    if (async_unswizzle_mode == Settings::AsyncUnswizzleMode::Off) {
+        async_unswizzle_slices_per_batch = 0;
+    } else switch (Settings::values.gpu_unswizzle_chunk_size.GetValue()) {
+    case Settings::GpuUnswizzleChunk::VeryLow: async_unswizzle_slices_per_batch = 32; break;
+    case Settings::GpuUnswizzleChunk::Low:     async_unswizzle_slices_per_batch = 64; break;
+    case Settings::GpuUnswizzleChunk::Normal:  async_unswizzle_slices_per_batch = 128; break;
+    case Settings::GpuUnswizzleChunk::Medium:  async_unswizzle_slices_per_batch = 256; break;
+    case Settings::GpuUnswizzleChunk::High:    async_unswizzle_slices_per_batch = 512; break;
+    case Settings::GpuUnswizzleChunk::Off:     async_unswizzle_slices_per_batch = 0; break;
+    default:                                   async_unswizzle_slices_per_batch = 128;
+    }
 }
 
 template <class P>
@@ -143,7 +153,9 @@ void TextureCache<P>::RunGarbageCollector() {
         // resident, and are often in use again moments later (a volume the game stops sampling
         // for a few frames). Keep them while the device has room, and under real pressure until
         // they go unused for a while.
-        if (True(image.flags & ImageFlagBits::Sparse) &&
+        // eden-kledd: part of Nomad's sparse texture fixes (lab box)
+        if (Settings::values.kledd_sparse_fixes.GetValue() &&
+            True(image.flags & ImageFlagBits::Sparse) &&
             image.accounted_bytes >= LARGE_IMAGE_BYTES &&
             (image.last_use_tick + LARGE_IMAGE_IDLE_FRAMES > frame_tick || !HeapPressure())) {
             return false;
@@ -181,8 +193,8 @@ void TextureCache<P>::RunGarbageCollector() {
     // longer eat the budget every frame at the head of the list and block the stale images
     // behind them; the sweep continues where it stopped on the next frame.
     // eden-kledd: switched off, the old walk from the oldest image every frame
-    // eden-kledd v2 golden: locked off (Melos's best run), setting ignored and hidden
-    constexpr bool resumable = false;
+    // eden-kledd v3 + Nomad lab: switchable again (default off, Melos's best run)
+    const bool resumable = Settings::values.kledd_resumable_gc.GetValue();
     const auto sweep = [&] {
         if (resumable) {
             lru_cache.ForEachItemBelowResumable(frame_tick - ticks_to_destroy, Cleanup);
@@ -1852,6 +1864,13 @@ void TextureCache<P>::RefreshContents(Image& image, ImageId image_id) {
         return;
     }
     auto& kledd_stats = Common::Kledd::GetFrameStats();
+    // eden-kledd: "[Kledd] Sparse texture fixes (Nomad)" off = big sparse textures take the old
+    // full-upload path (forrest's unswizzle) again; recorded partial ranges are dropped.
+    const bool sparse_fixes = Settings::values.kledd_sparse_fixes.GetValue();
+    if (!sparse_fixes && False(image.flags & ImageFlagBits::AcceleratedUpload)) {
+        image.partial_ranges.clear();
+        image.partial_refresh = false;
+    }
     if constexpr (requires { image.IsSparseResident(); }) {
         if (image.IsSparseResident()) {
             const bool partial = image.partial_refresh;
@@ -1874,7 +1893,10 @@ void TextureCache<P>::RefreshContents(Image& image, ImageId image_id) {
                                           ImageFlagBits::AcceleratedUpload |
                                           ImageFlagBits::AsynchronousDecode |
                                           ImageFlagBits::Rescaled;
-    if (image.partial_refresh) {
+    if (!sparse_fixes) {
+        image.partial_ranges.clear();
+        image.partial_refresh = false;
+    } else if (image.partial_refresh) {
         auto ranges = std::move(image.partial_ranges);
         image.partial_ranges.clear();
         image.partial_refresh = false;

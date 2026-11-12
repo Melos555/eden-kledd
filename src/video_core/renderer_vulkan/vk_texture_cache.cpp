@@ -2289,7 +2289,8 @@ std::string AnalyzeSparseMipsLayers(const Device& device, const ImageInfo& info,
 } // Anonymous namespace
 
 bool Image::TryCreateSparseResident() {
-    if (!info.is_sparse) {
+    // eden-kledd: part of Nomad's sparse texture fixes (lab box, takes effect for new textures)
+    if (!info.is_sparse || !Settings::values.kledd_sparse_fixes.GetValue()) {
         return false;
     }
     const Device& device = runtime->device;
