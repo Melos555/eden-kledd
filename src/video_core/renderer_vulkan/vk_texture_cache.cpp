@@ -7,13 +7,15 @@
 #include <algorithm>
 #include <limits>
 #include <array>
+#include <format>
 #include <optional>
 #include <span>
 #include <memory>
 #include <utility>
 #include <vector>
-#include <mutex>
+#include <unordered_map>
 #include <string>
+#include <mutex>
 #include <boost/container/small_vector.hpp>
 #include <bit>
 #include <numeric>
@@ -2109,6 +2111,61 @@ void SparseTilePool::Tick(u64 completed_tick) {
 }
 
 namespace {
+// Sparse residency is decided per image. Each distinct outcome (reason, format, type, whether the
+// image has mips or layers) is logged its 1st, 10th, 100th... time, so a tester's log shows where
+// residency applies and how often, without a line per texture.
+class SparseResidencyLog {
+public:
+    /// Returns how many times this outcome has happened when it should be logged now, else 0.
+    u64 Count(const std::string& key) {
+        std::scoped_lock lock{mutex};
+        auto it = counts.find(key);
+        if (it == counts.end()) {
+            if (counts.size() >= MaxKeys) {
+                return 0;
+            }
+            it = counts.emplace(key, 0).first;
+        }
+        const u64 count = ++it->second;
+        u64 power = 1;
+        while (power < count) {
+            power *= 10;
+        }
+        return power == count ? count : 0;
+    }
+
+private:
+    static constexpr size_t MaxKeys = 256;
+    std::mutex mutex;
+    std::unordered_map<std::string, u64> counts;
+};
+
+SparseResidencyLog& GetSparseResidencyLog() {
+    static SparseResidencyLog log;
+    return log;
+}
+
+template <typename DetailFn>
+void ReportSparse(const ImageInfo& info, GPUVAddr gpu_addr, std::string_view outcome,
+                  DetailFn&& detail) {
+    const std::string key =
+        std::format("{}|{}|{}|{}|{}", outcome, info.format, info.type, info.resources.levels > 1,
+                    info.resources.layers > 1);
+    const u64 count = GetSparseResidencyLog().Count(key);
+    if (count == 0) {
+        return;
+    }
+    // The detail can be costly (it may query the driver), so only the first occurrence has one.
+    const std::string text = count == 1 ? detail() : std::string{};
+    LOG_INFO(Render_Vulkan,
+             "Sparse texture {} (x{}): {} {} {}x{}x{} levels={} layers={} block={},{},{} "
+             "spacing={} at {:#x}{}{}",
+             outcome, count, info.format, info.type, info.size.width, info.size.height,
+             info.size.depth, info.resources.levels, info.resources.layers, info.block.width,
+             info.block.height, info.block.depth, info.tile_width_spacing, gpu_addr,
+             text.empty() ? "" : ": ", text);
+}
+
 /// Logs once what the GPU supports for sparse residency, and why it can't be used if it can't.
 void LogSparseDeviceOnce(const Device& device) {
     static std::once_flag once;
@@ -2154,34 +2211,120 @@ void LogSparseDeviceOnce(const Device& device) {
         }
     });
 }
+
+/// For a sparse image with mip levels or array layers: whether its guest pages would map onto
+/// the host's sparse tiles, level by level, with the host's mip tail and the layer stride.
+std::string AnalyzeSparseMipsLayers(const Device& device, const ImageInfo& info,
+                                    const VkImageCreateInfo& image_ci) {
+    constexpr u64 page_size = SparseTilePool::TileSize;
+    const auto format_properties = device.GetPhysical().GetSparseImageFormatProperties(
+        image_ci.format, image_ci.imageType, image_ci.samples, image_ci.usage, image_ci.tiling);
+    if (format_properties.size() != 1) {
+        return std::format("host lists {} sparse formats", format_properties.size());
+    }
+    const VkExtent3D granularity = format_properties[0].imageGranularity;
+    const auto& dld = device.GetDispatchLoader();
+    const VkDevice logical = *device.GetLogical();
+    VkImage handle{};
+    if (dld.vkCreateImage(logical, &image_ci, nullptr, &handle) != VK_SUCCESS) {
+        return "host can't create it as a sparse image";
+    }
+    u32 num_requirements = 0;
+    dld.vkGetImageSparseMemoryRequirements(logical, handle, &num_requirements, nullptr);
+    std::vector<VkSparseImageMemoryRequirements> requirements(num_requirements);
+    dld.vkGetImageSparseMemoryRequirements(logical, handle, &num_requirements,
+                                           requirements.data());
+    dld.vkDestroyImage(logical, handle, nullptr);
+    if (requirements.size() != 1) {
+        return std::format("host lists {} sparse memory requirements", requirements.size());
+    }
+    const VkSparseImageMemoryRequirements& host = requirements[0];
+    const u32 levels = static_cast<u32>(info.resources.levels);
+    const u32 tail_level = (std::min)(host.imageMipTailFirstLod, levels);
+    bool fits = true;
+    std::string guest;
+    for (u32 level = 0; level < tail_level; ++level) {
+        const auto layout = VideoCommon::ComputeSparseLevelLayout(info, level, page_size);
+        const bool match = layout && layout->page_texels.width == granularity.width &&
+                           layout->page_texels.height == granularity.height &&
+                           layout->page_texels.depth == granularity.depth;
+        fits = fits && match;
+        if (match) {
+            guest += std::format(" L{}:ok", level);
+        } else if (layout) {
+            guest += std::format(" L{}:{}x{}x{}", level, layout->page_texels.width,
+                                 layout->page_texels.height, layout->page_texels.depth);
+        } else {
+            guest += std::format(" L{}:unaligned", level);
+        }
+    }
+    if (tail_level < levels) {
+        const u64 tail_offset = VideoCommon::CalculateMipLevelOffsets(info)[tail_level];
+        const bool aligned = tail_offset % page_size == 0;
+        fits = fits && aligned;
+        guest += std::format(" tail@{:#x}{}", tail_offset, aligned ? "" : "(unaligned)");
+    }
+    if (info.resources.layers > 1) {
+        const u64 stride = VideoCommon::CalculateLayerStride(info);
+        const bool aligned = stride % page_size == 0;
+        fits = fits && aligned;
+        guest += std::format(" layer_stride={:#x}{}", stride, aligned ? "" : "(unaligned)");
+    }
+    return std::format("would {}fit; host tile {}x{}x{}{}, host tail from level {} ({:#x} "
+                       "bytes, stride {:#x}{}); guest:{}",
+                       fits ? "" : "not ", granularity.width, granularity.height,
+                       granularity.depth,
+                       (format_properties[0].flags &
+                        VK_SPARSE_IMAGE_FORMAT_NONSTANDARD_BLOCK_SIZE_BIT) != 0
+                           ? " (non-standard)"
+                           : "",
+                       host.imageMipTailFirstLod, host.imageMipTailSize,
+                       host.imageMipTailStride,
+                       (host.formatProperties.flags & VK_SPARSE_IMAGE_FORMAT_SINGLE_MIPTAIL_BIT) !=
+                               0
+                           ? ", single tail"
+                           : "",
+                       guest);
+}
 } // Anonymous namespace
 
 bool Image::TryCreateSparseResident() {
-    const Device& device = runtime->device;
-    const bool is_3d = info.type == ImageType::e3D;
-    if (info.is_sparse) {
-        LogSparseDeviceOnce(device);
+    if (!info.is_sparse) {
+        return false;
     }
+    const Device& device = runtime->device;
+    LogSparseDeviceOnce(device);
+    const auto no_detail = [] { return std::string{}; };
+    const auto reject = [this](std::string_view reason, auto&& detail) {
+        ReportSparse(info, gpu_addr, reason, detail);
+        return false;
+    };
+    const bool is_3d = info.type == ImageType::e3D;
     // Compressed formats only: they can't be render targets, so the GPU writes them only through
     // copies and reinterpreting views, which PrepareSparseWrite guards.
-    if (!info.is_sparse || (info.type != ImageType::e2D && !is_3d) || info.rescaleable ||
-        VideoCore::Surface::DefaultBlockWidth(info.format) == 1 ||
-        True(flags & (VideoCommon::ImageFlagBits::Converted |
+    if (info.type != ImageType::e2D && !is_3d) {
+        return reject("not resident: not 2D or 3D", no_detail);
+    }
+    if (info.rescaleable) {
+        return reject("not resident: resolution-scaled", no_detail);
+    }
+    if (VideoCore::Surface::DefaultBlockWidth(info.format) == 1) {
+        return reject("not resident: uncompressed", no_detail);
+    }
+    if (True(flags & (VideoCommon::ImageFlagBits::Converted |
                       VideoCommon::ImageFlagBits::AcceleratedUpload |
-                      VideoCommon::ImageFlagBits::AsynchronousDecode)) ||
-        !device.IsSparseResidencyImageSupported(is_3d)) {
-        return false;
+                      VideoCommon::ImageFlagBits::AsynchronousDecode))) {
+        return reject("not resident: converted or decoded on upload", no_detail);
+    }
+    if (!device.IsSparseResidencyImageSupported(is_3d)) {
+        return reject("not resident: GPU lacks residency for this type", no_detail);
     }
     // Pages without data must read as zero. Unbound regions don't on every driver that says
     // so (RADV, 3D BC images on RDNA3), so they're bound to a shared zero tile where aliasing is
     // supported, and left unbound only where it isn't but the device promises zeros.
     const bool use_zero_tile = device.IsSparseResidencyAliasedSupported();
     if (!use_zero_tile && !device.IsSparseResidencyNonResidentStrict()) {
-        return false;
-    }
-    const auto layout = VideoCommon::ComputeSparsePageLayout(info, SparseTilePool::TileSize);
-    if (!layout) {
-        return false;
+        return reject("not resident: GPU can't make unbound pages read zero", no_detail);
     }
     VkImageCreateInfo image_ci = MakeImageCreateInfo(device, info, std::nullopt);
     // Sparse images can't be 2D-array or cube compatible.
@@ -2190,6 +2333,17 @@ bool Image::TryCreateSparseResident() {
     image_ci.flags |= VK_IMAGE_CREATE_SPARSE_BINDING_BIT | VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT;
     if (use_zero_tile) {
         image_ci.flags |= VK_IMAGE_CREATE_SPARSE_ALIASED_BIT;
+    }
+    const auto layout = VideoCommon::ComputeSparsePageLayout(info, SparseTilePool::TileSize);
+    if (!layout) {
+        if (info.num_samples != 1) {
+            return reject("not resident: multisampled", no_detail);
+        }
+        if (info.resources.levels > 1 || info.resources.layers > 1) {
+            return reject("not resident: has mip levels or layers (unsupported yet)",
+                          [&] { return AnalyzeSparseMipsLayers(device, info, image_ci); });
+        }
+        return reject("not resident: guest pages aren't whole texel boxes", no_detail);
     }
     const std::span<const VkFormat> view_formats = runtime->ViewFormats(info.format);
     const VkImageFormatListCreateInfo image_format_list{
@@ -2207,17 +2361,31 @@ bool Image::TryCreateSparseResident() {
     // The device's sparse block must be exactly the box one guest page covers.
     const auto format_properties = device.GetPhysical().GetSparseImageFormatProperties(
         image_ci.format, image_ci.imageType, image_ci.samples, image_ci.usage, image_ci.tiling);
-    if (format_properties.size() != 1 ||
-        format_properties[0].imageGranularity.width != layout->page_texels.width ||
+    if (format_properties.size() != 1) {
+        return reject("not resident: host has no single sparse format", [&] {
+            return std::format("{} entries", format_properties.size());
+        });
+    }
+    if (format_properties[0].imageGranularity.width != layout->page_texels.width ||
         format_properties[0].imageGranularity.height != layout->page_texels.height ||
         format_properties[0].imageGranularity.depth != layout->page_texels.depth) {
-        return false;
+        return reject("not resident: host tile shape differs", [&] {
+            const VkExtent3D host = format_properties[0].imageGranularity;
+            return std::format("host {}x{}x{}{}, guest page {}x{}x{}", host.width, host.height,
+                               host.depth,
+                               (format_properties[0].flags &
+                                VK_SPARSE_IMAGE_FORMAT_NONSTANDARD_BLOCK_SIZE_BIT) != 0
+                                   ? " (non-standard)"
+                                   : "",
+                               layout->page_texels.width, layout->page_texels.height,
+                               layout->page_texels.depth);
+        });
     }
     const auto& dld = device.GetDispatchLoader();
     const VkDevice logical = *device.GetLogical();
     VkImage handle{};
     if (dld.vkCreateImage(logical, &image_ci, nullptr, &handle) != VK_SUCCESS) {
-        return false;
+        return reject("not resident: host can't create the sparse image", no_detail);
     }
     VkMemoryRequirements requirements{};
     dld.vkGetImageMemoryRequirements(logical, handle, &requirements);
@@ -2244,7 +2412,12 @@ bool Image::TryCreateSparseResident() {
     if (num_sparse_requirements == 0 || level0_in_tail || !memory_type ||
         SparseTilePool::TileSize % requirements.alignment != 0) {
         dld.vkDestroyImage(logical, handle, nullptr);
-        return false;
+        return reject("not resident: host memory requirements don't fit", [&] {
+            return std::format("sparse requirements={} level0_in_tail={} device_local={} "
+                               "alignment={:#x}",
+                               num_sparse_requirements, level0_in_tail, memory_type.has_value(),
+                               requirements.alignment);
+        });
     }
     original_image = vk::Image(handle, image_ci.usage, logical, runtime->memory_allocator.Handle(),
                                VK_NULL_HANDLE, dld);
@@ -2265,13 +2438,23 @@ bool Image::TryCreateSparseResident() {
             // No zero tile and no promise about unbound reads: use a regular image.
             sparse.reset();
             original_image.reset();
-            return false;
+            return reject("not resident: no zero tile memory", no_detail);
         }
     }
-    LOG_DEBUG(Render_Vulkan,
-             "Sparse resident image at {:#x}: {}x{}x{}, {} pages of {}x{}x{} texels",
-             gpu_addr, info.size.width, info.size.height, info.size.depth, layout->NumPages(),
-             layout->page_texels.width, layout->page_texels.height, layout->page_texels.depth);
+    ReportSparse(info, gpu_addr, "resident", [&] {
+        // The general per-level layout should agree with the one in use; a mismatch would need
+        // fixing before mips and layers can rely on it.
+        const auto level0 =
+            VideoCommon::ComputeSparseLevelLayout(info, 0, SparseTilePool::TileSize);
+        const bool agrees = level0 && level0->page_texels.width == layout->page_texels.width &&
+                            level0->page_texels.height == layout->page_texels.height &&
+                            level0->page_texels.depth == layout->page_texels.depth &&
+                            level0->NumPages() == layout->NumPages();
+        return std::format("{} pages of {}x{}x{} texels{}", layout->NumPages(),
+                           layout->page_texels.width, layout->page_texels.height,
+                           layout->page_texels.depth,
+                           agrees ? "" : " (per-level layout disagrees)");
+    });
     return true;
 }
 
