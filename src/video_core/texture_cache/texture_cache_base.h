@@ -480,6 +480,9 @@ private:
     template <typename StagingBuffer>
     void UploadImageContents(Image& image, StagingBuffer& staging_buffer);
 
+    /// Logs ASTC uploads whose data looks like unwritten memory (EDEN_TEX_GARBAGE=1).
+    void ReportAstcGarbage(const Image& image, std::span<const u8> data);
+
     /// Create a new image view from a guest descriptor
     [[nodiscard]] ImageViewId CreateImageView(const TICEntry& config);
 

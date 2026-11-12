@@ -1785,6 +1785,54 @@ void TextureCache<P>::RefreshContents(Image& image, ImageId image_id) {
     runtime.InsertUploadMemoryBarrier();
 }
 
+// EDEN_TEX_GARBAGE=1: valid ASTC data never uses reserved block encodings, but random memory does
+// in about 9% of its blocks. Each ASTC upload whose data has reserved blocks (or that is
+// uploaded again at an address that had them) is logged, to find textures uploaded before the
+// game finished writing them.
+template <class P>
+void TextureCache<P>::ReportAstcGarbage(const Image& image, std::span<const u8> data) {
+    static const bool enabled = std::getenv("EDEN_TEX_GARBAGE") != nullptr;
+    if (!enabled) {
+        return;
+    }
+    const size_t size = (std::min<size_t>)(data.size(), image.guest_size_bytes);
+    u64 blocks = 0, zero = 0, reserved = 0;
+    for (size_t offset = 0; offset + 16 <= size; offset += 16) {
+        u64 lo, hi;
+        std::memcpy(&lo, data.data() + offset, 8);
+        std::memcpy(&hi, data.data() + offset + 8, 8);
+        ++blocks;
+        if (lo == 0 && hi == 0) {
+            ++zero;
+            continue;
+        }
+        const u32 mode = static_cast<u32>(lo & 0x7ff);
+        if ((mode & 0x1ff) == 0x1fc) {
+            continue; // void extent
+        }
+        if ((mode & 0xf) == 0 || ((mode & 3) == 0 && ((mode >> 7) & 3) == 3 && ((mode >> 5) & 3) >= 2)) {
+            ++reserved;
+        }
+    }
+    static std::mutex mutex;
+    static std::unordered_map<GPUVAddr, u32> uploads_with_garbage;
+    std::scoped_lock lock{mutex};
+    auto it = uploads_with_garbage.find(image.gpu_addr);
+    const bool had_garbage = it != uploads_with_garbage.end();
+    if (reserved == 0 && !had_garbage) {
+        return;
+    }
+    const u32 count = had_garbage ? ++it->second : (uploads_with_garbage[image.gpu_addr] = 1);
+    LOG_INFO(HW_GPU,
+             "TexGarbage frame {} upload #{} at {:#x}: {} {}x{} levels {} | {} blocks, {} zero, "
+             "{} reserved (~{:.1f}% garbage){}",
+             frame_tick, count, image.gpu_addr, image.info.format, image.info.size.width,
+             image.info.size.height, image.info.resources.levels, blocks, zero, reserved,
+             blocks ? 100.0 * static_cast<double>(reserved) / 0.094 / static_cast<double>(blocks)
+                    : 0.0,
+             True(image.flags & ImageFlagBits::GpuModified) ? " | GPU-modified" : "");
+}
+
 template <class P>
 void TextureCache<P>::KleddRefreshWatchedPools() {
     // eden-kledd: with delta upload on, Metroid Prime 4's streamed texture pools only get the z
@@ -2348,6 +2396,9 @@ void TextureCache<P>::UploadImageContents(Image& image, StagingBuffer& staging) 
     if (True(image.flags & ImageFlagBits::AcceleratedUpload)) {
         gpu_memory->ReadBlock(gpu_addr, mapped_span.data(), mapped_span.size_bytes(),
                               VideoCommon::CacheType::NoTextureCache);
+        if (IsPixelFormatASTC(image.info.format)) {
+            ReportAstcGarbage(image, mapped_span);
+        }
         const auto uploads = FullUploadSwizzles(image.info);
         runtime.AccelerateImageUpload(image, staging, uploads, 0, 0, 0, {}, false);
         return;
