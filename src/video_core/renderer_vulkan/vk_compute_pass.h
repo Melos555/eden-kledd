@@ -148,8 +148,11 @@ public:
                              MemoryAllocator& memory_allocator_);
     ~ASTCDecoderPass();
 
+    /// Decodes each level in `swizzles`; with `rows`, only the block rows [first, second) of
+    /// the matching level (a partial refresh).
     void Assemble(Image& image, const StagingBufferRef& map,
-                  std::span<const VideoCommon::SwizzleParameters> swizzles);
+                  std::span<const VideoCommon::SwizzleParameters> swizzles,
+                  std::span<const std::pair<u32, u32>> rows = {});
 
 private:
     /// eden-kledd: decode ASTC into a temporary RGBA8 image, then encode BC7 on the GPU

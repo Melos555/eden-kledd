@@ -460,6 +460,13 @@ private:
     /// UnswizzleImageRanges handles (the caller then uploads all of it).
     bool TryPartialRefresh(Image& image, std::span<const std::pair<u64, u64>> ranges);
 
+    /// A GPU-decoded ASTC image whose refreshes can decode only the block rows written.
+    [[nodiscard]] bool IsPartialAstcRefreshable(const Image& image) const;
+
+    /// Decodes only the block rows of each level that `ranges` (bytes from gpu_addr) touch;
+    /// false when a whole upload is needed.
+    bool TryPartialAstcRefresh(Image& image, std::span<const std::pair<u64, u64>> ranges);
+
     /// For a mostly unmapped sparse image: zero-fills it on the GPU and uploads only its mapped
     /// pages. False when it doesn't apply (the caller uploads all of it).
     bool TryUploadMappedPagesOnly(Image& image);
@@ -481,7 +488,7 @@ private:
     void UploadImageContents(Image& image, StagingBuffer& staging_buffer);
 
     /// Logs ASTC uploads whose data looks like unwritten memory (EDEN_TEX_GARBAGE=1).
-    void ReportAstcGarbage(const Image& image, std::span<const u8> data);
+    void ReportAstcGarbage(const Image& image, std::span<const u8> data, bool partial = false);
 
     /// Create a new image view from a guest descriptor
     [[nodiscard]] ImageViewId CreateImageView(const TICEntry& config);

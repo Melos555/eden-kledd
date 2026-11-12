@@ -185,6 +185,7 @@ struct AstcPushConstants {
     u32 x_shift;
     u32 block_height;
     u32 block_height_mask;
+    u32 origin_y;
 };
 
 struct BC7EncodePushConstants {
@@ -818,8 +819,13 @@ void ASTCDecoderPass::AssembleBC7(Image& image, const StagingBufferRef& map,
 }
 
 void ASTCDecoderPass::Assemble(Image& image, const StagingBufferRef& map,
-                               std::span<const VideoCommon::SwizzleParameters> swizzles) {
+                               std::span<const VideoCommon::SwizzleParameters> swizzles,
+                               std::span<const std::pair<u32, u32>> rows) {
+    ASSERT(rows.empty() || rows.size() == swizzles.size());
     if (Settings::values.astc_recompression.GetValue() == Settings::AstcRecompression::Bc7) {
+        // eden-kledd: the GPU BC7 path decodes whole levels; the texture cache never sends it
+        // partial rows (their staging buffer only holds the rewritten rows' bytes).
+        ASSERT(rows.empty());
         return AssembleBC7(image, map, swizzles);
     }
     using namespace VideoCommon::Accelerated;
@@ -862,10 +868,15 @@ void ASTCDecoderPass::Assemble(Image& image, const StagingBufferRef& map,
                        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, image_barrier);
         cmdbuf.BindPipeline(VK_PIPELINE_BIND_POINT_COMPUTE, vk_pipeline);
     });
-    for (const VideoCommon::SwizzleParameters& swizzle : swizzles) {
+    for (size_t swizzle_index = 0; swizzle_index < swizzles.size(); ++swizzle_index) {
+        const VideoCommon::SwizzleParameters& swizzle = swizzles[swizzle_index];
         const size_t input_offset = swizzle.buffer_offset + map.offset;
+        // Block rows [origin_y, origin_y + num_rows) of this level.
+        const u32 origin_y = rows.empty() ? 0U : rows[swizzle_index].first;
+        const u32 num_rows =
+            rows.empty() ? swizzle.num_tiles.height : rows[swizzle_index].second - origin_y;
         const u32 num_dispatches_x = Common::DivCeil(swizzle.num_tiles.width, 8U);
-        const u32 num_dispatches_y = Common::DivCeil(swizzle.num_tiles.height, 8U);
+        const u32 num_dispatches_y = Common::DivCeil(num_rows, 8U);
         const u32 num_dispatches_z = image.info.resources.layers;
 
         compute_pass_descriptor_queue.Acquire(scheduler, 2);
@@ -880,7 +891,7 @@ void ASTCDecoderPass::Assemble(Image& image, const StagingBufferRef& map,
         ASSERT(params.destination == (std::array<s32, 3>{0, 0, 0}));
         ASSERT(params.bytes_per_block_log2 == 4);
         scheduler.Record([this, num_dispatches_x, num_dispatches_y, num_dispatches_z, block_dims,
-                          params, descriptor_data](vk::CommandBuffer cmdbuf) {
+                          params, descriptor_data, origin_y](vk::CommandBuffer cmdbuf) {
             const AstcPushConstants uniforms{
                 .blocks_dims = block_dims,
                 .layer_stride = params.layer_stride,
@@ -888,6 +899,7 @@ void ASTCDecoderPass::Assemble(Image& image, const StagingBufferRef& map,
                 .x_shift = params.x_shift,
                 .block_height = params.block_height,
                 .block_height_mask = params.block_height_mask,
+                .origin_y = origin_y,
             };
             const VkDescriptorSet set = descriptor_allocator.Commit();
             device.GetLogical().UpdateDescriptorSet(set, *descriptor_template, descriptor_data);

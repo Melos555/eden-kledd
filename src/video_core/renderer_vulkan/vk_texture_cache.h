@@ -166,6 +166,13 @@ public:
 
     void SynchronizePendingGpuWrite(Image& image);
 
+    /// Decodes only the given block rows of each level of an ASTC image.
+    void AccelerateAstcRows(Image& image, const StagingBufferRef& map,
+                            std::span<const VideoCommon::SwizzleParameters> swizzles,
+                            std::span<const std::pair<u32, u32>> rows) {
+        astc_decoder_pass->Assemble(image, map, swizzles, rows);
+    }
+
     void InsertUploadMemoryBarrier() {}
 
     void TransitionImageLayout(Image& image);
