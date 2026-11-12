@@ -58,6 +58,8 @@ using namespace Common::Literals;
 struct ImageViewInOut {
     u32 index{};
     bool blacklist{};
+    /// Takes the id resolved for the previous entry instead of looking up `index`.
+    bool copy_previous{};
     ImageViewId id{};
 };
 
