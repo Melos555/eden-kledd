@@ -2149,7 +2149,7 @@ template <typename DetailFn>
 void ReportSparse(const ImageInfo& info, GPUVAddr gpu_addr, std::string_view outcome,
                   DetailFn&& detail) {
     const std::string key =
-        std::format("{}|{}|{}|{}|{}", outcome, info.format, info.type, info.resources.levels > 1,
+        fmt::format("{}|{}|{}|{}|{}", outcome, info.format, info.type, info.resources.levels > 1,
                     info.resources.layers > 1);
     const u64 count = GetSparseResidencyLog().Count(key);
     if (count == 0) {
@@ -2220,7 +2220,7 @@ std::string AnalyzeSparseMipsLayers(const Device& device, const ImageInfo& info,
     const auto format_properties = device.GetPhysical().GetSparseImageFormatProperties(
         image_ci.format, image_ci.imageType, image_ci.samples, image_ci.usage, image_ci.tiling);
     if (format_properties.size() != 1) {
-        return std::format("host lists {} sparse formats", format_properties.size());
+        return fmt::format("host lists {} sparse formats", format_properties.size());
     }
     const VkExtent3D granularity = format_properties[0].imageGranularity;
     const auto& dld = device.GetDispatchLoader();
@@ -2236,7 +2236,7 @@ std::string AnalyzeSparseMipsLayers(const Device& device, const ImageInfo& info,
                                            requirements.data());
     dld.vkDestroyImage(logical, handle, nullptr);
     if (requirements.size() != 1) {
-        return std::format("host lists {} sparse memory requirements", requirements.size());
+        return fmt::format("host lists {} sparse memory requirements", requirements.size());
     }
     const VkSparseImageMemoryRequirements& host = requirements[0];
     const u32 levels = static_cast<u32>(info.resources.levels);
@@ -2250,27 +2250,27 @@ std::string AnalyzeSparseMipsLayers(const Device& device, const ImageInfo& info,
                            layout->page_texels.depth == granularity.depth;
         fits = fits && match;
         if (match) {
-            guest += std::format(" L{}:ok", level);
+            guest += fmt::format(" L{}:ok", level);
         } else if (layout) {
-            guest += std::format(" L{}:{}x{}x{}", level, layout->page_texels.width,
+            guest += fmt::format(" L{}:{}x{}x{}", level, layout->page_texels.width,
                                  layout->page_texels.height, layout->page_texels.depth);
         } else {
-            guest += std::format(" L{}:unaligned", level);
+            guest += fmt::format(" L{}:unaligned", level);
         }
     }
     if (tail_level < levels) {
         const u64 tail_offset = VideoCommon::CalculateMipLevelOffsets(info)[tail_level];
         const bool aligned = tail_offset % page_size == 0;
         fits = fits && aligned;
-        guest += std::format(" tail@{:#x}{}", tail_offset, aligned ? "" : "(unaligned)");
+        guest += fmt::format(" tail@{:#x}{}", tail_offset, aligned ? "" : "(unaligned)");
     }
     if (info.resources.layers > 1) {
         const u64 stride = VideoCommon::CalculateLayerStride(info);
         const bool aligned = stride % page_size == 0;
         fits = fits && aligned;
-        guest += std::format(" layer_stride={:#x}{}", stride, aligned ? "" : "(unaligned)");
+        guest += fmt::format(" layer_stride={:#x}{}", stride, aligned ? "" : "(unaligned)");
     }
-    return std::format("would {}fit; host tile {}x{}x{}{}, host tail from level {} ({:#x} "
+    return fmt::format("would {}fit; host tile {}x{}x{}{}, host tail from level {} ({:#x} "
                        "bytes, stride {:#x}{}); guest:{}",
                        fits ? "" : "not ", granularity.width, granularity.height,
                        granularity.depth,
@@ -2364,7 +2364,7 @@ bool Image::TryCreateSparseResident() {
         image_ci.format, image_ci.imageType, image_ci.samples, image_ci.usage, image_ci.tiling);
     if (format_properties.size() != 1) {
         return reject("not resident: host has no single sparse format", [&] {
-            return std::format("{} entries", format_properties.size());
+            return fmt::format("{} entries", format_properties.size());
         });
     }
     if (format_properties[0].imageGranularity.width != layout->page_texels.width ||
@@ -2372,7 +2372,7 @@ bool Image::TryCreateSparseResident() {
         format_properties[0].imageGranularity.depth != layout->page_texels.depth) {
         return reject("not resident: host tile shape differs", [&] {
             const VkExtent3D host = format_properties[0].imageGranularity;
-            return std::format("host {}x{}x{}{}, guest page {}x{}x{}", host.width, host.height,
+            return fmt::format("host {}x{}x{}{}, guest page {}x{}x{}", host.width, host.height,
                                host.depth,
                                (format_properties[0].flags &
                                 VK_SPARSE_IMAGE_FORMAT_NONSTANDARD_BLOCK_SIZE_BIT) != 0
@@ -2414,7 +2414,7 @@ bool Image::TryCreateSparseResident() {
         SparseTilePool::TileSize % requirements.alignment != 0) {
         dld.vkDestroyImage(logical, handle, nullptr);
         return reject("not resident: host memory requirements don't fit", [&] {
-            return std::format("sparse requirements={} level0_in_tail={} device_local={} "
+            return fmt::format("sparse requirements={} level0_in_tail={} device_local={} "
                                "alignment={:#x}",
                                num_sparse_requirements, level0_in_tail, memory_type.has_value(),
                                requirements.alignment);
@@ -2451,7 +2451,7 @@ bool Image::TryCreateSparseResident() {
                             level0->page_texels.height == layout->page_texels.height &&
                             level0->page_texels.depth == layout->page_texels.depth &&
                             level0->NumPages() == layout->NumPages();
-        return std::format("{} pages of {}x{}x{} texels{}", layout->NumPages(),
+        return fmt::format("{} pages of {}x{}x{} texels{}", layout->NumPages(),
                            layout->page_texels.width, layout->page_texels.height,
                            layout->page_texels.depth,
                            agrees ? "" : " (per-level layout disagrees)");
