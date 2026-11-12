@@ -8,6 +8,7 @@
 
 #include <limits>
 #include <optional>
+#include <algorithm>
 #include <bit>
 #include <cstring>
 #include "common/container/unordered_map.h"
@@ -683,6 +684,10 @@ inline u32 DownloadedDepthToD24(u32 word, bool depth_float) {
 inline u32 PackD24S8(u32 d24, u32 s8, bool stencil_low) {
     return stencil_low ? ((d24 << 8) | s8) : (d24 | (s8 << 24));
 }
+/// Scaled coordinate of the texel under the centre of a guest texel: floor((guest + 0.5) * scale)
+inline u32 ScaledTexelCenter(u32 guest, u32 up_scale, u32 down_shift) {
+    return (((guest * 2 + 1) * up_scale) >> down_shift) / 2;
+}
 } // namespace Detail
 
 template <class P>
@@ -1025,7 +1030,40 @@ void TextureCache<P>::PopAsyncFlushes() {
                 const BufferDownload& buffer_info = slot_buffer_downloads[download_info.object_id];
                 std::span<u8> download_span =
                     download_buffer.mapped_span.subspan(download_buffer.offset);
-                if (buffer_info.split_depth_stencil) {
+                if (buffer_info.split_depth_stencil && buffer_info.from_scaled) {
+                    u8* const base = download_span.data();
+                    u8* const out = base + buffer_info.out_offset;
+                    for (u32 y = 0; y < buffer_info.height; ++y) {
+                        const u32 sy =
+                            std::clamp(Detail::ScaledTexelCenter(buffer_info.guest_y + y,
+                                                                 buffer_info.up_scale,
+                                                                 buffer_info.down_shift),
+                                       buffer_info.scaled_y,
+                                       buffer_info.scaled_y + buffer_info.src_height - 1) -
+                            buffer_info.scaled_y;
+                        for (u32 x = 0; x < buffer_info.width; ++x) {
+                            const u32 sx =
+                                std::clamp(Detail::ScaledTexelCenter(buffer_info.guest_x + x,
+                                                                     buffer_info.up_scale,
+                                                                     buffer_info.down_shift),
+                                           buffer_info.scaled_x,
+                                           buffer_info.scaled_x + buffer_info.src_width - 1) -
+                                buffer_info.scaled_x;
+                            const size_t src_texel =
+                                static_cast<size_t>(sy) * buffer_info.src_width + sx;
+                            u32 word;
+                            std::memcpy(&word, base + src_texel * 4, sizeof(word));
+                            const u32 d24 =
+                                Detail::DownloadedDepthToD24(word, buffer_info.depth_float);
+                            const u32 s8 = base[buffer_info.stencil_offset + src_texel];
+                            word = Detail::PackD24S8(d24, s8, buffer_info.stencil_low);
+                            const size_t texel =
+                                static_cast<size_t>(y) * buffer_info.row_length + x;
+                            std::memcpy(out + texel * 4, &word, sizeof(word));
+                        }
+                    }
+                    gpu_memory->WriteBlock(buffer_info.address, out, buffer_info.size);
+                } else if (buffer_info.split_depth_stencil) {
                     u8* const base = download_span.data();
                     for (u32 y = 0; y < buffer_info.height; ++y) {
                         for (u32 x = 0; x < buffer_info.width; ++x) {
@@ -1210,15 +1248,54 @@ bool TextureCache<P>::DownloadDepthStencilToGuest(Image* image, const BufferImag
         }
         const u32 row =
             copy.buffer_row_length != 0 ? copy.buffer_row_length : copy.image_extent.width;
-        const size_t split = Common::AlignUp(size, 256);
-        auto staging = runtime.DownloadStagingBuffer(split + size / 4 + 256, true);
+        // If the image is rescaled, copy the patch at its scaled size straight from the scaled
+        // image; it is point-sampled down to the guest size when the download lands.
+        const auto& resolution = Settings::values.resolution_info;
+        const u32 x = static_cast<u32>(copy.image_offset.x);
+        const u32 y = static_cast<u32>(copy.image_offset.y);
+        const u32 scaled_x = resolution.ScaleUp(x);
+        const u32 scaled_y = resolution.ScaleUp(y);
+        const u32 src_width = resolution.ScaleUp(x + copy.image_extent.width) - scaled_x;
+        const u32 src_height = resolution.ScaleUp(y + copy.image_extent.height) - scaled_y;
+        const bool scaled = True(image->flags & ImageFlagBits::Rescaled) && resolution.active &&
+                            src_width != 0 && src_height != 0;
+
+        BufferDownload download{address, size};
+        BufferImageCopy src_copy = copy;
+        size_t depth_bytes = size;
+        if (scaled) {
+            depth_bytes = static_cast<size_t>(src_width) * src_height * 4;
+            src_copy.buffer_offset = 0;
+            src_copy.buffer_size = depth_bytes;
+            src_copy.buffer_row_length = 0;
+            src_copy.buffer_image_height = 0;
+            src_copy.image_offset.x = static_cast<s32>(scaled_x);
+            src_copy.image_offset.y = static_cast<s32>(scaled_y);
+            src_copy.image_extent.width = src_width;
+            src_copy.image_extent.height = src_height;
+            download.from_scaled = true;
+            download.src_width = src_width;
+            download.src_height = src_height;
+            download.guest_x = x;
+            download.guest_y = y;
+            download.scaled_x = scaled_x;
+            download.scaled_y = scaled_y;
+            download.up_scale = resolution.up_scale;
+            download.down_shift = resolution.down_shift;
+        }
+        const size_t split = Common::AlignUp(depth_bytes, 256);
+        const size_t out_offset = Common::AlignUp(split + depth_bytes / 4, 256);
+        auto staging =
+            runtime.DownloadStagingBuffer(out_offset + (scaled ? size : 0) + 256, true);
         std::array buffers{staging.buffer};
         std::array<size_t, 1> offsets{static_cast<size_t>(staging.offset)};
         image->stencil_split_offset = split;
-        image->DownloadMemory(buffers, offsets, std::span<const BufferImageCopy>(&copy, 1));
+        image->copy_from_scaled = scaled;
+        image->DownloadMemory(buffers, offsets, std::span<const BufferImageCopy>(&src_copy, 1));
+        image->copy_from_scaled = false;
         image->stencil_split_offset = 0;
 
-        BufferDownload download{address, size};
+        download.out_offset = out_offset;
         download.split_depth_stencil = true;
         download.stencil_low = image->info.format == PixelFormat::S8_UINT_D24_UNORM;
         download.depth_float = image->IsDepthFloat();

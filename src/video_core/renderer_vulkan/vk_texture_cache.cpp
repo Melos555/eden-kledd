@@ -2161,7 +2161,13 @@ void Image::DownloadMemory(VkBuffer buffer, size_t offset,
 void Image::DownloadMemory(std::span<VkBuffer> buffers_span, std::span<size_t> offsets_span,
                             std::span<const VideoCommon::BufferImageCopy> copies) {
     const bool is_rescaled = True(flags & ImageFlagBits::Rescaled);
-    if (is_rescaled) {
+    // Split depth/stencil readbacks of a rescaled image copy straight from the scaled image (the
+    // caller passes scaled coordinates and downsamples on the CPU). Scaling down first goes
+    // through a helper blit on GPUs that can't blit depth-stencil (e.g. AMD with D32S8), and
+    // that blit can drop the stencil, which holds the object IDs.
+    const bool from_scaled = is_rescaled && copy_from_scaled && stencil_split_offset != 0 &&
+                             info.num_samples == 1;
+    if (is_rescaled && !from_scaled) {
         ScaleDown();
     }
 
@@ -2344,7 +2350,8 @@ void Image::DownloadMemory(std::span<VkBuffer> buffers_span, std::span<size_t> o
             }
         }
         scheduler->RequestOutsideRenderPassOperationContext();
-        scheduler->Record([buffers = std::move(buffers_vector), image = *original_image,
+        const VkImage src_image = from_scaled ? *scaled_image : *original_image;
+        scheduler->Record([buffers = std::move(buffers_vector), image = src_image,
                            aspect_mask_ = aspect_mask, vk_copies](vk::CommandBuffer cmdbuf) {
             const VkImageMemoryBarrier read_barrier{
                 .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
@@ -2401,7 +2408,7 @@ void Image::DownloadMemory(std::span<VkBuffer> buffers_span, std::span<size_t> o
         });
     }
 
-    if (is_rescaled) {
+    if (is_rescaled && !from_scaled) {
         ScaleUp(true);
     }
 }

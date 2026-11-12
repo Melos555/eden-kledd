@@ -478,6 +478,18 @@ private:
         u32 width = 0;
         u32 height = 0;
         u32 row_length = 0;
+        // The image was rescaled, so the patch was copied at its scaled size and is
+        // point-sampled down to the guest size into a separate output region
+        bool from_scaled = false;
+        u32 src_width = 0;
+        u32 src_height = 0;
+        u32 guest_x = 0;
+        u32 guest_y = 0;
+        u32 scaled_x = 0;
+        u32 scaled_y = 0;
+        u32 up_scale = 1;
+        u32 down_shift = 0;
+        size_t out_offset = 0;
     };
 
     struct PendingDownload {

@@ -217,6 +217,7 @@ public:
         return false;
     }
     size_t stencil_split_offset = 0;
+    bool copy_from_scaled = false;
 
     GLuint StorageHandle() noexcept;
 

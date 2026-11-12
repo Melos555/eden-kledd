@@ -378,6 +378,9 @@ public:
     /// When non-zero, depth/stencil downloads place stencil (1 byte per texel) at
     /// buffer offset + stencil_split_offset + copy.buffer_offset / 4 instead of over the depth.
     size_t stencil_split_offset = 0;
+    /// With stencil_split_offset, copy from the scaled image if the image is rescaled (the
+    /// copies are then in scaled coordinates) instead of scaling it down first.
+    bool copy_from_scaled = false;
 
     void AllocateComputeUnswizzleImage();
 
