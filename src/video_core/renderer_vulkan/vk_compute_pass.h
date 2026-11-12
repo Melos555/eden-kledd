@@ -46,6 +46,9 @@ public:
     ~ComputePass();
 
 protected:
+    /// Creates another pipeline from this pass's shader and layout.
+    [[nodiscard]] vk::Pipeline CreatePipeline(std::optional<u32> optional_subgroup_size) const;
+
     const Device& device;
     vk::DescriptorUpdateTemplate descriptor_template;
     vk::PipelineLayout layout;
@@ -137,6 +140,8 @@ private:
     StagingBufferPool& staging_buffer_pool;
     ComputePassDescriptorQueue& compute_pass_descriptor_queue;
     MemoryAllocator& memory_allocator;
+    /// Default subgroup size, for blocks too large to gain from the wave32 pipeline.
+    vk::Pipeline large_block_pipeline;
 };
 
 class BlockLinearUnswizzle2DBufferPass final : public ComputePass {

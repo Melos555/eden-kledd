@@ -248,13 +248,17 @@ ComputePass::ComputePass(const Device& device_, Scheduler& scheduler, Descriptor
         .pCode = code.data(),
     });
     device.SaveShader(code);
+    pipeline = CreatePipeline(optional_subgroup_size);
+}
+
+vk::Pipeline ComputePass::CreatePipeline(std::optional<u32> optional_subgroup_size) const {
     const VkPipelineShaderStageRequiredSubgroupSizeCreateInfoEXT subgroup_size_ci{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_REQUIRED_SUBGROUP_SIZE_CREATE_INFO_EXT,
         .pNext = nullptr,
         .requiredSubgroupSize = optional_subgroup_size ? *optional_subgroup_size : 32U,
     };
     bool use_setup_size = device.IsExtSubgroupSizeControlSupported() && optional_subgroup_size;
-    pipeline = device.GetLogical().CreateComputePipeline(VkComputePipelineCreateInfo{
+    return device.GetLogical().CreateComputePipeline(VkComputePipelineCreateInfo{
         .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
         .pNext = nullptr,
         .flags = 0,
@@ -507,6 +511,30 @@ void QueriesPrefixScanPass::Run(VkBuffer accumulation_buffer, VkBuffer dst_buffe
     }
 }
 
+namespace {
+/// The ASTC decoder runs one block per invocation, and neighbouring blocks often take different
+/// paths through the decoder. On AMD, wave32 halves the cost of that divergence compared to the
+/// default wave64 for compute: on a Radeon 780M, 18% faster for 4x4 blocks and 5% for 8x8. For
+/// blocks over 64 texels the longer per-texel loop dominates and wave32 is slower (14% for 10x10,
+/// 6% for 12x12), so those keep the default (see ASTCDecoderPass::Assemble).
+std::optional<u32> AstcDecoderSubgroupSize(const Device& device) {
+    switch (device.GetDriverID()) {
+    case VK_DRIVER_ID_MESA_RADV:
+    case VK_DRIVER_ID_AMD_PROPRIETARY:
+    case VK_DRIVER_ID_AMD_OPEN_SOURCE:
+        break;
+    default:
+        return std::nullopt;
+    }
+    if (!device.IsExtSubgroupSizeControlSupported() ||
+        !device.IsGuestWarpSizeSupported(VK_SHADER_STAGE_COMPUTE_BIT)) {
+        return std::nullopt;
+    }
+    return 32U;
+}
+
+} // Anonymous namespace
+
 ASTCDecoderPass::ASTCDecoderPass(const Device& device_, Scheduler& scheduler_,
                                  DescriptorPool& descriptor_pool_,
                                  StagingBufferPool& staging_buffer_pool_,
@@ -514,10 +542,15 @@ ASTCDecoderPass::ASTCDecoderPass(const Device& device_, Scheduler& scheduler_,
                                  MemoryAllocator& memory_allocator_)
     : ComputePass(device_, scheduler_, descriptor_pool_, ASTC_DESCRIPTOR_SET_BINDINGS,
                   ASTC_PASS_DESCRIPTOR_UPDATE_TEMPLATE_ENTRY, ASTC_BANK_INFO,
-                  COMPUTE_PUSH_CONSTANT_RANGE<sizeof(AstcPushConstants)>, ASTC_DECODER_COMP_SPV),
+                  COMPUTE_PUSH_CONSTANT_RANGE<sizeof(AstcPushConstants)>, ASTC_DECODER_COMP_SPV,
+                  AstcDecoderSubgroupSize(device_)),
       scheduler{scheduler_}, staging_buffer_pool{staging_buffer_pool_},
       compute_pass_descriptor_queue{compute_pass_descriptor_queue_}, memory_allocator{
-                                                                         memory_allocator_} {}
+                                                                         memory_allocator_} {
+    if (AstcDecoderSubgroupSize(device_)) {
+        large_block_pipeline = CreatePipeline(std::nullopt);
+    }
+}
 
 ASTCDecoderPass::~ASTCDecoderPass() = default;
 
@@ -529,7 +562,11 @@ void ASTCDecoderPass::Assemble(Image& image, const StagingBufferRef& map,
         VideoCore::Surface::DefaultBlockHeight(image.info.format),
     };
     scheduler.RequestOutsideRenderPassOperationContext();
-    const VkPipeline vk_pipeline = *pipeline;
+    constexpr u32 MaxWave32BlockTexels = 64;
+    const VkPipeline vk_pipeline =
+        large_block_pipeline && block_dims[0] * block_dims[1] > MaxWave32BlockTexels
+            ? *large_block_pipeline
+            : *pipeline;
     const VkImageAspectFlags aspect_mask = image.AspectMask();
     const VkImage vk_image = image.Handle();
     const bool is_initialized = image.ExchangeInitialization();
