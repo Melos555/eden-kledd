@@ -27,6 +27,14 @@ jobs:
           if (-not (Get-Command clang-cl -ErrorAction SilentlyContinue)) { choco install llvm -y --no-progress }
           clang-cl --version
 
+      - name: CMake 4.4+ (Eden master needs it for clang-cl C++20 modules)
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade "cmake>=4.4"
+          $dir = Split-Path (python -c "import cmake,os;print(os.path.join(cmake.CMAKE_BIN_DIR,'cmake.exe'))")
+          Add-Content -Path $env:GITHUB_PATH -Value $dir
+          & "$dir\cmake.exe" --version
+
       - name: Install Qt (built with the same Visual Studio as this runner)
         uses: jurplel/install-qt-action@v4
         with:
