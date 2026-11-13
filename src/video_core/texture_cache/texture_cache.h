@@ -6,6 +6,9 @@
 
 #pragma once
 
+#include <algorithm>
+#include <chrono>
+#include <iterator>
 #include <limits>
 #include <numeric>
 #include <optional>
@@ -127,6 +130,15 @@ void TextureCache<P>::RunGarbageCollector() {
         high_priority_mode = total_used_memory >= expected_memory;
         aggressive_mode = allow_aggressive && total_used_memory >= critical_memory;
         ticks_to_destroy = aggressive_mode ? 10ULL : high_priority_mode ? 25ULL : 50ULL;
+        if (const u32 seconds = Settings::values.texture_keep_seconds.GetValue(); seconds > 0) {
+            // Count real seconds instead of frames, so the frame rate (60 vs 120) and long
+            // pauses (e.g. Metroid Prime 4's scan text, where the world isn't drawn) don't
+            // change how long an unused texture survives. Turning the camera back no longer
+            // forces a re-upload of textures that were deleted a few frames ago.
+            ticks_to_destroy = TicksForSeconds(aggressive_mode     ? seconds
+                                               : high_priority_mode ? seconds * 2
+                                                                    : seconds * 4);
+        }
         num_iterations = aggressive_mode ? 40 : (high_priority_mode ? 20 : 10);
     };
     // Real device memory pressure, measured only when a large sparse image is up for collection.
@@ -191,7 +203,29 @@ void TextureCache<P>::RunGarbageCollector() {
 }
 
 template <class P>
+u64 TextureCache<P>::TicksForSeconds(u32 seconds) const {
+    // Frames that passed since `seconds` ago. If the history is shorter than that, keep all.
+    const auto cutoff = std::chrono::steady_clock::now() - std::chrono::seconds(seconds);
+    const auto it = std::upper_bound(
+        tick_times.begin(), tick_times.end(), cutoff,
+        [](const auto& time, const auto& entry) { return time < entry.second; });
+    if (it == tick_times.begin()) {
+        return frame_tick;
+    }
+    const u64 tick_then = std::prev(it)->first;
+    return frame_tick - (std::min)(tick_then, frame_tick);
+}
+
+template <class P>
 void TextureCache<P>::TickFrame() {
+    {
+        // (frame_tick, time) history for TicksForSeconds. Bounded to the longest keep time.
+        const auto now = std::chrono::steady_clock::now();
+        tick_times.emplace_back(frame_tick, now);
+        while (!tick_times.empty() && now - tick_times.front().second > std::chrono::seconds(500)) {
+            tick_times.pop_front();
+        }
+    }
     // If we can obtain the memory info, use it instead of the estimate.
     if (runtime.CanReportMemoryUsage()) {
         total_used_memory = runtime.GetDeviceMemoryUsage();

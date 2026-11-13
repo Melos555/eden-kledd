@@ -708,6 +708,13 @@ struct Values {
 #endif
                                                "async_presentation", Category::RendererHacks};
 
+    // Keep unused textures at least this many real seconds before the cleanup may delete them
+    // (0 = off: count frames as before). 2x / 4x longer when memory isn't tight.
+    SwitchableSetting<u32, true> texture_keep_seconds{linkage,           5,   0, 120,
+                                                      "texture_keep_seconds",
+                                                      Category::RendererHacks,
+                                                      Specialization::Countable};
+
     SwitchableSetting<bool> fix_bloom_effects{linkage, false, "fix_bloom_effects",
                                                      Category::RendererHacks};
 

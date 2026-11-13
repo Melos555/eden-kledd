@@ -7,6 +7,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <deque>
 #include <limits>
 #include <mutex>
@@ -312,6 +313,9 @@ private:
     /// Runs the Garbage Collector.
     void RunGarbageCollector();
 
+    /// Number of frames that passed in the last `seconds` real seconds
+    [[nodiscard]] u64 TicksForSeconds(u32 seconds) const;
+
     /// Find or create an image view in the guest descriptor table
     ImageViewId VisitImageView(u32 index, bool compute);
 
@@ -577,6 +581,8 @@ private:
 
     u64 modification_tick = 0;
     u64 frame_tick = 0;
+    /// (frame_tick, time) history so the cleanup can think in seconds, not frames
+    std::deque<std::pair<u64, std::chrono::steady_clock::time_point>> tick_times;
 
     Common::ThreadWorker texture_decode_worker{1, "TextureDecoder", {},
                                                Common::ThreadPlacement::Efficiency};
