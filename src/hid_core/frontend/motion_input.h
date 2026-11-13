@@ -47,6 +47,11 @@ public:
     void SetUserGyroThreshold(f32 threshold);
 
     void EnableReset(bool reset);
+
+    /// eden-kledd: skip drift correction and gyro bias learning (mouse gyro, which can't drift)
+    void SetKleddNoFusion(bool enabled);
+    /// eden-kledd: turn the orientation so it matches the current accelerometer (gravity)
+    void KleddResyncToAccelerometer();
     void ResetRotations();
     void ResetQuaternion();
 
@@ -107,6 +112,9 @@ private:
 
     // If the provided data is invalid the device will be autocalibrated
     bool reset_enabled = true;
+
+    // eden-kledd: see SetKleddNoFusion
+    bool kledd_no_fusion = false;
 
     // Use accelerometer values to calculate position
     bool only_accelerometer = true;

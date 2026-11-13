@@ -112,6 +112,8 @@
 #include <QProgressDialog>
 #include <QScreen>
 #include <QShortcut>
+#include <QLabel>
+#include <QApplication>
 #include <QSignalBlocker>
 #include <QStatusBar>
 #include <QtConcurrentRun>
@@ -190,6 +192,7 @@ static FileSys::VirtualFile VfsDirectoryCreateFileWrapper(const FileSys::Virtual
 // Input //
 #include "hid_core/frontend/emulated_controller.h"
 #include "hid_core/hid_core.h"
+#include "input_common/drivers/mouse.h"
 #include "input_common/drivers/virtual_amiibo.h"
 
 // Video Core //
@@ -1770,6 +1773,69 @@ void MainWindow::InitializeHotkeys() {
         if (Settings::values.enable_renderdoc_hotkey) {
             QtCommon::system->GetRenderdocAPI().ToggleCapture();
         }
+    });
+    connect_shortcut(QStringLiteral("[Kledd] Gravity Check"), [&] {
+        auto* mouse = input_subsystem->GetMouse();
+        // During the edge calibration, Gravity Check cancels it (old values are kept)
+        if (mouse->KleddCalibrateCancel()) {
+            KleddShowOsd(tr("Calibration cancelled: your old values are kept"), 3000);
+            statusBar()->showMessage(tr("[Kledd] Calibration cancelled"), 3000);
+        } else {
+            statusBar()->showMessage(tr("[Kledd] Gravity Check"), 1500);
+        }
+        mouse->KleddRequestGravityCheck();
+    });
+    connect_shortcut(QStringLiteral("[Kledd] Mouse Drives the Stick (On or Off)"), [&] {
+        const bool on = input_subsystem->GetMouse()->KleddToggleStick();
+        const QString text = on ? tr("Mouse drives the right stick (press again to go back)")
+                                : tr("Mouse drives the gyro again");
+        KleddShowOsd(text, on ? 2500 : 1500);
+        statusBar()->showMessage(QStringLiteral("[Kledd] ") + text, on ? 0 : 2000);
+    });
+    connect_shortcut(QStringLiteral("[Kledd] Calibrate Cursor Edges"), [&] {
+        auto* mouse = input_subsystem->GetMouse();
+        const QString cancel_hint = tr("(Gravity Check cancels)");
+        QString text;
+        int timeout_ms = 0;
+        switch (mouse->KleddCalibrateStep()) {
+        case -1:
+            text = tr("Calibration is for cursor mode: turn on \"Mouse gyro: absolute\" in "
+                      "Configure mouse panning first");
+            timeout_ms = 6000;
+            break;
+        case -2:
+            text = tr("No calibration needed: the edges come from your in-game sensitivity.\n"
+                      "Untick \"Use Metroid Prime 4's in-game sensitivity\" in Configure mouse "
+                      "panning to calibrate by hand");
+            timeout_ms = 6000;
+            break;
+        case 1:
+            text = tr("CALIBRATION 1/2  (only left/right moves)\nMove the game's reticle onto the "
+                      "RIGHT edge of the picture, then press the calibration key\n%1")
+                       .arg(cancel_hint);
+            break;
+        case 2:
+            text = tr("CALIBRATION 2/2  (side: %1°, now only up/down moves)\nMove the reticle "
+                      "up into the top corner, then press the calibration key\n%2")
+                       .arg(mouse->KleddCalibratePendingX())
+                       .arg(cancel_hint);
+            break;
+        case 4:
+            text = tr("Not at the edge yet: the reticle has barely moved.\nMove it all the way to "
+                      "the edge, then press the calibration key\n%1")
+                       .arg(cancel_hint);
+            break;
+        default:
+            config->SaveAllValues();
+            text = tr("CALIBRATION DONE\nSide edges %1°, top/bottom edges %2° (saved)")
+                       .arg(static_cast<int>(Settings::values.kledd_mouse_gyro_abs_range_x.GetValue()))
+                       .arg(static_cast<int>(Settings::values.kledd_mouse_gyro_abs_range_y.GetValue()));
+            timeout_ms = 5000;
+            break;
+        }
+        KleddShowOsd(text, timeout_ms);
+        statusBar()->showMessage(QStringLiteral("[Kledd] ") + QString(text).replace(u'\n', u' '),
+                                 timeout_ms);
     });
     connect_shortcut(QStringLiteral("Toggle Mouse Panning"), [&] {
         Settings::values.mouse_panning = !Settings::values.mouse_panning;
@@ -7145,6 +7211,68 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
     return QMainWindow::eventFilter(watched, event);
 }
 
+void MainWindow::RefreshRuntimeCheats() {
+    ClearRuntimeCheats();
+
+    const auto cheats = QtCommon::system->GetRuntimeCheats();
+    auto* disable_all = ui->menu_Cheats->addAction(tr("Disable All Cheats"));
+    connect(disable_all, &QAction::triggered, this, [this] {
+        for (auto* action : runtime_cheat_actions) {
+            if (action->isEnabled()) {
+                action->setChecked(false);
+            }
+        }
+    });
+
+    auto* enable_all = ui->menu_Cheats->addAction(tr("Enable All Cheats"));
+    connect(enable_all, &QAction::triggered, this, [this] {
+        for (auto* action : runtime_cheat_actions) {
+            if (action->isEnabled()) {
+                action->setChecked(true);
+            }
+        }
+    });
+
+    ui->menu_Cheats->addSeparator();
+    runtime_cheat_actions.reserve(cheats.size());
+    for (const auto& cheat : cheats) {
+        const QString name = cheat.name.empty() ? tr("Unnamed Cheat")
+                                                : QString::fromUtf8(cheat.name);
+        auto* action = ui->menu_Cheats->addAction(name);
+        action->setCheckable(true);
+        action->setChecked(cheat.enabled || cheat.is_master);
+        action->setEnabled(!cheat.is_master);
+        connect(action, &QAction::toggled, this, [action, id = cheat.id](bool enabled) {
+            if (!QtCommon::system->SetCheatEnabled(id, enabled)) {
+                const QSignalBlocker blocker{action};
+                action->setChecked(!enabled);
+            }
+        });
+        runtime_cheat_actions.push_back(action);
+    }
+
+    ui->menu_Cheats->menuAction()->setVisible(!runtime_cheat_actions.empty());
+}
+
+void MainWindow::ClearRuntimeCheats() {
+    ui->menu_Cheats->clear();
+    runtime_cheat_actions.clear();
+    ui->menu_Cheats->menuAction()->setVisible(false);
+}
+
+bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
+    if (watched == ui->menu_Cheats && event->type() == QEvent::MouseButtonRelease) {
+        const auto* mouse_event = static_cast<QMouseEvent*>(event);
+        auto* action = ui->menu_Cheats->actionAt(mouse_event->pos());
+        if (mouse_event->button() == Qt::LeftButton && action && action->isEnabled() &&
+            action->isCheckable()) {
+            action->trigger();
+            return true;
+        }
+    }
+    return QMainWindow::eventFilter(watched, event);
+}
+
 void MainWindow::ConnectMenuEvents() {
     const auto connect_menu = [&]<typename Fn>(QAction* action, const Fn& event_fn) {
         connect(action, &QAction::triggered, this, event_fn);
@@ -8752,6 +8880,39 @@ bool MainWindow::ConfirmShutdownGame() {
     return true;
 }
 
+void MainWindow::KleddShowOsd(const QString& text, int timeout_ms) {
+    // A small frameless window floating over the game (like the performance overlay), so it shows
+    // in fullscreen too; clicks and the mouse go straight through it to the game
+    if (!kledd_osd) {
+        kledd_osd = new QLabel(this);
+        kledd_osd->setWindowFlags(Qt::FramelessWindowHint | Qt::Tool | Qt::WindowStaysOnTopHint |
+                                  Qt::WindowTransparentForInput | Qt::WindowDoesNotAcceptFocus);
+        kledd_osd->setAttribute(Qt::WA_ShowWithoutActivating);
+        kledd_osd->setAttribute(Qt::WA_TranslucentBackground);
+        kledd_osd->setAlignment(Qt::AlignCenter);
+        kledd_osd->setStyleSheet(QStringLiteral(
+            "QLabel { background-color: rgba(10, 12, 16, 215); color: white;"
+            " border: 2px solid #3ddc84; border-radius: 10px; padding: 12px 20px;"
+            " font-size: 17px; font-weight: 600; }"));
+        kledd_osd_timer.setSingleShot(true);
+        connect(&kledd_osd_timer, &QTimer::timeout, kledd_osd, &QLabel::hide);
+    }
+    kledd_osd->setText(text);
+    kledd_osd->adjustSize();
+    QWidget* anchor = (render_window && render_window->isVisible())
+                          ? static_cast<QWidget*>(render_window)
+                          : static_cast<QWidget*>(this);
+    const QPoint top_center = anchor->mapToGlobal(QPoint{anchor->width() / 2, 0});
+    kledd_osd->move(top_center.x() - kledd_osd->width() / 2, top_center.y() + 60);
+    kledd_osd->show();
+    kledd_osd->raise();
+    if (timeout_ms > 0) {
+        kledd_osd_timer.start(timeout_ms);
+    } else {
+        kledd_osd_timer.stop();
+    }
+}
+
 void MainWindow::OnLoadComplete() {
     loading_screen->OnLoadComplete();
 
@@ -10055,6 +10216,15 @@ void MainWindow::ShowMouseCursor() {
 void MainWindow::OnMouseActivity() {
     if (!Settings::values.mouse_panning) {
         ShowMouseCursor();
+    } else if (Settings::values.kledd_mouse_gyro.GetValue() &&
+               Settings::values.kledd_mouse_gyro_absolute.GetValue() && emulation_running) {
+        // eden-kledd absolute mouse gyro: the reticle is the pointer; show the real cursor
+        // only for calibration
+        if (Settings::values.kledd_mouse_gyro_abs_show_cursor.GetValue()) {
+            ShowMouseCursor();
+        } else {
+            HideMouseCursor();
+        }
     }
 }
 

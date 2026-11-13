@@ -4,10 +4,14 @@
 // SPDX-FileCopyrightText: Copyright 2021 yuzu Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
+#include <cstdlib>
 #include <chrono>
+#include <cmath>
 #include <format>
 #include <math.h>
 
+#include "common/kledd_mouse_gyro.h"
 #include "common/param_package.h"
 #include "common/settings.h"
 #include "common/steady_clock.h"
@@ -74,7 +78,20 @@ Mouse::Mouse(std::string input_engine_) : InputEngine(std::move(input_engine_)) 
 }
 
 void Mouse::UpdateStickInput(Common::SteadyClock::time_point timestamp) {
+    if (!IsMousePanningEnabled()) {
+        Common::KleddMouseGyro::stick_override_active.store(false);
+    }
     if (IsMousePanningEnabled()) {
+        // eden-kledd: with the mouse gyro on, the stick only moves while the mouse is handed to
+        // it (ZL held / toggle); when that ends, the stick snaps back to center
+        const bool kledd_gyro = Settings::values.kledd_mouse_gyro.GetValue();
+        if (kledd_gyro) {
+            const bool stick = KleddStickMode();
+            if (!stick && kledd_stick_active) {
+                last_mouse_change = {};
+            }
+            kledd_stick_active = stick;
+        }
         const float length = last_mouse_change.Length();
 
         // Prevent input from exceeding the max range (1.0f) too much,
@@ -87,6 +104,26 @@ void Mouse::UpdateStickInput(Common::SteadyClock::time_point timestamp) {
         SetAxis(identifier, mouse_axis_x, last_mouse_change[0]);
         SetAxis(identifier, mouse_axis_y, -last_mouse_change[1]);
 
+        // eden-kledd: hand the stick value to hid_core, which puts it on the right stick even
+        // when the right stick is bound to keys (the axes above only reach a mouse-bound stick)
+        if (kledd_gyro) {
+            Common::Vec<float, 2> stick{last_mouse_change[0], -last_mouse_change[1]};
+            const float stick_length = stick.Length();
+            if (stick_length > 1.0f) {
+                stick /= stick_length;
+            }
+            Common::KleddMouseGyro::stick_override_x.store(stick[0]);
+            Common::KleddMouseGyro::stick_override_y.store(stick[1]);
+            Common::KleddMouseGyro::stick_override_active.store(kledd_stick_active);
+        } else {
+            Common::KleddMouseGyro::stick_override_active.store(false);
+        }
+
+        // eden-kledd: the handed-over stick holds its position like a cursor (no decay)
+        if (kledd_gyro) {
+            return;
+        }
+
         // Decay input over time
         const float clamped_length = (std::min)(1.0f, length);
         const float decay_strength = Settings::values.mouse_panning_decay_strength.GetValue();
@@ -97,7 +134,273 @@ void Mouse::UpdateStickInput(Common::SteadyClock::time_point timestamp) {
     }
 }
 
+// eden-kledd: degrees of controller rotation per pixel of mouse movement at 100% sensitivity
+constexpr float kledd_gyro_degrees_per_pixel = 0.1f;
+// eden-kledd: real gyros top out around 2000 deg/s; clamp to that (in rotations per second)
+constexpr float kledd_gyro_max_rps = 4.9f;
+// eden-kledd: maximum up/down tilt of the virtual controller (degrees from where it started)
+constexpr float kledd_gyro_pitch_limit = 75.0f;
+// eden-kledd: Metroid Prime 4 cursor mode: the controller angle that puts the reticle on the
+// screen edge, for an in-game aiming sensitivity of 0-100. Measured by Melos (0 -> 60,
+// 26 -> 18, 45 -> 12, 75 -> 8, 100 -> 6 degrees): the game behaves like (slider + 11.5).
+static float KleddDegreesForGameSensitivity(int sensitivity) {
+    return 692.0f / (static_cast<float>(std::clamp(sensitivity, 0, 100)) + 11.5f);
+}
+
+// eden-kledd: a calibration press that measures less than this hasn't reached the edge yet
+constexpr float kledd_calib_min_deg = 3.0f;
+
 void Mouse::UpdateMotionInput(Common::SteadyClock::time_point timestamp) {
+    // eden-kledd: R pressed (Metroid Prime 4's own gyro re-center). Taken here every update so a
+    // press while the mouse gyro is inactive doesn't fire later.
+    const bool kledd_r_pressed = Common::KleddMouseGyro::r_recenter_request.exchange(false);
+
+    // eden-kledd: mouse gyro while the mouse is freed (Ctrl+F9), or while the mouse drives the
+    // right stick (ZL held / toggle): hold the imaginary controller perfectly still where it is,
+    // instead of falling back to stock drag-to-tilt motion
+    if ((!IsMousePanningEnabled() || KleddStickMode()) &&
+        Settings::values.kledd_mouse_gyro.GetValue()) {
+        kledd_gyro_pixels = {};
+        kledd_gyro_hist_px = {};
+        last_motion_change = {};
+        const float tilt = kledd_gyro_pitch_deg * 3.14159265f / 180.0f;
+        const bool yaw_on_z = Settings::values.kledd_mouse_gyro_yaw_z.GetValue();
+        const float side_sign =
+            Settings::values.kledd_mouse_gyro_tilt_flip.GetValue() ? -1.0f : 1.0f;
+        const bool gravity = Settings::values.kledd_mouse_gyro_gravity.GetValue();
+        SetMotion(motion_identifier, 0, BasicMotion{
+            .gyro_x = 0,
+            .gyro_y = 0,
+            .gyro_z = 0,
+            .accel_x = 0,
+            .accel_y = gravity && yaw_on_z ? -std::sin(tilt) * side_sign : 0.0f,
+            .accel_z = gravity ? (yaw_on_z ? -std::cos(tilt) : -1.0f) : 0.0f,
+            .delta_timestamp = u64(std::chrono::duration_cast<std::chrono::microseconds>(timestamp - last_notify_timestamp).count()),
+        });
+        return;
+    }
+    if (IsMousePanningEnabled() && Settings::values.kledd_mouse_gyro.GetValue()) {
+        // Mouse movement since the last update becomes a rotation speed: the cursor is
+        // recentered every move, so only real movement counts, and stopping stops the aim.
+        float dt = std::chrono::duration<float>(timestamp - last_notify_timestamp).count();
+        if (!(dt > 0.0f) || dt > 0.1f) {
+            dt = 0.005f; // first update or a long pause: assume the 5 ms timer tick
+        }
+        float yaw = 0.0f;
+        float pitch = 0.0f;
+        const bool absolute = Settings::values.kledd_mouse_gyro_absolute.GetValue();
+        if (absolute) {
+            // Absolute (cursor mode): the cursor's spot in the window is the target angle; send
+            // exactly the rotation that gets the imaginary controller there this update
+            kledd_gyro_pixels = {};
+            // While calibrating, use wide ranges so the reticle can reach the picture's edges
+            // well before the cursor does; the angle at which it gets there is what's measured
+            const bool calibrating = kledd_calib_step.load() != 0;
+            // Edge angles: from Metroid Prime 4's in-game sensitivity (exact, with decimals), or
+            // the degree boxes for other games
+            const bool from_game = Settings::values.kledd_mouse_gyro_abs_from_game.GetValue();
+            const float range_x =
+                calibrating ? kledd_calib_range_x.load()
+                : from_game ? KleddDegreesForGameSensitivity(
+                                  Settings::values.kledd_mouse_gyro_game_sens_x.GetValue())
+                            : static_cast<float>(
+                                  Settings::values.kledd_mouse_gyro_abs_range_x.GetValue());
+            const float range_y =
+                calibrating ? kledd_calib_range_y.load()
+                : from_game ? KleddDegreesForGameSensitivity(
+                                  Settings::values.kledd_mouse_gyro_game_sens_y.GetValue())
+                            : static_cast<float>(
+                                  Settings::values.kledd_mouse_gyro_abs_range_y.GetValue());
+            float target_yaw = -kledd_abs_pos[0] * range_x;
+            float target_pitch = -kledd_abs_pos[1] * range_y;
+            // Calibration locks one axis per step: step 1 (side edge) only moves left/right with
+            // up/down held level; step 2 (top edge) keeps left/right where step 1 ended and only
+            // moves up/down, so each press measures exactly one thing
+            const int calib_step = kledd_calib_step.load();
+            if (calib_step == 1) {
+                target_pitch = 0.0f;
+            } else if (calib_step == 2) {
+                target_yaw = kledd_calib_locked_yaw.load();
+            }
+            yaw = (target_yaw - kledd_gyro_yaw_deg) / 360.0f / dt;
+            pitch = (target_pitch - kledd_gyro_pitch_deg) / 360.0f / dt;
+        } else {
+            kledd_gyro_hist_px[kledd_gyro_hist_pos] = kledd_gyro_pixels;
+            kledd_gyro_hist_dt[kledd_gyro_hist_pos] = dt;
+            kledd_gyro_hist_pos = (kledd_gyro_hist_pos + 1) % kledd_gyro_hist_px.size();
+            kledd_gyro_pixels = {};
+
+            const std::size_t size = kledd_gyro_hist_px.size();
+            Common::Vec<float, 2> sum_px{};
+            float sum_dt = 0.0f;
+            if (Settings::values.kledd_mouse_gyro_frame_avg.GetValue()) {
+                // Average over the game's last frame: the game reads the gyro once per frame and
+                // multiplies it by its frame time, so the speed must cover that same window. Then a
+                // long frame (hitch) gets the hand's whole movement, not a 5 ms snapshot of it.
+                // The window used to stop at 100 ms, so in a longer hitch (a door) the start of the
+                // hand's movement was dropped. With the hitch window it follows frames up to 1 s.
+                const float max_window =
+                    Settings::values.kledd_mouse_gyro_hitch_window.GetValue() ? 1.0f : 0.1f;
+                const float frame_s = std::clamp(
+                    static_cast<float>(Common::KleddMouseGyro::game_frame_ns.load()) * 1e-9f, 0.005f,
+                    max_window);
+                for (std::size_t i = 1; i <= size && sum_dt < frame_s; ++i) {
+                    const std::size_t idx = (kledd_gyro_hist_pos + size - i) % size;
+                    const float tick_dt = kledd_gyro_hist_dt[idx];
+                    if (!(tick_dt > 0.0f)) {
+                        break;
+                    }
+                    // Last tick may stick out past the window: take only the part inside it
+                    const float part = std::min(1.0f, (frame_s - sum_dt) / tick_dt);
+                    sum_px += kledd_gyro_hist_px[idx] * part;
+                    sum_dt += tick_dt * part;
+                }
+            } else {
+                // Average over the last N updates (N = smoothing setting, 1 = no smoothing)
+                const std::size_t count = std::clamp<std::size_t>(
+                    Settings::values.kledd_mouse_gyro_smoothing.GetValue(), 1, size);
+                for (std::size_t i = 1; i <= count; ++i) {
+                    const std::size_t idx = (kledd_gyro_hist_pos + size - i) % size;
+                    sum_px += kledd_gyro_hist_px[idx];
+                    sum_dt += kledd_gyro_hist_dt[idx];
+                }
+            }
+            if (!(sum_dt > 0.0f)) {
+                sum_dt = 0.005f;
+            }
+            const float x_scale = Settings::values.mouse_panning_x_sensitivity.GetValue() / 100.0f *
+                                  kledd_gyro_degrees_per_pixel / 360.0f;
+            const float y_scale = Settings::values.mouse_panning_y_sensitivity.GetValue() / 100.0f *
+                                  kledd_gyro_degrees_per_pixel / 360.0f;
+            // rotations per second, same unit the SDL driver reports
+            yaw = -sum_px[0] / sum_dt * x_scale;
+            pitch = -sum_px[1] / sum_dt * y_scale;
+        }
+        // Limit the total rotation speed, keeping its direction. Eden clamps each gyro axis
+        // at 5 rotations/s on its own, which on a wild flick would bend the direction.
+        {
+            const float speed = std::sqrt(yaw * yaw + pitch * pitch);
+            if (speed > kledd_gyro_max_rps) {
+                yaw *= kledd_gyro_max_rps / speed;
+                pitch *= kledd_gyro_max_rps / speed;
+            }
+        }
+        kledd_gyro_yaw_deg += yaw * 360.0f * dt;
+        const bool probe = Settings::values.kledd_mouse_gyro_probe.GetValue();
+        bool resync = false;
+
+        // The game re-centers its reticle on R; do a Gravity Check with it so the mouse/aim and
+        // the game's reticle start from the same center again (not during the calibration)
+        if (kledd_r_pressed && Settings::values.kledd_mouse_gyro_r_recenter.GetValue() &&
+            kledd_calib_step.load() == 0) {
+            kledd_gravity_check_pending.store(true);
+        }
+        // Gravity Check (hotkey): level the imaginary controller and snap Eden's orientation to
+        // it. Only the up/down tilt is reset; left/right stays where it is.
+        if (kledd_gravity_check_pending.exchange(false)) {
+            if (probe) {
+                Common::KleddMouseGyro::ProbeLog(std::format(
+                    "GRAVITY CHECK (hotkey)  tracked {:+.2f} -> 0", kledd_gyro_pitch_deg));
+            }
+            kledd_gyro_pitch_deg = 0.0f;
+            pitch = 0.0f;
+            resync = true;
+            if (absolute) {
+                // Absolute mode: the cursor goes back to the window center with the aim
+                kledd_abs_pos = {};
+                kledd_gyro_yaw_deg = 0.0f;
+                yaw = 0.0f;
+                kledd_center_request.store(true);
+            }
+        }
+
+        // Keep the virtual controller's up/down tilt within +-kledd_gyro_pitch_limit degrees:
+        // only send the part of this update's rotation that stays inside the limit
+        {
+            const float step_deg = pitch * 360.0f * dt;
+            const float wanted = kledd_gyro_pitch_deg + step_deg;
+            const float next =
+                std::clamp(wanted, -kledd_gyro_pitch_limit, kledd_gyro_pitch_limit);
+            pitch = (next - kledd_gyro_pitch_deg) / (360.0f * dt);
+            kledd_gyro_pitch_deg = next;
+
+            // Pushing into the limit: re-sync Eden to the imaginary controller (auto-level), on
+            // entering the wall and then at most twice a second while pushing into it
+            const bool pushing_wall = wanted != next;
+            if (pushing_wall && Settings::values.kledd_mouse_gyro_auto_level.GetValue() &&
+                (!kledd_at_wall ||
+                 timestamp - kledd_last_auto_level > std::chrono::milliseconds(500))) {
+                kledd_last_auto_level = timestamp;
+                resync = true;
+                if (probe) {
+                    Common::KleddMouseGyro::ProbeLog(std::format(
+                        "WALL {}  tracked {:+.2f} (wanted {:+.2f})  -> auto-level",
+                        next < 0.0f ? "DOWN" : "UP", next, wanted));
+                }
+            }
+            kledd_at_wall = pushing_wall;
+        }
+        // Without gravity the game only learns the controller's tilt at a re-sync, and it splits
+        // left/right turns by that tilt. Once the aim has moved up/down away from it, part of
+        // every turn is lost (a 180 looking up becomes ~90). Re-sync whenever the tilt has moved
+        // 5 degrees since the last one (at most 10 times a second): an automatic Gravity Check.
+        if (!Settings::values.kledd_mouse_gyro_gravity.GetValue() &&
+            Settings::values.kledd_mouse_gyro_tilt_resync.GetValue() && !resync &&
+            std::abs(kledd_gyro_pitch_deg - kledd_last_resync_pitch) >= 5.0f &&
+            timestamp - kledd_last_tilt_resync > std::chrono::milliseconds(100)) {
+            kledd_last_tilt_resync = timestamp;
+            resync = true;
+            if (probe) {
+                Common::KleddMouseGyro::ProbeLog(std::format(
+                    "TILT RESYNC  tracked {:+.2f} (last {:+.2f})", kledd_gyro_pitch_deg,
+                    kledd_last_resync_pitch));
+            }
+        }
+        if (resync) {
+            kledd_last_resync_pitch = kledd_gyro_pitch_deg;
+        }
+        Common::KleddMouseGyro::tracked_pitch_deg.store(kledd_gyro_pitch_deg);
+        Common::KleddMouseGyro::tracked_yaw_deg.store(kledd_gyro_yaw_deg);
+        const bool yaw_on_z = Settings::values.kledd_mouse_gyro_yaw_z.GetValue();
+
+        // Turn left/right around the WORLD's vertical axis, like a person turning a real
+        // controller, not around the controller's own (tilted) axis. When the virtual controller
+        // is tilted up or down, the controller's own axis leans with it, and turning around it
+        // makes the pointer move diagonally and the tilt drift.
+        float yaw_main = yaw;
+        float yaw_side = 0.0f;
+        const float tilt = kledd_gyro_pitch_deg * 3.14159265f / 180.0f;
+        const float side_sign =
+            Settings::values.kledd_mouse_gyro_tilt_flip.GetValue() ? -1.0f : 1.0f;
+        if (yaw_on_z) {
+            yaw_main = yaw * std::cos(tilt);
+            yaw_side = yaw * std::sin(tilt) * side_sign;
+        }
+        // Gravity that matches the imaginary controller's tilt (world "down" seen from the
+        // controller). A level controller sees (0, 0, -1). Matching it to the tilt keeps the
+        // motion fusion from pulling the aim back to level, and the game always gets a real
+        // gravity reference instead of free fall.
+        // A re-sync sends gravity for this one sample even when gravity is switched off
+        const bool gravity = resync || Settings::values.kledd_mouse_gyro_gravity.GetValue();
+        if (resync) {
+            Common::KleddMouseGyro::resync_request.store(true);
+        }
+        const float grav_y = gravity && yaw_on_z ? -std::sin(tilt) * side_sign : 0.0f;
+        const float grav_z = gravity ? (yaw_on_z ? -std::cos(tilt) : -1.0f) : 0.0f;
+
+        last_motion_change = {};
+        SetMotion(motion_identifier, 0, BasicMotion{
+            .gyro_x = pitch,
+            .gyro_y = yaw_on_z ? yaw_side : yaw,
+            .gyro_z = yaw_on_z ? yaw_main : 0.0f,
+            .accel_x = 0,
+            .accel_y = grav_y,
+            .accel_z = grav_z,
+            .delta_timestamp = u64(std::chrono::duration_cast<std::chrono::microseconds>(timestamp - last_notify_timestamp).count()),
+        });
+        return;
+    }
+
     const float sensitivity =
         IsMousePanningEnabled() ? default_motion_panning_sensitivity : default_motion_sensitivity;
 
@@ -129,12 +432,69 @@ void Mouse::UpdateMotionInput(Common::SteadyClock::time_point timestamp) {
 }
 
 void Mouse::Move(int x, int y, int center_x, int center_y) {
+    // eden-kledd: mouse gyro + Ctrl+F9. While the mouse is freed, the mouse must not move the
+    // gyro at all (stock Eden turns clicks into drag-tilts, and you click to scan). When it is
+    // captured again, the first moves still measure from wherever the free cursor was to the
+    // window center, which would be one giant flick: skip them.
+    if (Settings::values.kledd_mouse_gyro.GetValue()) {
+        const bool panning = IsMousePanningEnabled();
+        if (panning && !kledd_last_panning) {
+            kledd_skip_moves = 2;
+        }
+        kledd_last_panning = panning;
+        if (!panning) {
+            return;
+        }
+        if (kledd_skip_moves > 0) {
+            --kledd_skip_moves;
+            return;
+        }
+    }
     if (IsMousePanningEnabled()) {
         auto const mouse_change_int = Common::Vec<int, 2>(x, y) - Common::Vec<int, 2>(center_x, center_y);
         auto const mouse_change = Common::Vec<float, 2>(float(mouse_change_int[0]), float(mouse_change_int[1]));
         auto const x_sensitivity = Settings::values.mouse_panning_x_sensitivity.GetValue() * default_panning_sensitivity;
         auto const y_sensitivity = Settings::values.mouse_panning_y_sensitivity.GetValue() * default_panning_sensitivity;
         auto const deadzone_cw = Settings::values.mouse_panning_deadzone_counterweight.GetValue() * default_deadzone_counterweight;
+        if (Settings::values.kledd_mouse_gyro.GetValue()) {
+            if (Settings::values.kledd_mouse_gyro_absolute.GetValue()) {
+                // eden-kledd absolute mode: the cursor is not recentered, so its spot inside the
+                // game picture is the aim: -1..1 on each axis (0 = picture center). Measured
+                // against the picture, not the window, so black bars (windowed mode, other
+                // aspect ratios) don't make the reticle fall short of the cursor.
+                kledd_abs_pos = {std::clamp(kledd_picture_pos[0] * 2.0f - 1.0f, -1.0f, 1.0f),
+                                 std::clamp(kledd_picture_pos[1] * 2.0f - 1.0f, -1.0f, 1.0f)};
+                return;
+            }
+            // eden-kledd: a single move bigger than half the window can't be the hand (the
+            // cursor is recentered after every move); it is the cursor leaving the window, e.g.
+            // a dialog opening or alt-tab. Ignore it instead of flinging the aim.
+            if (std::abs(mouse_change_int[0]) > center_x ||
+                std::abs(mouse_change_int[1]) > center_y) {
+                return;
+            }
+            if (KleddStickMode()) {
+                // eden-kledd: ZL held (lock-on) or stick toggle: the mouse moves the right stick
+                // like a cursor inside the stick's circle. The stick goes where the mouse goes
+                // and stays there when the mouse stops (no spring back); it returns to center
+                // when ZL is released / the toggle is switched off. The gyro holds still.
+                // Sensitivity: full tilt after 5000 / sensitivity% pixels (50% = 100 px).
+                const float per_pixel =
+                    Settings::values.kledd_mouse_stick_sensitivity.GetValue() / 5000.0f;
+                last_mouse_change[0] += mouse_change[0] * per_pixel;
+                last_mouse_change[1] += mouse_change[1] * per_pixel;
+                // The edge is a hard stop: overshooting doesn't pile up, so moving back
+                // responds immediately
+                const float length = last_mouse_change.Length();
+                if (length > 1.0f) {
+                    last_mouse_change /= length;
+                }
+                return;
+            }
+            // eden-kledd: movement goes to the gyro only; the stick stays centered
+            kledd_gyro_pixels += mouse_change;
+            return;
+        }
         last_motion_change += {-mouse_change[1] * x_sensitivity, -mouse_change[0] * y_sensitivity, 0};
         last_mouse_change[0] += mouse_change[0] * x_sensitivity;
         last_mouse_change[1] += mouse_change[1] * y_sensitivity;
@@ -218,6 +578,103 @@ void Mouse::MouseWheelChange(int x, int y) {
     last_motion_change[2] += static_cast<f32>(y);
     SetAxis(identifier, wheel_axis_x, f32(wheel_position[0]));
     SetAxis(identifier, wheel_axis_y, f32(wheel_position[1]));
+}
+
+bool Mouse::KleddTakeCenterRequest() {
+    return kledd_center_request.exchange(false);
+}
+
+void Mouse::KleddRequestGravityCheck() {
+    kledd_gravity_check_pending.store(true);
+}
+
+void Mouse::KleddSetPicturePos(float x, float y) {
+    kledd_picture_pos = {x, y};
+}
+
+bool Mouse::KleddToggleStick() {
+    const bool on = !kledd_stick_toggle.load();
+    kledd_stick_toggle.store(on);
+    return on;
+}
+
+bool Mouse::KleddStickMode() {
+    // Camera (relative) mode only: in cursor (absolute) mode the cursor is not recentered, so
+    // there is no movement to feed a stick with, and the pointer works while locked on anyway
+    if (!IsMousePanningEnabled() || !Settings::values.kledd_mouse_gyro.GetValue() ||
+        Settings::values.kledd_mouse_gyro_absolute.GetValue()) {
+        return false;
+    }
+    if (kledd_stick_toggle.load()) {
+        return true;
+    }
+    return Settings::values.kledd_mouse_gyro_zl_stick.GetValue() &&
+           Common::KleddMouseGyro::zl_held.load();
+}
+
+int Mouse::KleddCalibrateStep() {
+    if (!Settings::values.kledd_mouse_gyro.GetValue() ||
+        !Settings::values.kledd_mouse_gyro_absolute.GetValue()) {
+        kledd_calib_step.store(0);
+        return -1;
+    }
+    if (Settings::values.kledd_mouse_gyro_abs_from_game.GetValue()) {
+        // The edge angles come from the in-game sensitivity; nothing to calibrate
+        kledd_calib_step.store(0);
+        return -2;
+    }
+    switch (kledd_calib_step.load()) {
+    case 0: {
+        // Start: temporary ranges about 3x the current ones (so the reticle can surely reach the
+        // edges, without racing far ahead of the mouse), aim and cursor back to the center
+        const float cur_x =
+            static_cast<float>(Settings::values.kledd_mouse_gyro_abs_range_x.GetValue());
+        const float cur_y =
+            static_cast<float>(Settings::values.kledd_mouse_gyro_abs_range_y.GetValue());
+        kledd_calib_range_x.store(std::clamp(cur_x * 3.0f, 30.0f, 80.0f));
+        kledd_calib_range_y.store(std::clamp(cur_y * 3.0f, 20.0f, 60.0f));
+        kledd_calib_pending_x = 0;
+        kledd_calib_step.store(1);
+        KleddRequestGravityCheck();
+        return 1;
+    }
+    case 1: {
+        // The reticle sits on the right (or left) edge: the turn needed to get there is the range
+        const float signed_yaw = Common::KleddMouseGyro::tracked_yaw_deg.load();
+        const float yaw = std::abs(signed_yaw);
+        if (yaw < kledd_calib_min_deg) {
+            return 4;
+        }
+        kledd_calib_pending_x = static_cast<int>(std::clamp<long>(std::lround(yaw), 1, 90));
+        // Step 2 keeps left/right locked right here (at the edge) while up/down is measured
+        kledd_calib_locked_yaw.store(signed_yaw);
+        kledd_calib_step.store(2);
+        return 2;
+    }
+    default: {
+        const float pitch = std::abs(Common::KleddMouseGyro::tracked_pitch_deg.load());
+        if (pitch < kledd_calib_min_deg) {
+            return 4;
+        }
+        // Both edges measured: only now the settings change
+        Settings::values.kledd_mouse_gyro_abs_range_x.SetValue(
+            static_cast<u8>(kledd_calib_pending_x));
+        Settings::values.kledd_mouse_gyro_abs_range_y.SetValue(
+            static_cast<u8>(std::clamp<long>(std::lround(pitch), 1, 75)));
+        kledd_calib_step.store(0);
+        // Back to the real ranges: recenter so the aim doesn't jump
+        KleddRequestGravityCheck();
+        return 3;
+    }
+    }
+}
+
+bool Mouse::KleddCalibrateCancel() {
+    return kledd_calib_step.exchange(0) != 0;
+}
+
+int Mouse::KleddCalibratePendingX() const {
+    return kledd_calib_pending_x;
 }
 
 void Mouse::ReleaseAllButtons() {

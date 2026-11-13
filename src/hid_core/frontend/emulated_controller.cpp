@@ -9,7 +9,10 @@
 #include <common/scope_exit.h>
 
 #include <ranges>
+#include <format>
 #include "common/thread.h"
+#include "common/kledd_mouse_gyro.h"
+#include "common/settings.h"
 #include "common/assert.h"
 #include "hid_core/frontend/emulated_controller.h"
 #include "hid_core/frontend/input_converter.h"
@@ -854,10 +857,18 @@ void EmulatedController::SetButton(const Common::Input::CallbackStatus& callback
     case Settings::NativeButton::R:
         controller.npad_button_state.r.Assign(current_status.value);
         controller.debug_pad_button_state.r.Assign(current_status.value);
+        // eden-kledd: R is Metroid Prime 4's gyro re-center; the mouse gyro re-centers with it
+        if (is_connected && current_status.value) {
+            Common::KleddMouseGyro::r_recenter_request.store(true);
+        }
         break;
     case Settings::NativeButton::ZL:
         controller.npad_button_state.zl.Assign(current_status.value);
         controller.debug_pad_button_state.zl.Assign(current_status.value);
+        // eden-kledd: the mouse gyro hands the mouse to the right stick while ZL is held
+        if (is_connected) {
+            Common::KleddMouseGyro::zl_held.store(current_status.value);
+        }
         break;
     case Settings::NativeButton::ZR:
         controller.npad_button_state.zr.Assign(current_status.value);
@@ -1037,6 +1048,13 @@ void EmulatedController::SetMotion(const Common::Input::CallbackStatus& callback
     auto& emulated = controller.motion_values[index].emulated;
 
     raw_status = TransformToMotion(callback);
+
+    // eden-kledd: mouse gyro options (no drift correction, re-sync) and probe log
+    const bool kledd_is_mouse =
+        index < motion_params.size() && motion_params[index].Get("engine", "") == "mouse";
+    emulated.SetKleddNoFusion(kledd_is_mouse &&
+                              Settings::values.kledd_mouse_gyro_no_fusion.GetValue());
+
     emulated.SetAcceleration(Common::Vec<f32, 3>{
         raw_status.accel.x.value,
         raw_status.accel.y.value,
@@ -1048,6 +1066,16 @@ void EmulatedController::SetMotion(const Common::Input::CallbackStatus& callback
         raw_status.gyro.z.value,
     });
     emulated.SetUserGyroThreshold(raw_status.gyro.x.properties.threshold);
+    if (kledd_is_mouse && Common::KleddMouseGyro::resync_request.exchange(false)) {
+        emulated.KleddResyncToAccelerometer();
+        if (Settings::values.kledd_mouse_gyro_probe.GetValue()) {
+            const auto e = emulated.GetEulerAngles();
+            Common::KleddMouseGyro::ProbeLog(std::format(
+                "RESYNC  tracked={:+7.2f}  eden euler=({:+7.2f},{:+7.2f},{:+7.2f})",
+                Common::KleddMouseGyro::tracked_pitch_deg.load(), e[0] * 57.29578f,
+                e[1] * 57.29578f, e[2] * 57.29578f));
+        }
+    }
     emulated.UpdateRotation(raw_status.delta_timestamp);
     emulated.UpdateOrientation(raw_status.delta_timestamp);
 
@@ -1058,6 +1086,45 @@ void EmulatedController::SetMotion(const Common::Input::CallbackStatus& callback
     motion.euler = emulated.GetEulerAngles();
     motion.orientation = emulated.GetOrientation();
     motion.is_at_rest = !emulated.IsMoving(motion_sensitivity);
+
+    // eden-kledd: the mouse drives the right stick (ZL held / toggle). Applied here, because the
+    // mouse's motion sample arrives on every mouse update whatever the right stick is bound to
+    // (keys, a pad, or the mouse); when it ends, the stick goes back to its own binding.
+    if (kledd_is_mouse && !is_configuring) {
+        const bool override_on = Common::KleddMouseGyro::stick_override_active.load();
+        if (override_on || kledd_stick_override_was_on) {
+            const auto& own = controller.stick_values[Settings::NativeAnalog::RStick];
+            const float x =
+                override_on ? Common::KleddMouseGyro::stick_override_x.load() : own.x.value;
+            const float y =
+                override_on ? Common::KleddMouseGyro::stick_override_y.load() : own.y.value;
+            controller.analog_stick_state.right = {
+                .x = static_cast<s32>(x * HID_JOYSTICK_MAX),
+                .y = static_cast<s32>(y * HID_JOYSTICK_MAX),
+            };
+            kledd_stick_override_was_on = override_on;
+            TriggerOnChange(ControllerTriggerType::Stick, true);
+        }
+    }
+
+    if (kledd_is_mouse && Settings::values.kledd_mouse_gyro_probe.GetValue()) {
+        static auto last = std::chrono::steady_clock::time_point{};
+        const auto now = std::chrono::steady_clock::now();
+        if (now - last >= std::chrono::milliseconds(100)) {
+            last = now;
+            const auto e = motion.euler;
+            const auto a = motion.accel;
+            const auto g = motion.gyro;
+            const auto b = emulated.GetGyroBias();
+            Common::KleddMouseGyro::ProbeLog(std::format(
+                "DATA    tracked={:+7.2f}  eden euler=({:+7.2f},{:+7.2f},{:+7.2f})  "
+                "gyro=({:+.3f},{:+.3f},{:+.3f})  accel=({:+.2f},{:+.2f},{:+.2f})  "
+                "bias=({:+.4f},{:+.4f},{:+.4f})  rest={}",
+                Common::KleddMouseGyro::tracked_pitch_deg.load(), e[0] * 57.29578f,
+                e[1] * 57.29578f, e[2] * 57.29578f, g[0], g[1], g[2], a[0], a[1], a[2], b[0],
+                b[1], b[2], motion.is_at_rest ? 1 : 0));
+        }
+    }
 }
 
 void EmulatedController::SetColors(const Common::Input::CallbackStatus& callback,

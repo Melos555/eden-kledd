@@ -80,6 +80,9 @@ public:
 
     std::pair<u32, u32> ScaleTouch(const QPointF& pos) const;
 
+    /// eden-kledd: the game picture inside this widget (black bars excluded), widget coordinates
+    QRect KleddPictureRect() const;
+
     void closeEvent(QCloseEvent* event) override;
     void leaveEvent(QEvent* event) override;
 

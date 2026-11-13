@@ -7,6 +7,99 @@
   </property>
   <layout class="QVBoxLayout">
    <item>
+    <layout class="QHBoxLayout">
+     <item>
+      <widget class="QLabel" name="kledd_mode_label">
+       <property name="text">
+        <string>Mouse panning:</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QComboBox" name="kledd_mode">
+       <property name="toolTip">
+        <string>Off: the mouse doesn't move anything in the game.
+Mouse to camera: the mouse turns an imaginary motion controller (mouse look). Needs Motion 1 bound to the mouse.
+Mouse to cursor: the mouse's spot on the screen is where the controller points (pointer/cursor schemes). Needs Motion 1 bound to the mouse.
+Ctrl + F9 frees / captures the mouse.</string>
+       </property>
+       <item><property name="text"><string>Off</string></property></item>
+       <item><property name="text"><string>Mouse to camera (gyro, mouse look)</string></property></item>
+       <item><property name="text"><string>Mouse to cursor (gyro, reticle follows the mouse)</string></property></item>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QLabel" name="kledd_question">
+     <property name="alignment"><set>Qt::AlignCenter</set></property>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout">
+     <item>
+      <spacer name="kledd_boxes_left">
+       <property name="orientation"><enum>Qt::Horizontal</enum></property>
+      </spacer>
+     </item>
+     <item>
+      <layout class="QVBoxLayout">
+       <item>
+        <widget class="QLabel" name="kledd_box_x_label">
+         <property name="alignment"><set>Qt::AlignCenter</set></property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QSpinBox" name="kledd_box_x">
+         <property name="alignment"><set>Qt::AlignCenter</set></property>
+        </widget>
+       </item>
+      </layout>
+     </item>
+     <item>
+      <layout class="QVBoxLayout">
+       <item>
+        <widget class="QLabel" name="kledd_box_y_label">
+         <property name="alignment"><set>Qt::AlignCenter</set></property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QSpinBox" name="kledd_box_y">
+         <property name="alignment"><set>Qt::AlignCenter</set></property>
+        </widget>
+       </item>
+      </layout>
+     </item>
+     <item>
+      <spacer name="kledd_boxes_right">
+       <property name="orientation"><enum>Qt::Horizontal</enum></property>
+      </spacer>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QLabel" name="kledd_box_hint">
+     <property name="alignment"><set>Qt::AlignCenter</set></property>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout">
+     <item>
+      <widget class="QLabel" name="kledd_gravity_key_label">
+       <property name="text">
+        <string>Gravity Check key:</string>
+       </property>
+       <property name="toolTip">
+        <string>Levels the imaginary controller and puts the mouse back in the center. Same hotkey as "[Kledd] Gravity Check" in Settings &gt; Hotkeys. Click the box, then press the key.</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QKeySequenceEdit" name="kledd_gravity_key"/>
+     </item>
+    </layout>
+   </item>
+   <item>
     <widget class="QCheckBox" name="enable">
      <property name="text">
       <string>Enable mouse panning</string>
@@ -15,6 +108,234 @@
       <string>Can be toggled via a hotkey. Default hotkey is Ctrl + F9</string>
      </property>
     </widget>
+   </item>
+   <item>
+    <widget class="QCheckBox" name="kledd_mouse_gyro">
+     <property name="text">
+      <string>[Kledd] Mouse moves the gyro (motion) instead of the stick</string>
+     </property>
+     <property name="toolTip">
+      <string>Needs mouse panning enabled and Motion bound to the mouse (Motion 1 &gt; click/move the mouse). Mouse movement becomes controller rotation; stopping the mouse stops the aim. Sensitivity below scales it.</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QCheckBox" name="kledd_mouse_gyro_yaw_z">
+     <property name="text">
+      <string>[Kledd] Mouse gyro: horizontal on Z (on for Metroid Prime 4)</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QCheckBox" name="kledd_mouse_gyro_gravity">
+     <property name="text">
+      <string>[Kledd] Mouse gyro: send gravity (matched to the tilt; off = no gravity, v2 behaviour)</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QCheckBox" name="kledd_mouse_gyro_tilt_flip">
+     <property name="text">
+      <string>[Kledd] Mouse gyro: flip tilt correction (try if it goes diagonal or rubbery when looking up/down)</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QCheckBox" name="kledd_mouse_gyro_auto_level">
+     <property name="text">
+      <string>[Kledd] Mouse gyro: auto-level when the aim hits its up/down limit</string>
+     </property>
+     <property name="toolTip">
+      <string>When the imaginary controller is pushed into its up/down limit, Eden re-syncs its motion sensor with it (like a quick Gravity Check). The [Kledd] Gravity Check hotkey does the same by hand.</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QCheckBox" name="kledd_mouse_gyro_no_fusion">
+     <property name="text">
+      <string>[Kledd] Mouse gyro: no drift correction (a mouse never drifts)</string>
+     </property>
+     <property name="toolTip">
+      <string>Skips Eden&apos;s gyro drift learning and gravity correction for mouse motion. Try it with gravity on if circles feel polygonal.</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QCheckBox" name="kledd_mouse_gyro_absolute">
+     <property name="text">
+      <string>[Kledd] Mouse gyro: absolute (cursor mode: the reticle sits where the mouse is)</string>
+     </property>
+     <property name="toolTip">
+      <string>For the cursor/pointer control scheme. The mouse's position in the game window sets where the controller points (center = straight ahead, edges = the calibration angles below). Leave it off for the camera control scheme (mouse look).</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout">
+     <item>
+      <widget class="QLabel" name="kledd_abs_range_label">
+       <property name="text">
+        <string>Edge angles, side / top+bottom (for other games)</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QSpinBox" name="kledd_mouse_gyro_abs_range_x">
+       <property name="minimum"><number>1</number></property>
+       <property name="maximum"><number>90</number></property>
+       <property name="suffix"><string>°</string></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QSpinBox" name="kledd_mouse_gyro_abs_range_y">
+       <property name="minimum"><number>1</number></property>
+       <property name="maximum"><number>75</number></property>
+       <property name="suffix"><string>°</string></property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <layout class="QHBoxLayout">
+     <item>
+      <widget class="QCheckBox" name="kledd_mouse_gyro_abs_from_game">
+       <property name="text">
+        <string>Use Metroid Prime 4's in-game Aiming Sensitivity (X / Y):</string>
+       </property>
+       <property name="toolTip">
+        <string>Type the Aiming Sensitivity X and Y from the game's Cursor settings, and Eden works out the edge angles itself (no calibration needed, with decimals): degrees = 692 / (sensitivity + 11.5). The degree boxes above are ignored while this is on.</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QSpinBox" name="kledd_mouse_gyro_game_sens_x">
+       <property name="minimum"><number>0</number></property>
+       <property name="maximum"><number>100</number></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QSpinBox" name="kledd_mouse_gyro_game_sens_y">
+       <property name="minimum"><number>0</number></property>
+       <property name="maximum"><number>100</number></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="kledd_game_sens_result"/>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QCheckBox" name="kledd_mouse_gyro_abs_show_cursor">
+     <property name="text">
+      <string>Show the real mouse cursor (for lining up)</string>
+     </property>
+     <property name="toolTip">
+      <string>Shows the Windows cursor so you can line the reticle up under it: raise a degree value if the reticle stops short of the cursor near the edges, lower it if the reticle runs ahead of it.</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QCheckBox" name="kledd_mouse_gyro_frame_avg">
+     <property name="text">
+      <string>[Kledd] Mouse gyro: match the game's frame (steady through slowdowns; smoothing box ignored)</string>
+     </property>
+     <property name="toolTip">
+      <string>The game reads the gyro once per frame and multiplies it by the frame time. With this on, Eden reports the mouse speed averaged over that same frame, so a hitch gets your whole hand movement instead of a 5 ms snapshot of it (no flying away, nothing lost).</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QCheckBox" name="kledd_mouse_gyro_probe">
+     <property name="text">
+      <string>[Kledd] Mouse gyro: probe log (log/kledd_mouse_gyro.txt)</string>
+     </property>
+     <property name="toolTip">
+      <string>Writes what the mouse sends and what Eden&apos;s motion sensor thinks, 10 times a second, plus events (wall, auto-level, Gravity Check). Watch it live with Gyro Watch. For debugging only.</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QCheckBox" name="kledd_mouse_gyro_tilt_resync">
+     <property name="text">
+      <string>[Kledd] Mouse gyro: automatic Gravity Check when looking up/down (same turn speed at any angle)</string>
+     </property>
+     <property name="toolTip">
+      <string>With gravity off, the game only learns how far the controller is tilted at a Gravity Check, and turns get weaker the further you look up or down from that angle (a 180 looking up becomes about 90). This re-syncs automatically every time the up/down aim has moved 5 degrees. Does nothing while &quot;send gravity&quot; is on.</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QCheckBox" name="kledd_mouse_gyro_r_recenter">
+     <property name="text">
+      <string>[Kledd] Mouse gyro: R (the game&apos;s gyro re-center) also does a Gravity Check</string>
+     </property>
+     <property name="toolTip">
+      <string>Metroid Prime 4 re-centers its reticle when you press R, but it doesn&apos;t know about the mouse, so in cursor mode the two drift apart. With this on, pressing R also puts the mouse and the imaginary controller back in the center (same as the Gravity Check hotkey). Turn it off for games where R does something else.</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QCheckBox" name="kledd_mouse_gyro_hitch_window">
+     <property name="text">
+      <string>[Kledd] Mouse gyro: keep the whole movement through hitches (door loads)</string>
+     </property>
+     <property name="toolTip">
+      <string>Eden turns your mouse movement into a gyro speed over the game's last frame. That window used to stop at 100 ms, so in a longer hitch (a door load) the start of your turn was lost: you aim for 10 cm and land at 8. With this on, the window follows frames up to 1 second, so the camera ends where your hand went.</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QCheckBox" name="kledd_mouse_gyro_zl_stick">
+     <property name="text">
+      <string>[Kledd] Mouse gyro: while ZL (lock-on) is held, the mouse moves the right stick</string>
+     </property>
+     <property name="toolTip">
+      <string>Camera mode only. Some games stop reading motion while locked on and only let the right stick nudge the aim (Metroid Prime 4&apos;s lock-on targets). While ZL is held, the mouse moves the right stick like a cursor inside the stick's circle: the stick goes where the mouse goes and stays there when the mouse stops. The gyro holds still meanwhile. Let go of ZL and the stick returns to center and the mouse is the gyro again. For the map and other screens that ignore motion, use the [Kledd] Mouse Drives the Stick hotkey.</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout">
+     <item>
+      <widget class="QLabel" name="kledd_mouse_stick_sensitivity_label">
+       <property name="text">
+        <string>[Kledd] Stick sensitivity while the mouse drives the stick (50% = 100 px from center to edge)</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QSpinBox" name="kledd_mouse_stick_sensitivity">
+       <property name="minimum">
+        <number>1</number>
+       </property>
+       <property name="maximum">
+        <number>100</number>
+       </property>
+       <property name="suffix"><string>%</string></property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <layout class="QHBoxLayout">
+     <item>
+      <widget class="QLabel" name="kledd_mouse_gyro_smoothing_label">
+       <property name="text">
+        <string>[Kledd] Mouse gyro smoothing (updates averaged, 1 = off, v1 = 4)</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QSpinBox" name="kledd_mouse_gyro_smoothing">
+       <property name="minimum">
+        <number>1</number>
+       </property>
+       <property name="maximum">
+        <number>8</number>
+       </property>
+      </widget>
+     </item>
+    </layout>
    </item>
    <item>
     <layout class="QHBoxLayout">

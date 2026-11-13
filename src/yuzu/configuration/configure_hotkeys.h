@@ -3,6 +3,9 @@
 
 #pragma once
 
+#include <optional>
+#include <QKeySequence>
+
 #include <memory>
 #include <QStandardItemModel>
 #include <QWidget>
@@ -40,7 +43,14 @@ public:
      */
     void Populate(const HotkeyRegistry& registry);
 
+    /// eden-kledd: the Gravity Check key set in Configure mouse panning. This tab keeps its own
+    /// copy of every key while the Configure dialog is open and writes them all back on OK, so
+    /// the mouse window hands its key over here, and it wins for that one row.
+    static void KleddSetPendingGravityKey(const QKeySequence& key);
+
 private:
+    static inline std::optional<QKeySequence> kledd_pending_gravity_key{};
+
     void changeEvent(QEvent* event) override;
     void RetranslateUI();
 

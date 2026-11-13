@@ -13,6 +13,7 @@
 #include <thread>
 #include <format>
 #include "common/fs/file.h"
+#include "common/kledd_mouse_gyro.h"
 #include "common/fs/fs.h"
 #include "common/fs/path_util.h"
 #include "common/settings.h"
@@ -80,6 +81,9 @@ void PerfStats::EndSystemFrame() {
 
     previous_frame_length = frame_end - previous_frame_end;
     previous_frame_end = frame_end;
+    // eden-kledd mouse gyro: tell the mouse driver how long the game's frames are
+    Common::KleddMouseGyro::game_frame_ns.store(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(previous_frame_length).count());
 }
 
 void PerfStats::EndGameFrame() {

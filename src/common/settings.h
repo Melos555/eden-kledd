@@ -886,6 +886,79 @@ struct Values {
                                                    linkage, 18, 0, 100, "mouse_panning_decay_strength", Category::Controls};
     Setting<u8, true> mouse_panning_min_decay{
                                               linkage, 6, 0, 100, "mouse_panning_min_decay", Category::Controls};
+    // eden-kledd: in mouse panning mode, send mouse movement as gyro (motion) instead of stick
+    Setting<bool> kledd_mouse_gyro{linkage, false, "kledd_mouse_gyro", Category::Controls};
+    // eden-kledd: put horizontal mouse movement on gyro Z (yaw) instead of gyro Y
+    Setting<bool> kledd_mouse_gyro_yaw_z{linkage, true, "kledd_mouse_gyro_yaw_z",
+                                         Category::Controls};
+    // eden-kledd: mouse gyro smoothing, number of 5 ms updates averaged (1 = off)
+    Setting<u8, true> kledd_mouse_gyro_smoothing{linkage, 1, 1, 8, "kledd_mouse_gyro_smoothing",
+                                                 Category::Controls};
+    // eden-kledd: mouse gyro also reports gravity (v1 behaviour). Off = no gravity, so Eden's
+    // drift correction can't pull the aim back toward level
+    Setting<bool> kledd_mouse_gyro_gravity{linkage, true, "kledd_mouse_gyro_gravity2",
+                                           Category::Controls};
+    // eden-kledd: flip the direction of the world-vertical yaw correction (test toggle)
+    Setting<bool> kledd_mouse_gyro_tilt_flip{linkage, false, "kledd_mouse_gyro_tilt_flip",
+                                             Category::Controls};
+    // eden-kledd: when the imaginary controller hits its up/down limit, re-sync Eden's orientation
+    Setting<bool> kledd_mouse_gyro_auto_level{linkage, true, "kledd_mouse_gyro_auto_level",
+                                              Category::Controls};
+    // eden-kledd: skip Eden's drift correction / bias learning for mouse motion
+    Setting<bool> kledd_mouse_gyro_no_fusion{linkage, false, "kledd_mouse_gyro_no_fusion",
+                                             Category::Controls};
+    // eden-kledd: average the mouse gyro over the game's last frame instead of a fixed window
+    Setting<bool> kledd_mouse_gyro_frame_avg{linkage, true, "kledd_mouse_gyro_frame_avg",
+                                             Category::Controls};
+    // eden-kledd: absolute mouse gyro (cursor mode): the mouse position in the game window sets
+    // the imaginary controller's angle; the cursor is kept inside the window instead of centered
+    Setting<bool> kledd_mouse_gyro_absolute{linkage, false, "kledd_mouse_gyro_absolute",
+                                            Category::Controls};
+    // eden-kledd: absolute mode calibration: degrees of tilt at the left/right and top/bottom edge
+    Setting<u8, true> kledd_mouse_gyro_abs_range_x{linkage, 30, 1, 90,
+                                                   "kledd_mouse_gyro_abs_range_x",
+                                                   Category::Controls};
+    Setting<u8, true> kledd_mouse_gyro_abs_range_y{linkage, 17, 1, 75,
+                                                   "kledd_mouse_gyro_abs_range_y",
+                                                   Category::Controls};
+    // eden-kledd: absolute mode: instead of the degree boxes, take Metroid Prime 4's in-game
+    // cursor aiming sensitivity (0-100) and compute the edge angle from it:
+    // degrees = 692 / (sensitivity + 11.5), measured by Melos at 0, 26, 45, 75 and 100
+    Setting<bool> kledd_mouse_gyro_abs_from_game{linkage, true, "kledd_mouse_gyro_abs_from_game",
+                                                 Category::Controls};
+    Setting<u8, true> kledd_mouse_gyro_game_sens_x{linkage, 50, 0, 100,
+                                                   "kledd_mouse_gyro_game_sens_x",
+                                                   Category::Controls};
+    Setting<u8, true> kledd_mouse_gyro_game_sens_y{linkage, 50, 0, 100,
+                                                   "kledd_mouse_gyro_game_sens_y",
+                                                   Category::Controls};
+    // eden-kledd: absolute mode: show the real mouse cursor (for calibration)
+    Setting<bool> kledd_mouse_gyro_abs_show_cursor{linkage, false,
+                                                   "kledd_mouse_gyro_abs_show_cursor",
+                                                   Category::Controls};
+    // eden-kledd: write log/kledd_mouse_gyro.txt (probe)
+    Setting<bool> kledd_mouse_gyro_probe{linkage, false, "kledd_mouse_gyro_probe",
+                                         Category::Controls};
+    // eden-kledd: with gravity off, re-sync Eden's tilt whenever the up/down aim moved 5 degrees
+    // (an automatic Gravity Check), so turning speed doesn't depend on where you look
+    Setting<bool> kledd_mouse_gyro_tilt_resync{linkage, false, "kledd_mouse_gyro_tilt_resync",
+                                               Category::Controls};
+    // eden-kledd: pressing R (the game's own gyro re-center in Metroid Prime 4) also does a
+    // Gravity Check, so the mouse/aim and the game's reticle re-center together
+    // eden-kledd: the mouse movement window follows long frames up to 1 s (was capped at 100 ms),
+    // so a door hitch no longer drops the start of a turn
+    Setting<bool> kledd_mouse_gyro_hitch_window{linkage, true, "kledd_mouse_gyro_hitch_window",
+                                                Category::Controls};
+    Setting<bool> kledd_mouse_gyro_r_recenter{linkage, false, "kledd_mouse_gyro_r_recenter",
+                                              Category::Controls};
+    // eden-kledd: camera (relative) mouse gyro: while ZL (lock-on) is held, the mouse drives the
+    // right stick instead of the gyro (games that ignore motion while locked on)
+    Setting<bool> kledd_mouse_gyro_zl_stick{linkage, false, "kledd_mouse_gyro_zl_stick",
+                                            Category::Controls};
+    // eden-kledd: right stick sensitivity while the mouse drives the stick (ZL held or toggle)
+    Setting<u8, true> kledd_mouse_stick_sensitivity{linkage, 50, 1, 100,
+                                                    "kledd_mouse_stick_sensitivity",
+                                                    Category::Controls};
 
     Setting<bool> emulate_analog_keyboard{linkage, false, "emulate_analog_keyboard",
                                           Category::Controls};
