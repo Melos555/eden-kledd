@@ -1511,6 +1511,12 @@ bool TextureCache<P>::TryPartialAstcRefresh(Image& image,
                           img, staging, std::span<const SwizzleParameters>{},
                           std::span<const std::pair<u32, u32>>{});
                   }) {
+        // eden-kledd: BC7 recompression re-encodes whole levels, but a partial refresh only
+        // stages the rewritten rows. Take the whole upload instead of feeding BC7 half a texture.
+        if (Settings::values.astc_recompression.GetValue() ==
+            Settings::AstcRecompression::Bc7) {
+            return false;
+        }
         // The guest streams data into textures it is already sampling, often a few KiB at a
         // time. Decode only the block rows each level had written, instead of the whole image.
         const ImageInfo& info = image.info;
